@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -137,21 +137,42 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
 
               {settings.autoRotation && (
                 <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 animate-shimmer">
-                  <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Intervalle</span>
-                    <span className="text-sm font-bold text-brand-500">{settings.rotationInterval} min</span>
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-slate-500" />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Intervalle</span>
+                    </div>
+                    <span className="text-sm font-bold text-brand-500 bg-brand-50 dark:bg-brand-500/10 px-2 py-0.5 rounded">{settings.rotationInterval} min</span>
                   </div>
+                  
                   <input 
                     type="range" 
                     min="1" 
                     max="60" 
                     value={settings.rotationInterval} 
                     onChange={(e) => updateSettings('rotationInterval', parseInt(e.target.value))}
-                    className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                    className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-500 mb-4"
                   />
-                  <div className="flex justify-between mt-1 text-xs text-slate-400">
+                  
+                  <div className="flex justify-between items-center text-xs text-slate-400 mb-4">
                     <span>1 min</span>
                     <span>60 min</span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2">
+                    {[5, 15, 30, 60].map(mins => (
+                        <button
+                            key={mins}
+                            onClick={() => updateSettings('rotationInterval', mins)}
+                            className={`py-1.5 text-xs font-medium rounded-lg border transition-all ${
+                                settings.rotationInterval === mins
+                                ? 'bg-brand-500 text-white border-brand-500 shadow-md shadow-brand-500/20'
+                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-slate-600'
+                            }`}
+                        >
+                            {mins}m
+                        </button>
+                    ))}
                   </div>
                 </div>
               )}
