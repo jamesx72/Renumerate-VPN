@@ -1,17 +1,18 @@
 import React from 'react';
 import { VirtualIdentity, ConnectionMode } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
+  entryIdentity: VirtualIdentity | null;
   isRotating: boolean;
   mode: ConnectionMode;
 }
 
-export const IdentityMatrix: React.FC<Props> = ({ identity, isRotating, mode }) => {
+export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, mode }) => {
   return (
     <div className="space-y-4">
-      {mode === ConnectionMode.DOUBLE_HOP && (
+      {mode === ConnectionMode.DOUBLE_HOP && entryIdentity && (
         <div className="bg-brand-50 dark:bg-brand-900/20 p-3 rounded-lg border border-brand-200 dark:border-brand-500/30 flex items-center justify-between text-xs sm:text-sm animate-pulse-fast">
           <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
              <div className="w-2 h-2 rounded-full bg-slate-400"></div>
@@ -21,8 +22,9 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, isRotating, mode }) 
              <ArrowRight className="w-3 h-3 text-brand-500 absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2" />
           </div>
           <div className="flex items-center gap-2 text-brand-600 dark:text-brand-400 font-medium">
-             <ShieldCheck className="w-4 h-4" />
-             <span>Relais</span>
+             <Server className="w-4 h-4" />
+             <span className="hidden sm:inline">{entryIdentity.country}</span>
+             <span className="sm:hidden">{entryIdentity.country.slice(0,2).toUpperCase()}</span>
           </div>
           <div className="h-px bg-slate-300 dark:bg-slate-700 flex-1 mx-2 relative">
              <ArrowRight className="w-3 h-3 text-brand-500 absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2" />

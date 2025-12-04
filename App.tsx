@@ -19,6 +19,7 @@ function App() {
   const [isEmergency, setIsEmergency] = useState(false); // New Emergency State
   const [mode, setMode] = useState<ConnectionMode>(ConnectionMode.STANDARD);
   const [currentIdentity, setCurrentIdentity] = useState<VirtualIdentity>(MOCK_IDENTITIES[0]);
+  const [entryIdentity, setEntryIdentity] = useState<VirtualIdentity | null>(null); // Entry node for Double Hop
   const [isRenumbering, setIsRenumbering] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
@@ -87,6 +88,7 @@ function App() {
       setTimeout(() => {
         setIsConnected(false);
         setIsDisconnecting(false);
+        setEntryIdentity(null);
         setSecurityReport(null);
         addLog('Déconnecté du réseau sécurisé', 'info');
       }, 1500);
@@ -95,12 +97,19 @@ function App() {
       addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
       
       if (mode === ConnectionMode.DOUBLE_HOP) {
+         // Select a random entry node different from current identity
+         const potentialEntryNodes = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
+         const selectedEntry = potentialEntryNodes[Math.floor(Math.random() * potentialEntryNodes.length)];
+         setEntryIdentity(selectedEntry);
+
          setTimeout(() => {
-             addLog('Établissement du tunnel vers le nœud d\'entrée (Relais Chiffré)...', 'info');
+             addLog(`Tunnel établi vers le nœud d'entrée (${selectedEntry.country})...`, 'info');
          }, 500);
          setTimeout(() => {
              addLog('Relais confirmé. Routage vers le nœud de sortie...', 'success');
          }, 1000);
+      } else {
+         setEntryIdentity(null);
       }
 
       setTimeout(() => {
@@ -595,7 +604,7 @@ function App() {
                 </div>
                 
                 {isConnected || isEmergency ? (
-                  <IdentityMatrix identity={currentIdentity} isRotating={isRenumbering || isEmergency} mode={mode} />
+                  <IdentityMatrix identity={currentIdentity} entryIdentity={entryIdentity} isRotating={isRenumbering || isEmergency} mode={mode} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                     <Shield className="w-12 h-12 mb-2 opacity-20" />
