@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
@@ -115,7 +115,24 @@ function App() {
     }
   };
 
-  const handleEmergencyProtocol = () => {
+  const handleAnalyze = async (identity: VirtualIdentity = currentIdentity) => {
+    if (!isConnected && !isEmergency) return;
+    setAnalyzing(true);
+    // Only log if not in emergency loop to avoid clutter
+    if (!isEmergency) addLog('Analyse de sécurité par IA en cours...', 'info');
+    
+    try {
+      const report = await analyzeSecurity(mode, identity.country, identity.ip);
+      setSecurityReport(report);
+      if (!isEmergency) addLog(`Rapport de sécurité généré : Score ${report.score}/100`, 'success');
+    } catch (error) {
+      addLog('Échec de l\'analyse de sécurité', 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleEmergencyProtocol = useCallback(() => {
     if (!isConnected || !appSettings.killSwitch) return;
 
     // Simulate Drop
@@ -130,6 +147,8 @@ function App() {
         // Step 2: Emergency Renumeration
         addLog('🚨 PROTOCOLE D\'URGENCE : Renumérotation forcée...', 'info');
         
+        // Use a functional update or logic that doesn't depend on stale closure if possible, 
+        // but for this mock, currentIdentity from render scope is acceptable as it doesn't change fast.
         const availableIds = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
         const newIdentity = availableIds[Math.floor(Math.random() * availableIds.length)];
         
@@ -147,7 +166,19 @@ function App() {
             
         }, 2000);
     }, 1500);
-  };
+  }, [isConnected, appSettings.killSwitch, currentIdentity]);
+
+  // Listen for offline events
+  useEffect(() => {
+    const onOffline = () => {
+        if (isConnected && appSettings.killSwitch && !isEmergency) {
+            handleEmergencyProtocol();
+        }
+    };
+    
+    window.addEventListener('offline', onOffline);
+    return () => window.removeEventListener('offline', onOffline);
+  }, [isConnected, appSettings.killSwitch, isEmergency, handleEmergencyProtocol]);
 
   const handleModeChange = (newMode: ConnectionMode) => {
     if (newMode !== ConnectionMode.STANDARD && userPlan === 'free') {
@@ -195,22 +226,6 @@ function App() {
     };
   }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, currentIdentity, isEmergency]);
 
-  const handleAnalyze = async (identity: VirtualIdentity = currentIdentity) => {
-    if (!isConnected && !isEmergency) return;
-    setAnalyzing(true);
-    // Only log if not in emergency loop to avoid clutter
-    if (!isEmergency) addLog('Analyse de sécurité par IA en cours...', 'info');
-    
-    try {
-      const report = await analyzeSecurity(mode, identity.country, identity.ip);
-      setSecurityReport(report);
-      if (!isEmergency) addLog(`Rapport de sécurité généré : Score ${report.score}/100`, 'success');
-    } catch (error) {
-      addLog('Échec de l\'analyse de sécurité', 'error');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
 
   const shareIdentity = () => {
     if (!currentIdentity) return;
@@ -299,10 +314,13 @@ function App() {
 
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Shield className={`w-8 h-8 ${isEmergency ? 'text-red-500' : 'text-brand-500'}`} />
-            <span className="font-bold text-xl tracking-tight hidden md:inline">Renumerate<span className={`${isEmergency ? 'text-red-500' : 'text-brand-500'}`}>VPN</span></span>
-            <span className="font-bold text-xl tracking-tight md:hidden">R<span className={`${isEmergency ? 'text-red-500' : 'text-brand-500'}`}>VPN</span></span>
+          <div className="flex flex-col justify-center">
+            <div className="flex items-center gap-2">
+                <Shield className={`w-8 h-8 ${isEmergency ? 'text-red-500' : 'text-brand-500'}`} />
+                <span className="font-bold text-xl tracking-tight hidden md:inline">Renumerate<span className={`${isEmergency ? 'text-red-500' : 'text-brand-500'}`}>VPN</span></span>
+                <span className="font-bold text-xl tracking-tight md:hidden">R<span className={`${isEmergency ? 'text-red-500' : 'text-brand-500'}`}>VPN</span></span>
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide hidden md:block pl-10 -mt-1">Redéfinissez votre identité numérique.</span>
           </div>
           <div className="flex items-center gap-3">
             {/* Wallet Display */}
@@ -358,6 +376,14 @@ function App() {
           </div>
         </div>
       </header>
+      
+      {isEmergency && (
+        <div className="w-full bg-red-600 text-white text-center py-1.5 text-xs font-bold uppercase tracking-wider animate-pulse flex items-center justify-center gap-2 shadow-lg relative z-40">
+           <Siren className="w-4 h-4" />
+           Protocole de Renumérotation d'Urgence Actif
+           <Siren className="w-4 h-4" />
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
