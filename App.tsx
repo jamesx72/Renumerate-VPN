@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Activity, Share2, Wifi, Settings, Crown, Wallet } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
 import { PricingModal } from './components/PricingModal';
 import { SettingsPanel } from './components/SettingsPanel';
+import { EarningsCard } from './components/EarningsCard';
+import { SystemLogs } from './components/SystemLogs';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings } from './types';
 import { analyzeSecurity } from './services/geminiService';
@@ -19,12 +21,12 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
-
-  // New State for Monetization and Settings
+  
+  // New State for Monetization, Settings, and Earnings
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [balance, setBalance] = useState(0.0000);
   const [appSettings, setAppSettings] = useState<AppSettings>({
     protocol: 'wireguard',
     dns: 'cloudflare',
@@ -41,10 +43,23 @@ function App() {
     }
   }, [isDark]);
 
-  // Auto-scroll logs
+  // Earning Logic
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+    let interval: ReturnType<typeof setInterval>;
+    
+    if (isConnected && userPlan !== 'free') {
+      // Rates: Pro = 0.004/sec, Elite = 0.012/sec
+      const rate = userPlan === 'elite' ? 0.012 : 0.004;
+      
+      interval = setInterval(() => {
+        setBalance(prev => prev + rate);
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isConnected, userPlan]);
 
   const addLog = (event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
     const newLog: LogEntry = {
@@ -69,9 +84,24 @@ function App() {
     } else {
       setIsDisconnecting(false);
       addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
+      
+      if (mode === ConnectionMode.DOUBLE_HOP) {
+         setTimeout(() => {
+             addLog('Établissement du tunnel vers le nœud d\'entrée (Relais Chiffré)...', 'info');
+         }, 500);
+         setTimeout(() => {
+             addLog('Relais confirmé. Routage vers le nœud de sortie...', 'success');
+         }, 1000);
+      }
+
       setTimeout(() => {
         setIsConnected(true);
-        addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
+        if (mode === ConnectionMode.DOUBLE_HOP) {
+             addLog(`Double Hop Actif: Trafic routé via 2 serveurs sécurisés`, 'success');
+        } else {
+             addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
+        }
+        
         if (appSettings.killSwitch) addLog('Kill Switch activé', 'success');
         handleAnalyze();
       }, 1500);
@@ -167,6 +197,14 @@ function App() {
             <span className="font-bold text-xl tracking-tight md:hidden">R<span className="text-brand-500">VPN</span></span>
           </div>
           <div className="flex items-center gap-3">
+            {/* Wallet Display */}
+            {userPlan !== 'free' && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 mr-2">
+                <Wallet className="w-4 h-4 text-amber-500" />
+                <span className="font-mono text-sm font-bold text-slate-700 dark:text-slate-200">{balance.toFixed(2)} RNC</span>
+              </div>
+            )}
+
             <button
               onClick={() => setShowPricing(true)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold transition-all ${
@@ -249,26 +287,32 @@ function App() {
 
                 {isConnected && !isDisconnecting && (
                   <div className={`mt-5 flex flex-col items-center transition-all duration-500 ${isRenumbering ? 'opacity-50 scale-95 blur-[0.5px]' : 'opacity-100 scale-100'}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700/50 shadow-sm dark:shadow-inner mb-2 group cursor-default hover:border-brand-300 dark:hover:border-brand-500/30 transition-colors">
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700/50 shadow-sm dark:shadow-inner group cursor-default hover:border-brand-300 dark:hover:border-brand-500/30 transition-colors">
                          <span className="font-mono text-sm font-bold text-slate-700 dark:text-slate-200 tracking-wider group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{currentIdentity.ip}</span>
                       </div>
                       
                       <button 
                         onClick={shareIdentity}
-                        className="flex items-center gap-2 px-3 py-1.5 -mt-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-500/20 hover:text-brand-600 dark:hover:text-brand-400 transition-colors shadow-sm group/share"
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-500/20 hover:text-brand-600 dark:hover:text-brand-400 transition-colors shadow-sm group/share"
                         title="Partager l'identité"
                       >
                         <Share2 className="w-3.5 h-3.5 group-hover/share:scale-110 transition-transform" />
                         <span>Partager</span>
                       </button>
                     </div>
+
+                    <div className="flex items-center gap-2 mb-4 text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
+                        <Globe className="w-3.5 h-3.5 text-brand-500" />
+                        <span className="text-sm font-medium">{currentIdentity.country}</span>
+                        <span className="text-xs text-slate-400 opacity-75 hidden sm:inline">• {currentIdentity.city}</span>
+                    </div>
                     
-                    <div className="flex flex-col items-center gap-1 mt-1">
+                    <div className="flex flex-col items-center gap-1">
                       <button
                         onClick={handleRenumber}
                         disabled={isRenumbering}
-                        className="flex items-center gap-2 text-brand-500 hover:text-brand-400 transition-colors text-sm font-medium"
+                        className="flex items-center gap-2 text-brand-500 hover:text-brand-400 transition-colors text-sm font-medium hover:underline decoration-brand-500/30 underline-offset-4"
                       >
                         <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
                         Renouveler l'identité
@@ -307,6 +351,14 @@ function App() {
           </div>
 
           <div className="space-y-6">
+             {/* Earnings Card */}
+             <EarningsCard 
+                isConnected={isConnected} 
+                plan={userPlan} 
+                balance={balance} 
+                onUpgrade={() => setShowPricing(true)} 
+             />
+
              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 min-h-[300px]">
                 <div className="flex items-center justify-between mb-6">
                    <h3 className="font-bold text-lg flex items-center gap-2">
@@ -322,7 +374,7 @@ function App() {
                 </div>
                 
                 {isConnected ? (
-                  <IdentityMatrix identity={currentIdentity} isRotating={isRenumbering} />
+                  <IdentityMatrix identity={currentIdentity} isRotating={isRenumbering} mode={mode} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                     <Shield className="w-12 h-12 mb-2 opacity-20" />
@@ -356,47 +408,7 @@ function App() {
              </div>
 
              {/* Styled Terminal / Logs System */}
-             <div className="bg-slate-950 rounded-2xl p-4 border border-slate-800 h-[400px] flex flex-col shadow-inner font-mono relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-brand-500/20 to-transparent"></div>
-                
-                <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
-                  <div className="flex items-center gap-2">
-                    <Terminal className="w-3.5 h-3.5 text-brand-500" />
-                    <h3 className="text-xs font-bold text-brand-500/80 uppercase tracking-widest">Renumerate_CLI</h3>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-red-500/20"></div>
-                    <div className="w-2 h-2 rounded-full bg-amber-500/20"></div>
-                    <div className="w-2 h-2 rounded-full bg-emerald-500/20"></div>
-                  </div>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto space-y-1.5 custom-scrollbar p-1">
-                  {logs.map((log) => (
-                    <div key={log.id} className="flex gap-2.5 text-[10px] md:text-xs hover:bg-white/5 p-1 rounded transition-colors group">
-                      <span className="text-slate-500 shrink-0 font-mono opacity-60 group-hover:opacity-100 transition-opacity">
-                        [{log.timestamp}]
-                      </span>
-                      <span className="text-slate-600 font-bold shrink-0">{'>'}</span>
-                      <span className={`${
-                        log.type === 'success' ? 'text-emerald-400' :
-                        log.type === 'warning' ? 'text-amber-400' :
-                        log.type === 'error' ? 'text-red-400' :
-                        'text-slate-300'
-                      } break-words leading-relaxed`}>
-                        {log.event}
-                      </span>
-                    </div>
-                  ))}
-                  <div ref={logsEndRef} />
-                  
-                  {/* Active line simulation */}
-                  <div className="flex gap-2.5 text-[10px] md:text-xs pt-1 opacity-70">
-                    <span className="text-brand-500 font-bold shrink-0 animate-pulse">$</span>
-                    <span className="w-2 h-4 bg-brand-500/50 block animate-[pulse_1s_ease-in-out_infinite]"></span>
-                  </div>
-                </div>
-             </div>
+             <SystemLogs logs={logs} />
           </div>
         </div>
       </main>
