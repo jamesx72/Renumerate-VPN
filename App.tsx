@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -17,6 +17,7 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isDark) {
@@ -26,6 +27,11 @@ function App() {
     }
   }, [isDark]);
 
+  // Auto-scroll logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
   const addLog = (event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
@@ -33,7 +39,7 @@ function App() {
       event,
       type
     };
-    setLogs(prev => [newLog, ...prev].slice(0, 50));
+    setLogs(prev => [...prev, newLog].slice(-50)); // Keep last 50, append to end for terminal feel
   };
 
   const toggleConnection = async () => {
@@ -259,25 +265,46 @@ function App() {
                 )}
              </div>
 
-             <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 h-[400px] flex flex-col">
-                <div className="flex items-center gap-2 mb-4">
-                  <Terminal className="w-4 h-4 text-slate-400" />
-                  <h3 className="font-medium text-slate-500 dark:text-slate-400">Journaux Système</h3>
+             {/* Styled Terminal / Logs System */}
+             <div className="bg-slate-950 rounded-2xl p-4 border border-slate-800 h-[400px] flex flex-col shadow-inner font-mono relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-brand-500/20 to-transparent"></div>
+                
+                <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="w-3.5 h-3.5 text-brand-500" />
+                    <h3 className="text-xs font-bold text-brand-500/80 uppercase tracking-widest">Renumerate_CLI</h3>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-red-500/20"></div>
+                    <div className="w-2 h-2 rounded-full bg-amber-500/20"></div>
+                    <div className="w-2 h-2 rounded-full bg-emerald-500/20"></div>
+                  </div>
                 </div>
-                <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs custom-scrollbar">
+                
+                <div className="flex-1 overflow-y-auto space-y-1.5 custom-scrollbar p-1">
                   {logs.map((log) => (
-                    <div key={log.id} className="flex gap-2">
-                      <span className="text-slate-400 opacity-50">[{log.timestamp}]</span>
+                    <div key={log.id} className="flex gap-2.5 text-[10px] md:text-xs hover:bg-white/5 p-1 rounded transition-colors group">
+                      <span className="text-slate-500 shrink-0 font-mono opacity-60 group-hover:opacity-100 transition-opacity">
+                        [{log.timestamp}]
+                      </span>
+                      <span className="text-slate-600 font-bold shrink-0">{'>'}</span>
                       <span className={`${
-                        log.type === 'success' ? 'text-emerald-500' :
-                        log.type === 'warning' ? 'text-amber-500' :
-                        log.type === 'error' ? 'text-red-500' :
-                        'text-slate-600 dark:text-slate-300'
-                      }`}>
+                        log.type === 'success' ? 'text-emerald-400' :
+                        log.type === 'warning' ? 'text-amber-400' :
+                        log.type === 'error' ? 'text-red-400' :
+                        'text-slate-300'
+                      } break-words leading-relaxed`}>
                         {log.event}
                       </span>
                     </div>
                   ))}
+                  <div ref={logsEndRef} />
+                  
+                  {/* Active line simulation */}
+                  <div className="flex gap-2.5 text-[10px] md:text-xs pt-1 opacity-70">
+                    <span className="text-brand-500 font-bold shrink-0 animate-pulse">$</span>
+                    <span className="w-2 h-4 bg-brand-500/50 block animate-[pulse_1s_ease-in-out_infinite]"></span>
+                  </div>
                 </div>
              </div>
           </div>
