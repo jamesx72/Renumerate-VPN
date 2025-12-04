@@ -120,6 +120,10 @@ function App() {
              addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
         }
         
+        // DNS Log
+        const dnsLabel = appSettings.dns === 'custom' ? 'Renumerate Private' : appSettings.dns === 'google' ? 'Google DNS' : 'Cloudflare DNS';
+        addLog(`Résolution DNS: ${dnsLabel} actif`, 'info');
+        
         if (appSettings.killSwitch) addLog('Kill Switch activé : Protection active', 'success');
         if (appSettings.autoRotation) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
         handleAnalyze();
