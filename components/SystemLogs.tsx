@@ -1,12 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Terminal, XCircle, CheckCircle, AlertTriangle, Info, Filter } from 'lucide-react';
+import { Terminal, XCircle, CheckCircle, AlertTriangle, Info, Filter, Trash2 } from 'lucide-react';
 import { LogEntry } from '../types';
 
 interface Props {
   logs: LogEntry[];
+  onClear?: () => void;
 }
 
-export const SystemLogs: React.FC<Props> = ({ logs }) => {
+export const SystemLogs: React.FC<Props> = ({ logs, onClear }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<'all' | 'error' | 'warning' | 'success' | 'info'>('all');
 
@@ -29,39 +30,52 @@ export const SystemLogs: React.FC<Props> = ({ logs }) => {
            <h3 className="text-xs font-bold text-brand-500/80 uppercase tracking-widest">System_Logs</h3>
          </div>
          
-         {/* Filters */}
-         <div className="flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg">
-            <Filter className="w-3 h-3 text-slate-600 mr-1" />
-            {(['all', 'info', 'success', 'warning', 'error'] as const).map(f => (
-                <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold transition-all ${
-                        filter === f 
-                            ? 'bg-slate-700 text-white shadow-sm ring-1 ring-slate-600' 
-                            : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
-                    }`}
-                    title={`Filtrer par ${f}`}
-                >
-                    {f === 'all' ? 'ALL' : f.charAt(0)}
-                </button>
-            ))}
+         <div className="flex items-center gap-2">
+             {/* Filters */}
+             <div className="flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg">
+                <Filter className="w-3 h-3 text-slate-600 mr-1" />
+                {(['all', 'info', 'success', 'warning', 'error'] as const).map(f => (
+                    <button
+                        key={f}
+                        onClick={() => setFilter(f)}
+                        className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold transition-all ${
+                            filter === f 
+                                ? 'bg-slate-700 text-white shadow-sm ring-1 ring-slate-600' 
+                                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+                        }`}
+                        title={`Filtrer par ${f}`}
+                    >
+                        {f === 'all' ? 'ALL' : f.charAt(0)}
+                    </button>
+                ))}
+             </div>
+             
+             {/* Clear Button */}
+             {onClear && (
+                 <button 
+                    onClick={onClear} 
+                    className="p-1.5 hover:bg-slate-800 rounded text-slate-500 hover:text-red-400 transition-colors border border-transparent hover:border-slate-700" 
+                    title="Effacer les logs"
+                 >
+                    <Trash2 className="w-3 h-3" />
+                 </button>
+             )}
          </div>
        </div>
 
        {/* Logs Area */}
        <div className="flex-1 overflow-y-auto space-y-1.5 custom-scrollbar p-1">
           {filteredLogs.map((log) => (
-            <div key={log.id} className="flex gap-2.5 text-[10px] md:text-xs hover:bg-white/5 p-1 rounded transition-colors group/item">
-              <span className="text-slate-500 shrink-0 font-mono">
+            <div key={log.id} className="flex gap-2.5 text-[10px] md:text-xs hover:bg-white/5 p-1 rounded transition-colors group/item items-start">
+              <span className="text-slate-500 shrink-0 font-mono pt-0.5">
                 [{log.timestamp}]
               </span>
               
-              <span className="shrink-0 pt-0.5" title={`Type: ${log.type}`}>
-                  {log.type === 'error' && <XCircle className="w-3 h-3 text-red-500" />}
-                  {log.type === 'warning' && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-                  {log.type === 'success' && <CheckCircle className="w-3 h-3 text-emerald-500" />}
-                  {log.type === 'info' && <Info className="w-3 h-3 text-blue-500" />}
+              <span className="shrink-0 pt-0.5 flex items-center gap-1.5" title={`Type: ${log.type}`}>
+                  {log.type === 'error' && <><XCircle className="w-3 h-3 text-red-500" /><span className="text-[9px] font-bold text-red-500 uppercase tracking-wider">ERR</span></>}
+                  {log.type === 'warning' && <><AlertTriangle className="w-3 h-3 text-amber-500" /><span className="text-[9px] font-bold text-amber-500 uppercase tracking-wider">WRN</span></>}
+                  {log.type === 'success' && <><CheckCircle className="w-3 h-3 text-emerald-500" /><span className="text-[9px] font-bold text-emerald-500 uppercase tracking-wider">OK</span></>}
+                  {log.type === 'info' && <><Info className="w-3 h-3 text-blue-500" /><span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">INF</span></>}
               </span>
 
               <span className={`${

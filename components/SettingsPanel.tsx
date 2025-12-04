@@ -51,7 +51,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
     { id: 'google', name: 'Google', ip: '8.8.8.8', tag: 'Standard', ms: 24, desc: 'Haute disponibilité' },
     { id: 'quad9', name: 'Quad9', ip: '9.9.9.9', tag: 'Sécurité', ms: 45, desc: 'Bloque les malwares' },
     { id: 'opendns', name: 'OpenDNS', ip: '208.67.222.222', tag: 'Famille', ms: 38, desc: 'Contrôle parental' },
-    { id: 'custom', name: 'Renumerate DNS', ip: 'Privé', tag: 'Anonyme', locked: true, ms: 5, desc: 'Non-journalisé • Interne' }
+    { id: 'custom', name: 'Renumerate Private DNS', ip: 'Privé', tag: 'Anonyme', locked: true, ms: 5, desc: 'Non-journalisé • Interne' }
   ];
 
   const splitApps = [

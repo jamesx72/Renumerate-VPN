@@ -109,6 +109,14 @@ function App() {
     setLogs(prev => [...prev, newLog].slice(-50));
   };
 
+  const clearLogs = () => {
+    setLogs([]);
+    // Add a small delay to show the "Logs cleared" message after clearing
+    setTimeout(() => {
+        addLog('Journaux système effacés', 'info');
+    }, 100);
+  };
+
   const connectVPN = useCallback(() => {
     setIsDisconnecting(false);
     addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
@@ -146,7 +154,7 @@ function App() {
         google: 'Google DNS',
         quad9: 'Quad9 DNS',
         opendns: 'OpenDNS',
-        custom: 'Renumerate Private'
+        custom: 'Renumerate Private DNS'
       };
       const dnsLabel = dnsLabels[appSettings.dns] || 'DNS';
       addLog(`Résolution DNS: ${dnsLabel} actif`, 'info');
@@ -805,7 +813,7 @@ function App() {
              </div>
 
              {/* Styled Terminal / Logs System */}
-             <SystemLogs logs={logs} />
+             <SystemLogs logs={logs} onClear={clearLogs} />
           </div>
         </div>
       </main>
