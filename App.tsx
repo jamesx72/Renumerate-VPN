@@ -339,7 +339,11 @@ function App() {
   const mainButtonColor = isEmergency 
     ? 'bg-red-500 shadow-red-500/50 animate-pulse-fast'
     : isConnected 
-        ? 'bg-emerald-500 shadow-emerald-500/50 hover:shadow-emerald-500/70' 
+        ? mode === ConnectionMode.STEALTH
+            ? 'bg-indigo-500 shadow-indigo-500/50 hover:shadow-indigo-500/70'
+            : mode === ConnectionMode.DOUBLE_HOP
+                ? 'bg-violet-500 shadow-violet-500/50 hover:shadow-violet-500/70'
+                : 'bg-emerald-500 shadow-emerald-500/50 hover:shadow-emerald-500/70' 
         : 'bg-slate-700 shadow-slate-900/50 hover:bg-slate-600';
 
   const statusTextColor = isEmergency 
@@ -473,7 +477,7 @@ function App() {
             <div className={`bg-white dark:bg-slate-900 rounded-2xl p-8 border ${isEmergency ? 'border-red-500/30' : 'border-slate-200 dark:border-slate-800'} shadow-xl relative overflow-hidden transition-all duration-500`}>
               
               {/* Stealth Mode Indicator Banner */}
-              {mode === ConnectionMode.STEALTH && !isEmergency && (
+              {mode === ConnectionMode.STEALTH && isConnected && !isEmergency && (
                  <div className="absolute top-0 left-0 w-full bg-indigo-950/90 border-b border-indigo-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-shimmer">
                     <Ghost className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
                     <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">
@@ -483,7 +487,7 @@ function App() {
               )}
 
               {/* Double Hop Indicator Banner */}
-              {mode === ConnectionMode.DOUBLE_HOP && !isEmergency && (
+              {mode === ConnectionMode.DOUBLE_HOP && isConnected && !isEmergency && (
                 <div className="absolute top-0 left-0 w-full bg-violet-950/90 border-b border-violet-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-shimmer">
                   <Layers className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
                   <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200">
