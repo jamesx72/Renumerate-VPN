@@ -121,7 +121,14 @@ function App() {
         }
         
         // DNS Log
-        const dnsLabel = appSettings.dns === 'custom' ? 'Renumerate Private' : appSettings.dns === 'google' ? 'Google DNS' : 'Cloudflare DNS';
+        const dnsLabels: Record<string, string> = {
+          cloudflare: 'Cloudflare DNS',
+          google: 'Google DNS',
+          quad9: 'Quad9 DNS',
+          opendns: 'OpenDNS',
+          custom: 'Renumerate Private'
+        };
+        const dnsLabel = dnsLabels[appSettings.dns] || 'DNS';
         addLog(`Résolution DNS: ${dnsLabel} actif`, 'info');
         
         if (appSettings.killSwitch) addLog('Kill Switch activé : Protection active', 'success');

@@ -32,7 +32,7 @@ export type PlanTier = 'free' | 'pro' | 'elite';
 
 export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
-  dns: 'cloudflare' | 'google' | 'custom';
+  dns: 'cloudflare' | 'google' | 'quad9' | 'opendns' | 'custom';
   killSwitch: boolean;
   splitTunneling: boolean;
   adBlocker: boolean;

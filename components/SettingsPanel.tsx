@@ -245,7 +245,9 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
               {[
                 { id: 'cloudflare', name: 'Cloudflare', ip: '1.1.1.1', tag: 'Rapide' },
                 { id: 'google', name: 'Google', ip: '8.8.8.8', tag: 'Standard' },
-                { id: 'custom', name: 'Renumerate', ip: 'Privé', tag: 'Sécurisé', locked: true }
+                { id: 'quad9', name: 'Quad9', ip: '9.9.9.9', tag: 'Sécurité' },
+                { id: 'opendns', name: 'OpenDNS', ip: '208.67.222.222', tag: 'Famille' },
+                { id: 'custom', name: 'Renumerate', ip: 'Privé', tag: 'Anonyme', locked: true }
               ].map((dns) => {
                 const isLocked = dns.locked && isFeatureLocked('pro');
                 const isSelected = settings.dns === dns.id;
