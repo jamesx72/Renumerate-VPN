@@ -1,4 +1,4 @@
-import { VirtualIdentity } from './types';
+import { VirtualIdentity, LogEntry } from './types';
 
 export const MOCK_IDENTITIES: VirtualIdentity[] = [
   { ip: '192.168.1.105', country: 'France', city: 'Paris', mac: '00:1B:44:11:3A:B7', userAgentShort: 'Chrome / Win10', latency: 12 },
@@ -9,7 +9,7 @@ export const MOCK_IDENTITIES: VirtualIdentity[] = [
   { ip: '5.196.33.20', country: 'Estonie', city: 'Tallinn', mac: '02:42:AC:11:00:02', userAgentShort: 'Firefox / Win10', latency: 45 },
 ];
 
-export const INITIAL_LOGS = [
-  { id: '1', timestamp: '10:00:01', event: 'Système initialisé', type: 'info' },
-  { id: '2', timestamp: '10:00:02', event: 'Module de cryptage chargé', type: 'success' },
+export const INITIAL_LOGS: LogEntry[] = [
+  { id: '1', timestamp: '10:00:01', event: 'Système initialisé', type: 'info' as const },
+  { id: '2', timestamp: '10:00:02', event: 'Module de cryptage chargé', type: 'success' as const },
 ];
