@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -132,6 +132,100 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
             </div>
           </section>
 
+          {/* Privacy & Filtering Features (New Section) */}
+          <section>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
+              <Eye className="w-4 h-4" /> Confidentialité & Filtrage
+            </h3>
+            <div className="space-y-4">
+              
+               {/* Obfuscation Level */}
+               <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <div className="flex justify-between mb-3">
+                    <span className="font-medium text-slate-900 dark:text-white">Niveau d'Obfuscation</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
+                        settings.obfuscationLevel === 'standard' ? 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700' :
+                        settings.obfuscationLevel === 'high' ? 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20' :
+                        'bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'
+                    }`}>
+                        {getObfuscationLabel(settings.obfuscationLevel)}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                      {(['standard', 'high', 'ultra'] as const).map(level => (
+                          <button
+                            key={level}
+                            onClick={() => updateSettings('obfuscationLevel', level)}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg capitalize border transition-all active:scale-95 ${
+                                settings.obfuscationLevel === level 
+                                ? 'bg-brand-500 text-white border-brand-500 shadow-md shadow-brand-500/20' 
+                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                            }`}
+                          >
+                              {getObfuscationLabel(level)}
+                          </button>
+                      ))}
+                  </div>
+                  <div className="flex gap-2 text-[10px] text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700/50">
+                      <div className="mt-0.5"><Shield className="w-3 h-3" /></div>
+                      <p>
+                        {settings.obfuscationLevel === 'ultra' 
+                            ? "Masquage profond (Deep Packet Inspection resistant). Peut ralentir la vitesse mais contourne les pare-feux stricts (Chine, Iran)." 
+                            : settings.obfuscationLevel === 'high'
+                                ? "Chiffrement renforcé et headers masqués. Recommandé pour les réseaux publics ou restrictifs."
+                                : "Vitesse optimale avec chiffrement standard AES-256. Suffisant pour un usage quotidien."}
+                      </p>
+                  </div>
+               </div>
+
+               {/* AdBlocker */}
+              <div className={`flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 transition-opacity ${isFeatureLocked('elite') ? 'opacity-75' : ''}`}>
+                <div>
+                  <div className="font-medium flex items-center gap-2 text-slate-900 dark:text-white">
+                    AdBlocker AI
+                    {isFeatureLocked('elite') && <LockedBadge level="elite" />}
+                  </div>
+                  <div className="text-xs text-slate-500">Filtrage DNS intelligent (NetShield)</div>
+                </div>
+                <button 
+                  onClick={() => isFeatureLocked('elite') ? onShowPricing() : updateSettings('adBlocker', !settings.adBlocker)}
+                  className={`transition-transform active:scale-95 ${isFeatureLocked('elite') ? 'cursor-pointer' : ''}`}
+                >
+                  {isFeatureLocked('elite') ? (
+                    <Lock className="w-6 h-6 text-slate-300 dark:text-slate-600" />
+                  ) : settings.adBlocker ? (
+                    <ToggleRight className="w-10 h-10 text-brand-500" />
+                  ) : (
+                    <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </section>
+
+          {/* Network Security */}
+          <section>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
+              <Shield className="w-4 h-4" /> Sécurité Réseau
+            </h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div>
+                  <div className="font-medium text-slate-900 dark:text-white">Kill Switch</div>
+                  <div className="text-xs text-slate-500">Coupe Internet si le VPN lâche</div>
+                </div>
+                <button onClick={() => updateSettings('killSwitch', !settings.killSwitch)} className="transition-transform active:scale-95">
+                  {settings.killSwitch ? (
+                    <ToggleRight className="w-10 h-10 text-brand-500" />
+                  ) : (
+                    <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </section>
+
           {/* Split Tunneling */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
@@ -235,91 +329,6 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                   </div>
                 </div>
               )}
-            </div>
-          </section>
-
-          {/* Security Features */}
-          <section>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
-              <Shield className="w-4 h-4" /> Sécurité
-            </h3>
-            <div className="space-y-4">
-              
-               {/* Obfuscation Level */}
-               <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                  <div className="flex justify-between mb-3">
-                    <span className="font-medium text-slate-900 dark:text-white">Niveau d'Obfuscation</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${
-                        settings.obfuscationLevel === 'standard' ? 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700' :
-                        settings.obfuscationLevel === 'high' ? 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20' :
-                        'bg-red-100 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'
-                    }`}>
-                        {getObfuscationLabel(settings.obfuscationLevel)}
-                    </span>
-                  </div>
-                  <div className="flex gap-2 mb-3">
-                      {(['standard', 'high', 'ultra'] as const).map(level => (
-                          <button
-                            key={level}
-                            onClick={() => updateSettings('obfuscationLevel', level)}
-                            className={`flex-1 py-2 text-xs font-bold rounded-lg capitalize border transition-all active:scale-95 ${
-                                settings.obfuscationLevel === level 
-                                ? 'bg-brand-500 text-white border-brand-500 shadow-md shadow-brand-500/20' 
-                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-300'
-                            }`}
-                          >
-                              {getObfuscationLabel(level)}
-                          </button>
-                      ))}
-                  </div>
-                  <div className="flex gap-2 text-[10px] text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700/50">
-                      <div className="mt-0.5"><Shield className="w-3 h-3" /></div>
-                      <p>
-                        {settings.obfuscationLevel === 'ultra' 
-                            ? "Masquage profond (Deep Packet Inspection resistant). Peut ralentir la vitesse mais contourne les pare-feux stricts (Chine, Iran)." 
-                            : settings.obfuscationLevel === 'high'
-                                ? "Chiffrement renforcé et headers masqués. Recommandé pour les réseaux publics ou restrictifs."
-                                : "Vitesse optimale avec chiffrement standard AES-256. Suffisant pour un usage quotidien."}
-                      </p>
-                  </div>
-               </div>
-
-              <div className={`flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 transition-opacity ${isFeatureLocked('elite') ? 'opacity-75' : ''}`}>
-                <div>
-                  <div className="font-medium flex items-center gap-2 text-slate-900 dark:text-white">
-                    AdBlocker AI
-                    {isFeatureLocked('elite') && <LockedBadge level="elite" />}
-                  </div>
-                  <div className="text-xs text-slate-500">Filtrage DNS intelligent (NetShield)</div>
-                </div>
-                <button 
-                  onClick={() => isFeatureLocked('elite') ? onShowPricing() : updateSettings('adBlocker', !settings.adBlocker)}
-                  className={`transition-transform active:scale-95 ${isFeatureLocked('elite') ? 'cursor-pointer' : ''}`}
-                >
-                  {isFeatureLocked('elite') ? (
-                    <Lock className="w-6 h-6 text-slate-300 dark:text-slate-600" />
-                  ) : settings.adBlocker ? (
-                    <ToggleRight className="w-10 h-10 text-brand-500" />
-                  ) : (
-                    <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
-                  )}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                <div>
-                  <div className="font-medium text-slate-900 dark:text-white">Kill Switch</div>
-                  <div className="text-xs text-slate-500">Coupe Internet si le VPN lâche</div>
-                </div>
-                <button onClick={() => updateSettings('killSwitch', !settings.killSwitch)} className="transition-transform active:scale-95">
-                  {settings.killSwitch ? (
-                    <ToggleRight className="w-10 h-10 text-brand-500" />
-                  ) : (
-                    <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
-                  )}
-                </button>
-              </div>
-
             </div>
           </section>
 

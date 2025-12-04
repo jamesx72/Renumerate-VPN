@@ -18,7 +18,8 @@ export interface SecurityReport {
 export enum ConnectionMode {
   STANDARD = 'Standard',
   STEALTH = 'Furtif',
-  DOUBLE_HOP = 'Double Hop'
+  DOUBLE_HOP = 'Double Hop',
+  SMART_DNS = 'Smart DNS'
 }
 
 export interface LogEntry {

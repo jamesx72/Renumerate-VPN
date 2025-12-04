@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -116,6 +116,9 @@ function App() {
         setIsConnected(true);
         if (mode === ConnectionMode.DOUBLE_HOP) {
              addLog(`Double Hop Actif: Trafic routé via 2 serveurs sécurisés`, 'success');
+        } else if (mode === ConnectionMode.SMART_DNS) {
+             addLog(`Smart DNS Activé: Routage intelligent via ${appSettings.dns}`, 'success');
+             addLog(`Note: Votre IP d'origine est conservée pour les connexions directes.`, 'warning');
         } else {
              addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
         }
@@ -343,7 +346,9 @@ function App() {
             ? 'bg-indigo-500 shadow-indigo-500/50 hover:shadow-indigo-500/70'
             : mode === ConnectionMode.DOUBLE_HOP
                 ? 'bg-violet-500 shadow-violet-500/50 hover:shadow-violet-500/70'
-                : 'bg-emerald-500 shadow-emerald-500/50 hover:shadow-emerald-500/70' 
+                : mode === ConnectionMode.SMART_DNS
+                    ? 'bg-orange-500 shadow-orange-500/50 hover:shadow-orange-500/70'
+                    : 'bg-emerald-500 shadow-emerald-500/50 hover:shadow-emerald-500/70' 
         : 'bg-slate-700 shadow-slate-900/50 hover:bg-slate-600';
 
   const statusTextColor = isEmergency 
@@ -455,6 +460,7 @@ function App() {
                    {mode === ConnectionMode.STANDARD && <Zap className="w-3 h-3" />}
                    {mode === ConnectionMode.STEALTH && <Ghost className="w-3 h-3" />}
                    {mode === ConnectionMode.DOUBLE_HOP && <Layers className="w-3 h-3" />}
+                   {mode === ConnectionMode.SMART_DNS && <Globe className="w-3 h-3" />}
                    <span className="uppercase tracking-wide">{mode}</span>
                 </div>
               )}
@@ -492,6 +498,16 @@ function App() {
                   <Layers className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
                   <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200">
                     Double Hop Actif - Relais Chiffré
+                  </span>
+                </div>
+              )}
+
+              {/* Smart DNS Indicator Banner */}
+              {mode === ConnectionMode.SMART_DNS && isConnected && !isEmergency && (
+                <div className="absolute top-0 left-0 w-full bg-orange-950/90 border-b border-orange-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-shimmer">
+                  <Globe className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-200">
+                    Smart DNS Actif - IP D'origine Conservée
                   </span>
                 </div>
               )}
@@ -534,7 +550,9 @@ function App() {
                   <div className={`mt-6 flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-700 ${isRenumbering ? 'opacity-50 scale-95 blur-[1px]' : 'opacity-100 scale-100'}`}>
                     
                     <div className="flex flex-col items-center gap-2 p-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800 backdrop-blur-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Serveur Connecté</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                            {mode === ConnectionMode.SMART_DNS ? 'Serveur DNS Actif' : 'Serveur Connecté'}
+                        </span>
                         
                         <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2">
@@ -562,11 +580,11 @@ function App() {
                   </div>
                 )}
 
-                <div className="mt-4 flex gap-3 justify-center w-full">
+                <div className="mt-4 flex flex-wrap gap-3 justify-center w-full">
                   {Object.values(ConnectionMode).map((m) => {
                     const isSelected = mode === m;
                     // Icon selection
-                    const Icon = m === ConnectionMode.STEALTH ? Ghost : m === ConnectionMode.DOUBLE_HOP ? Layers : Zap;
+                    const Icon = m === ConnectionMode.STEALTH ? Ghost : m === ConnectionMode.DOUBLE_HOP ? Layers : m === ConnectionMode.SMART_DNS ? Globe : Zap;
                     
                     return (
                         <button
@@ -579,7 +597,9 @@ function App() {
                                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
                                 : m === ConnectionMode.DOUBLE_HOP
                                     ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
-                                    : 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
+                                    : m === ConnectionMode.SMART_DNS
+                                        ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
+                                        : 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
                           }`}
                         >
