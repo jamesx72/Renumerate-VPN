@@ -32,6 +32,14 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
     </button>
   );
 
+  const getObfuscationLabel = (level: string) => {
+    switch(level) {
+        case 'high': return 'Élevé';
+        case 'ultra': return 'Ultra';
+        default: return 'Standard';
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-end">
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
@@ -153,28 +161,17 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
           {/* Security Features */}
           <section>
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
-              <Shield className="w-4 h-4" /> Sécurité Avancée
+              <Shield className="w-4 h-4" /> Sécurité
             </h3>
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                <div>
-                  <div className="font-medium">Kill Switch</div>
-                  <div className="text-xs text-slate-500">Coupe Internet si le VPN lâche</div>
-                </div>
-                <button onClick={() => updateSettings('killSwitch', !settings.killSwitch)}>
-                  {settings.killSwitch ? (
-                    <ToggleRight className="w-10 h-10 text-brand-500" />
-                  ) : (
-                    <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
-                  )}
-                </button>
-              </div>
-
+              
                {/* Obfuscation Level */}
                <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
                   <div className="flex justify-between mb-2">
                     <span className="font-medium">Niveau d'Obfuscation</span>
-                    <span className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded uppercase">{settings.obfuscationLevel}</span>
+                    <span className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded uppercase">
+                        {getObfuscationLabel(settings.obfuscationLevel)}
+                    </span>
                   </div>
                   <div className="flex gap-2">
                       {(['standard', 'high', 'ultra'] as const).map(level => (
@@ -187,22 +184,26 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                 : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-300'
                             }`}
                           >
-                              {level}
+                              {getObfuscationLabel(level)}
                           </button>
                       ))}
                   </div>
                   <p className="text-[10px] text-slate-400 mt-2">
-                      *Ultra peut ralentir la connexion mais maximise l'anonymat.
+                      {settings.obfuscationLevel === 'ultra' 
+                        ? "Masquage profond des paquets (DPI-resistant). Peut ralentir la vitesse." 
+                        : settings.obfuscationLevel === 'high'
+                            ? "Recommandé pour les réseaux restrictifs."
+                            : "Vitesse optimale, chiffrement standard."}
                   </p>
                </div>
 
               <div className={`flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 transition-opacity ${isFeatureLocked('elite') ? 'opacity-75' : ''}`}>
                 <div>
                   <div className="font-medium flex items-center gap-2">
-                    AdBlocker NetShield
+                    AdBlocker AI
                     {isFeatureLocked('elite') && <LockedBadge level="elite" />}
                   </div>
-                  <div className="text-xs text-slate-500">Bloque pubs et traqueurs</div>
+                  <div className="text-xs text-slate-500">Filtrage publicitaire intelligent (NetShield)</div>
                 </div>
                 <button 
                   onClick={() => isFeatureLocked('elite') ? onShowPricing() : updateSettings('adBlocker', !settings.adBlocker)}
@@ -217,6 +218,21 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                   )}
                 </button>
               </div>
+
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div>
+                  <div className="font-medium">Kill Switch</div>
+                  <div className="text-xs text-slate-500">Coupe Internet si le VPN lâche</div>
+                </div>
+                <button onClick={() => updateSettings('killSwitch', !settings.killSwitch)}>
+                  {settings.killSwitch ? (
+                    <ToggleRight className="w-10 h-10 text-brand-500" />
+                  ) : (
+                    <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+                  )}
+                </button>
+              </div>
+
             </div>
           </section>
 
