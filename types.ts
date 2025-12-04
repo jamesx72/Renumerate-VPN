@@ -1,3 +1,4 @@
+
 export interface VirtualIdentity {
   ip: string;
   country: string;
@@ -25,4 +26,14 @@ export interface LogEntry {
   timestamp: string;
   event: string;
   type: 'info' | 'warning' | 'success' | 'error';
+}
+
+export type PlanTier = 'free' | 'pro' | 'elite';
+
+export interface AppSettings {
+  protocol: 'wireguard' | 'openvpn' | 'ikev2';
+  dns: 'cloudflare' | 'google' | 'custom';
+  killSwitch: boolean;
+  splitTunneling: boolean;
+  adBlocker: boolean;
 }

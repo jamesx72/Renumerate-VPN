@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
+import { PricingModal } from './components/PricingModal';
+import { SettingsPanel } from './components/SettingsPanel';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
-import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry } from './types';
+import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings } from './types';
 import { analyzeSecurity } from './services/geminiService';
 
 function App() {
@@ -18,6 +20,18 @@ function App() {
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // New State for Monetization and Settings
+  const [userPlan, setUserPlan] = useState<PlanTier>('free');
+  const [showPricing, setShowPricing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [appSettings, setAppSettings] = useState<AppSettings>({
+    protocol: 'wireguard',
+    dns: 'cloudflare',
+    killSwitch: true,
+    splitTunneling: false,
+    adBlocker: false
+  });
 
   useEffect(() => {
     if (isDark) {
@@ -39,7 +53,7 @@ function App() {
       event,
       type
     };
-    setLogs(prev => [...prev, newLog].slice(-50)); // Keep last 50, append to end for terminal feel
+    setLogs(prev => [...prev, newLog].slice(-50));
   };
 
   const toggleConnection = async () => {
@@ -54,13 +68,23 @@ function App() {
       }, 1500);
     } else {
       setIsDisconnecting(false);
-      addLog('Initialisation du protocole de connexion...', 'info');
+      addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
       setTimeout(() => {
         setIsConnected(true);
-        addLog('Connexion établie - Canal chiffré actif', 'success');
+        addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
+        if (appSettings.killSwitch) addLog('Kill Switch activé', 'success');
         handleAnalyze();
       }, 1500);
     }
+  };
+
+  const handleModeChange = (newMode: ConnectionMode) => {
+    if (newMode !== ConnectionMode.STANDARD && userPlan === 'free') {
+      addLog(`Tentative d'accès ${newMode} bloquée (Premium requis)`, 'warning');
+      setShowPricing(true);
+      return;
+    }
+    if (!isConnected) setMode(newMode);
   };
 
   const handleRenumber = () => {
@@ -101,22 +125,76 @@ function App() {
     addLog('Identité copiée dans le presse-papier', 'info');
   };
 
+  const handleUpgrade = (plan: PlanTier) => {
+    addLog(`Traitement de la mise à niveau vers ${plan.toUpperCase()}...`, 'info');
+    setTimeout(() => {
+      setUserPlan(plan);
+      setShowPricing(false);
+      addLog(`Mise à niveau réussie ! Bienvenue dans le plan ${plan.toUpperCase()}`, 'success');
+    }, 1500);
+  };
+
+  const handleUpdateSettings = (key: keyof AppSettings, value: any) => {
+    setAppSettings(prev => ({ ...prev, [key]: value }));
+    addLog(`Configuration mise à jour: ${key} -> ${value}`, 'info');
+  };
+
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+      
+      {/* Modals */}
+      {showPricing && (
+        <PricingModal 
+          currentPlan={userPlan} 
+          onUpgrade={handleUpgrade} 
+          onClose={() => setShowPricing(false)} 
+        />
+      )}
+      
+      {showSettings && (
+        <SettingsPanel 
+          settings={appSettings} 
+          updateSettings={handleUpdateSettings} 
+          onClose={() => setShowSettings(false)} 
+        />
+      )}
+
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="w-8 h-8 text-brand-500" />
-            <span className="font-bold text-xl tracking-tight">Renumerate<span className="text-brand-500">VPN</span></span>
+            <span className="font-bold text-xl tracking-tight hidden md:inline">Renumerate<span className="text-brand-500">VPN</span></span>
+            <span className="font-bold text-xl tracking-tight md:hidden">R<span className="text-brand-500">VPN</span></span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowPricing(true)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold transition-all ${
+                userPlan === 'free' 
+                  ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:shadow-lg hover:shadow-amber-500/20' 
+                  : 'bg-slate-800 text-amber-400 border border-amber-500/30'
+              }`}
+            >
+              <Crown className="w-4 h-4" />
+              <span className="hidden sm:inline">{userPlan === 'free' ? 'Go Premium' : userPlan.toUpperCase()}</span>
+            </button>
+
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              title="Configuration"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+
             <button
               onClick={() => setIsDark(!isDark)}
-              className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
             >
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${isConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}>
+            
+            <div className={`hidden sm:flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${isConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}>
               <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`} />
               {isConnected ? 'SÉCURISÉ' : 'DÉCONNECTÉ'}
             </div>
@@ -153,15 +231,18 @@ function App() {
                   {Object.values(ConnectionMode).map((m) => (
                     <button
                       key={m}
-                      onClick={() => !isConnected && setMode(m)}
+                      onClick={() => handleModeChange(m)}
                       disabled={isConnected}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         mode === m 
                           ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/25' 
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
                       }`}
                     >
                       {m}
+                      {m !== ConnectionMode.STANDARD && userPlan === 'free' && (
+                        <Lock className="w-3 h-3 absolute -top-1 -right-1 text-amber-500 bg-slate-900 rounded-full p-0.5" />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -204,6 +285,9 @@ function App() {
                   <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400">
                     <Activity className="w-4 h-4" /> Trafic Réseau
                   </h3>
+                  <span className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-500 font-mono">
+                    {appSettings.protocol.toUpperCase()}
+                  </span>
                 </div>
                 <TrafficMonitor isDark={isDark} />
               </div>
@@ -214,7 +298,7 @@ function App() {
                     <Lock className="w-4 h-4" /> Score d'Anonymat
                   </h3>
                 </div>
-                <AnonymityScore score={securityReport?.score || (isConnected ? 98 : 0)} isDark={isDark} />
+                <AnonymityScore score={securityReport?.score || (isConnected ? (userPlan === 'free' ? 75 : 99) : 0)} isDark={isDark} />
               </div>
             </div>
             
@@ -229,6 +313,12 @@ function App() {
                      <Globe className="w-5 h-5 text-brand-500" />
                      {isConnected ? 'Identité Virtuelle' : 'Identité Réelle'}
                    </h3>
+                   {isConnected && (
+                     <div className="flex gap-1">
+                       {appSettings.killSwitch && <div className="w-2 h-2 rounded-full bg-red-500" title="Kill Switch ON"></div>}
+                       {appSettings.adBlocker && <div className="w-2 h-2 rounded-full bg-brand-500" title="AdBlocker ON"></div>}
+                     </div>
+                   )}
                 </div>
                 
                 {isConnected ? (
