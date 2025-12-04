@@ -40,6 +40,11 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
     }
   };
 
+  const formatTime = (minutes: number) => {
+    if (minutes === 60) return '1 h';
+    return `${minutes} min`;
+  };
+
   const protocols = [
     { id: 'wireguard', name: 'WireGuard', desc: 'Performance maximale, code léger.', badge: 'Recommandé' },
     { id: 'openvpn', name: 'OpenVPN', desc: 'Standard éprouvé, compatibilité max.', badge: 'Stable' },
@@ -94,7 +99,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
           
-          {/* General Section (New) */}
+          {/* General Section */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
               <Settings className="w-4 h-4" /> Général
@@ -319,7 +324,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                         <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Intervalle</span>
                     </div>
                     <span className="text-sm font-bold text-brand-500 bg-brand-50 dark:bg-brand-500/10 px-2.5 py-0.5 rounded-md border border-brand-100 dark:border-brand-500/20 shadow-sm">
-                        {settings.rotationInterval} min
+                        {formatTime(settings.rotationInterval)}
                     </span>
                   </div>
                   
@@ -343,7 +348,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                 : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-slate-600 hover:text-brand-600 dark:hover:text-brand-400'
                             }`}
                         >
-                            {mins}m
+                            {mins === 60 ? '1 h' : `${mins}m`}
                         </button>
                     ))}
                   </div>
