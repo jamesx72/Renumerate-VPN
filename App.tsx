@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Activity, Share2, Wifi, Settings, Crown, Wallet } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -21,7 +21,8 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
   // New State for Monetization, Settings, and Earnings
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [showPricing, setShowPricing] = useState(false);
@@ -285,6 +286,21 @@ function App() {
                   ))}
                 </div>
 
+                <button
+                  onClick={handleRenumber}
+                  disabled={!isConnected || isRenumbering}
+                  className={`mt-6 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border ${
+                    !isConnected 
+                      ? 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 border-slate-200 dark:border-slate-800 opacity-60 cursor-not-allowed'
+                      : isRenumbering
+                        ? 'bg-brand-500/10 text-brand-500 border-brand-500/20 cursor-wait'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400 hover:shadow-lg hover:shadow-brand-500/10'
+                  }`}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
+                  <span>{isRenumbering ? 'Renumérotation...' : 'Renuméroter Identité'}</span>
+                </button>
+
                 {isConnected && !isDisconnecting && (
                   <div className={`mt-5 flex flex-col items-center transition-all duration-500 ${isRenumbering ? 'opacity-50 scale-95 blur-[0.5px]' : 'opacity-100 scale-100'}`}>
                     <div className="flex items-center gap-3 mb-1">
@@ -308,16 +324,6 @@ function App() {
                         <span className="text-xs text-slate-400 opacity-75 hidden sm:inline">• {currentIdentity.city}</span>
                     </div>
                     
-                    <div className="flex flex-col items-center gap-1">
-                      <button
-                        onClick={handleRenumber}
-                        disabled={isRenumbering}
-                        className="flex items-center gap-2 text-brand-500 hover:text-brand-400 transition-colors text-sm font-medium hover:underline decoration-brand-500/30 underline-offset-4"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
-                        Renouveler l'identité
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
