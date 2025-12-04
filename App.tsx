@@ -128,7 +128,7 @@ function App() {
        setEntryIdentity(selectedEntry);
 
        setTimeout(() => {
-           addLog(`Tunnel établi vers le nœud d'entrée (${selectedEntry.country})...`, 'info');
+           addLog(`Tunnel établi vers le nœud d'entrée ${selectedEntry.ip} (${selectedEntry.country})...`, 'info');
        }, 500);
        setTimeout(() => {
            addLog('Relais confirmé. Routage vers le nœud de sortie...', 'success');
@@ -277,7 +277,10 @@ function App() {
       setShowPricing(true);
       return;
     }
-    if (!isConnected) setMode(newMode);
+    if (!isConnected) {
+        setMode(newMode);
+        addLog(`Mode de connexion réglé sur : ${newMode}`, 'info');
+    }
   };
 
   const handleRenumber = () => {
