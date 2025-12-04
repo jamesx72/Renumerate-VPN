@@ -24,13 +24,16 @@ import {
   Coins,
   Wallet,
   TrendingUp,
-  Signal
+  Signal,
+  Info,
+  CheckCircle2
 } from 'lucide-react';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry } from './types';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
 import { analyzeSecurity } from './services/geminiService';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
+import { SecureFileTransfer } from './components/SecureFileTransfer';
 
 // Helper Component for Signal Strength
 const SignalIndicator = ({ ms }: { ms: number }) => (
@@ -69,6 +72,7 @@ const App: React.FC = () => {
   const [killSwitchEnabled, setKillSwitchEnabled] = useState(true);
   const [trafficStats, setTrafficStats] = useState({ down: 0, up: 0 });
   const [earnings, setEarnings] = useState(12.45); // Initial wallet balance simulation
+  const [showEarningsInfo, setShowEarningsInfo] = useState(false);
 
   // Derived State
   const locations = useMemo(() => Array.from(new Set(MOCK_IDENTITIES.map(id => id.country))), []);
@@ -255,11 +259,16 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!isConnected) return;
 
+    // Define rate based on mode
+    let rate = 0.00042; // Standard
+    if (mode === ConnectionMode.DOUBLE_HOP) rate = 0.00064;
+    if (mode === ConnectionMode.STEALTH) rate = 0.00092;
+
     if (uptimeIntervalRef.current) clearInterval(uptimeIntervalRef.current);
     uptimeIntervalRef.current = setInterval(() => {
       setUptime(u => u + 1);
       // Simulate earning money while connected
-      setEarnings(prev => prev + 0.00042);
+      setEarnings(prev => prev + rate);
     }, 1000);
 
     if (rotationIntervalRef.current) clearInterval(rotationIntervalRef.current);
@@ -307,6 +316,14 @@ const App: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const getEarningRate = () => {
+    switch (mode) {
+      case ConnectionMode.STEALTH: return 0.00092;
+      case ConnectionMode.DOUBLE_HOP: return 0.00064;
+      default: return 0.00042;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans selection:bg-brand-500 selection:text-white pb-10 transition-colors duration-300">
       
@@ -347,7 +364,7 @@ const App: React.FC = () => {
 
              <div className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors duration-300 ${
                isDisconnecting 
-                 ? 'bg-amber-100 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/50 text-amber-600 dark:text-amber-400 animate-pulse'
+                 ? 'bg-amber-100 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/50 text-amber-600 dark:text-amber-400 animate-shake'
                  : isConnected 
                     ? 'bg-emerald-100 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/50 text-emerald-700 dark:text-emerald-400' 
                     : 'bg-red-100 dark:bg-red-500/10 border-red-300 dark:border-red-500/50 text-red-700 dark:text-red-400'
@@ -469,7 +486,7 @@ const App: React.FC = () => {
                 {/* Status Indicators */}
                 <div className="flex items-center justify-center gap-2 mt-2">
                   {isDisconnecting ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-100 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-600 dark:text-amber-400 animate-pulse flex items-center gap-1">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-100 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-600 dark:text-amber-400 animate-shake flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
                         INTERRUPTION...
                       </span>
@@ -748,19 +765,69 @@ const App: React.FC = () => {
               }`}>
                 <TrendingUp className="w-3.5 h-3.5" />
                 {isConnected ? (
-                  <span className="flex items-center gap-1">
-                    Taux actif: <span className="font-mono font-bold">+0.00042/s</span>
-                  </span>
+                  <div className="flex justify-between w-full">
+                    <span className="flex items-center gap-1">
+                      Taux: <span className="font-mono font-bold">+{getEarningRate().toFixed(5)}/s</span>
+                    </span>
+                     <span className="opacity-70">
+                       ~${(getEarningRate() * 3600).toFixed(2)}/h
+                     </span>
+                  </div>
                 ) : (
                   <span>Minage inactif</span>
                 )}
               </div>
               
-              <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1 overflow-hidden">
+              {/* Projections Section */}
+              {isConnected && (
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2 border border-slate-100 dark:border-slate-700">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wide">Est. 24h</span>
+                          <div className="text-sm font-mono font-bold text-slate-700 dark:text-slate-300">
+                              ${(getEarningRate() * 86400).toFixed(2)}
+                          </div>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2 border border-slate-100 dark:border-slate-700">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wide">Est. 30j</span>
+                          <div className="text-sm font-mono font-bold text-slate-700 dark:text-slate-300">
+                              ${(getEarningRate() * 86400 * 30).toFixed(2)}
+                          </div>
+                      </div>
+                  </div>
+              )}
+              
+              {showEarningsInfo && (
+                  <div className="mt-2 bg-brand-50 dark:bg-brand-900/20 p-3 rounded-lg text-xs text-brand-800 dark:text-brand-300 border border-brand-100 dark:border-brand-500/20 animate-in fade-in slide-in-from-top-2">
+                     <div className="flex gap-2 mb-2">
+                         <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                         <p>Contribuez au réseau décentralisé en partageant votre bande passante sécurisée.</p>
+                     </div>
+                     <ul className="space-y-1 ml-6 list-disc opacity-90">
+                         <li>Standard: Rémunération de base</li>
+                         <li>Double Hop: x1.5 (plus de ressources)</li>
+                         <li>Furtif: x2.2 (nœud de sortie critique)</li>
+                     </ul>
+                  </div>
+              )}
+
+              <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1 overflow-hidden mt-1">
                 {isConnected && (
                   <div className="h-full bg-emerald-500 w-full animate-shimmer"></div>
                 )}
               </div>
+
+              {/* Info / Withdraw Actions */}
+               <div className="flex gap-2 mt-1">
+                   <button className="flex-1 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-colors shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 group">
+                       Retirer <span className="opacity-0 group-hover:opacity-100 transition-opacity -ml-2 group-hover:ml-0">→</span>
+                   </button>
+                   <button 
+                     onClick={() => setShowEarningsInfo(!showEarningsInfo)}
+                     className={`px-3 py-2 rounded-lg border transition-colors ${showEarningsInfo ? 'bg-brand-50 dark:bg-brand-500/20 border-brand-200 dark:border-brand-500/50 text-brand-600 dark:text-brand-400' : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                   >
+                       <Info className="w-4 h-4" />
+                   </button>
+               </div>
             </div>
           </div>
 
@@ -810,6 +877,9 @@ const App: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Secure File Transfer - New Component */}
+          <SecureFileTransfer isConnected={isConnected && !isDisconnecting} addLog={addLog} />
 
           {/* Logs */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 flex-1 min-h-[300px] shadow-sm dark:shadow-none transition-colors duration-300">
