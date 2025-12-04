@@ -364,8 +364,8 @@ function App() {
                   {isEmergency ? 'KILL SWITCH ACTIVÉ' : isConnected ? 'SÉCURISÉ' : 'DÉCONNECTÉ'}
               </span>
               
-              {!isEmergency && isConnected && (
-                <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-emerald-500/20 text-xs">
+              {!isEmergency && (
+                <div className={`flex items-center gap-1.5 ml-2 pl-2 border-l text-xs transition-colors ${isConnected ? 'border-emerald-500/20' : 'border-slate-500/20'}`}>
                    {mode === ConnectionMode.STANDARD && <Zap className="w-3 h-3" />}
                    {mode === ConnectionMode.STEALTH && <Ghost className="w-3 h-3" />}
                    {mode === ConnectionMode.DOUBLE_HOP && <Layers className="w-3 h-3" />}
