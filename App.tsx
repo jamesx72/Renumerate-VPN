@@ -7,6 +7,7 @@ import { PricingModal } from './components/PricingModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
 import { SystemLogs } from './components/SystemLogs';
+import { WithdrawalModal } from './components/WithdrawalModal';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings } from './types';
 import { analyzeSecurity } from './services/geminiService';
@@ -28,6 +29,7 @@ function App() {
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showWithdrawal, setShowWithdrawal] = useState(false);
   const [balance, setBalance] = useState(0.0000);
   const [appSettings, setAppSettings] = useState<AppSettings>({
     protocol: 'wireguard',
@@ -266,18 +268,25 @@ function App() {
     }
   };
 
-  const handleWithdraw = () => {
+  const handleOpenWithdrawal = () => {
     if (balance < 1) {
         addLog('Solde insuffisant pour retrait (Min 1 RNC)', 'warning');
         return;
     }
+    setShowWithdrawal(true);
+  };
+
+  const handleConfirmWithdrawal = (method: string, address: string) => {
+    const amount = balance.toFixed(4);
+    addLog(`Retrait de ${amount} RNC via ${method === 'crypto' ? 'Crypto' : 'PayPal'} initié vers ${address}...`, 'info');
     
-    addLog(`Initiation retrait de ${balance.toFixed(4)} RNC...`, 'info');
+    // Reset balance
+    setBalance(0);
+    setShowWithdrawal(false);
     
     setTimeout(() => {
-        setBalance(0);
-        addLog('Retrait confirmé vers le portefeuille (TxID: 0x8f...2a)', 'success');
-    }, 2000);
+        addLog(`Transaction confirmée: ${amount} RNC envoyés avec succès.`, 'success');
+    }, 1000);
   };
 
   // Dynamic Styles for Emergency Mode
@@ -309,6 +318,14 @@ function App() {
           onClose={() => setShowSettings(false)}
           userPlan={userPlan}
           onShowPricing={() => setShowPricing(true)}
+        />
+      )}
+
+      {showWithdrawal && (
+        <WithdrawalModal 
+            balance={balance}
+            onClose={() => setShowWithdrawal(false)}
+            onConfirm={handleConfirmWithdrawal}
         />
       )}
 
@@ -459,24 +476,37 @@ function App() {
                   </div>
                 )}
 
-                <div className="mt-4 flex gap-4">
-                  {Object.values(ConnectionMode).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => handleModeChange(m)}
-                      disabled={isConnected || isEmergency}
-                      className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                        mode === m 
-                          ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/25' 
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {m}
-                      {m !== ConnectionMode.STANDARD && userPlan === 'free' && (
-                        <Lock className="w-3 h-3 absolute -top-1 -right-1 text-amber-500 bg-slate-900 rounded-full p-0.5" />
-                      )}
-                    </button>
-                  ))}
+                <div className="mt-4 flex gap-3 justify-center w-full">
+                  {Object.values(ConnectionMode).map((m) => {
+                    const isSelected = mode === m;
+                    // Icon selection
+                    const Icon = m === ConnectionMode.STEALTH ? Ghost : m === ConnectionMode.DOUBLE_HOP ? Layers : Zap;
+                    
+                    return (
+                        <button
+                          key={m}
+                          onClick={() => handleModeChange(m)}
+                          disabled={isConnected || isEmergency}
+                          className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
+                            isSelected
+                              ? m === ConnectionMode.STEALTH
+                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
+                                : 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          <Icon className={`w-4 h-4 ${isSelected ? 'animate-pulse' : ''}`} />
+                          <span>{m}</span>
+                          
+                          {/* Lock icon for premium modes */}
+                          {m !== ConnectionMode.STANDARD && userPlan === 'free' && (
+                            <div className="absolute -top-1.5 -right-1.5 bg-slate-900 text-amber-500 rounded-full p-0.5 border border-slate-700 shadow-sm z-10">
+                                <Lock className="w-2.5 h-2.5" />
+                            </div>
+                          )}
+                        </button>
+                    )
+                  })}
                 </div>
 
                 {isConnected && !isEmergency && (
@@ -543,7 +573,7 @@ function App() {
                 plan={userPlan} 
                 balance={balance} 
                 onUpgrade={() => setShowPricing(true)} 
-                onWithdraw={handleWithdraw}
+                onWithdraw={handleOpenWithdrawal}
              />
 
              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 min-h-[300px]">
