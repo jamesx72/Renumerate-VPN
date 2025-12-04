@@ -266,6 +266,31 @@ function App() {
                   {isDisconnecting ? 'Déconnexion...' : isConnected ? 'Connexion Active' : 'Prêt à connecter'}
                 </h2>
                 
+                {isConnected && !isDisconnecting && (
+                  <div className={`mt-4 flex flex-col items-center transition-all duration-500 ${isRenumbering ? 'opacity-50 scale-95 blur-[0.5px]' : 'opacity-100 scale-100'}`}>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700/50 shadow-sm dark:shadow-inner group cursor-default hover:border-brand-300 dark:hover:border-brand-500/30 transition-colors">
+                         <span className="font-mono text-sm font-bold text-slate-700 dark:text-slate-200 tracking-wider group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{currentIdentity.ip}</span>
+                      </div>
+                      
+                      <button 
+                        onClick={shareIdentity}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-500/20 hover:text-brand-600 dark:hover:text-brand-400 transition-colors shadow-sm group/share"
+                        title="Partager l'identité"
+                      >
+                        <Share2 className="w-3.5 h-3.5 group-hover/share:scale-110 transition-transform" />
+                        <span>Partager</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-2 text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
+                        <Globe className="w-3.5 h-3.5 text-brand-500" />
+                        <span className="text-sm font-medium">{currentIdentity.country}</span>
+                        <span className="text-xs text-slate-400 opacity-75 hidden sm:inline">• {currentIdentity.city}</span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-4 flex gap-4">
                   {Object.values(ConnectionMode).map((m) => (
                     <button
@@ -300,32 +325,6 @@ function App() {
                   <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
                   <span>{isRenumbering ? 'Renumérotation...' : 'Renuméroter Identité'}</span>
                 </button>
-
-                {isConnected && !isDisconnecting && (
-                  <div className={`mt-5 flex flex-col items-center transition-all duration-500 ${isRenumbering ? 'opacity-50 scale-95 blur-[0.5px]' : 'opacity-100 scale-100'}`}>
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700/50 shadow-sm dark:shadow-inner group cursor-default hover:border-brand-300 dark:hover:border-brand-500/30 transition-colors">
-                         <span className="font-mono text-sm font-bold text-slate-700 dark:text-slate-200 tracking-wider group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{currentIdentity.ip}</span>
-                      </div>
-                      
-                      <button 
-                        onClick={shareIdentity}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-500/20 hover:text-brand-600 dark:hover:text-brand-400 transition-colors shadow-sm group/share"
-                        title="Partager l'identité"
-                      >
-                        <Share2 className="w-3.5 h-3.5 group-hover/share:scale-110 transition-transform" />
-                        <span>Partager</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2 mb-4 text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
-                        <Globe className="w-3.5 h-3.5 text-brand-500" />
-                        <span className="text-sm font-medium">{currentIdentity.country}</span>
-                        <span className="text-xs text-slate-400 opacity-75 hidden sm:inline">• {currentIdentity.city}</span>
-                    </div>
-                    
-                  </div>
-                )}
               </div>
             </div>
 
