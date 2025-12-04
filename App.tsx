@@ -512,22 +512,23 @@ function App() {
                   })}
                 </div>
 
-                {isConnected && !isEmergency && (
-                  <div className="flex gap-3 mt-6">
+                <div className="flex gap-3 mt-6">
                     <button
                       onClick={handleRenumber}
-                      disabled={isRenumbering}
+                      disabled={!isConnected || isRenumbering || isEmergency}
                       className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border ${
-                        isRenumbering
-                          ? 'bg-brand-500/10 text-brand-500 border-brand-500/20 cursor-wait'
-                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400 hover:shadow-lg hover:shadow-brand-500/10'
+                        !isConnected || isEmergency 
+                          ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-75'
+                          : isRenumbering
+                            ? 'bg-brand-500/10 text-brand-500 border-brand-500/20 cursor-wait'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400 hover:shadow-lg hover:shadow-brand-500/10'
                       }`}
                     >
                       <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
                       <span>{isRenumbering ? 'Renumérotation...' : 'Renuméroter'}</span>
                     </button>
 
-                    {appSettings.killSwitch && (
+                    {isConnected && !isEmergency && appSettings.killSwitch && (
                          <button
                          onClick={handleEmergencyProtocol}
                          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/10"
@@ -538,7 +539,6 @@ function App() {
                        </button>
                     )}
                   </div>
-                )}
               </div>
             </div>
 
