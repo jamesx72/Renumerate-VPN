@@ -67,6 +67,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
         updateSettings('killSwitch', true);
         updateSettings('splitTunneling', false);
         updateSettings('adBlocker', false);
+        updateSettings('autoConnect', false);
         updateSettings('autoRotation', false);
         updateSettings('rotationInterval', 10);
         updateSettings('obfuscationLevel', 'standard');
@@ -93,6 +94,28 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
           
+          {/* General Section (New) */}
+          <section>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
+              <Settings className="w-4 h-4" /> Général
+            </h3>
+            <div className="space-y-4">
+               <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div>
+                  <div className="font-medium text-slate-900 dark:text-white">Connexion Automatique</div>
+                  <div className="text-xs text-slate-500">Se connecter au lancement de l'app</div>
+                </div>
+                <button onClick={() => updateSettings('autoConnect', !settings.autoConnect)} className="transition-transform active:scale-95">
+                  {settings.autoConnect ? (
+                    <ToggleRight className="w-10 h-10 text-brand-500" />
+                  ) : (
+                    <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </section>
+
           {/* Protocol Section */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
@@ -132,7 +155,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
             </div>
           </section>
 
-          {/* Privacy & Filtering Features (New Section) */}
+          {/* Privacy & Filtering Features */}
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
               <Eye className="w-4 h-4" /> Confidentialité & Filtrage
@@ -179,21 +202,18 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                </div>
 
                {/* AdBlocker */}
-              <div className={`flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 transition-opacity ${isFeatureLocked('elite') ? 'opacity-75' : ''}`}>
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
                 <div>
                   <div className="font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     AdBlocker AI
-                    {isFeatureLocked('elite') && <LockedBadge level="elite" />}
                   </div>
                   <div className="text-xs text-slate-500">Filtrage DNS intelligent (NetShield)</div>
                 </div>
                 <button 
-                  onClick={() => isFeatureLocked('elite') ? onShowPricing() : updateSettings('adBlocker', !settings.adBlocker)}
-                  className={`transition-transform active:scale-95 ${isFeatureLocked('elite') ? 'cursor-pointer' : ''}`}
+                  onClick={() => updateSettings('adBlocker', !settings.adBlocker)}
+                  className="transition-transform active:scale-95"
                 >
-                  {isFeatureLocked('elite') ? (
-                    <Lock className="w-6 h-6 text-slate-300 dark:text-slate-600" />
-                  ) : settings.adBlocker ? (
+                  {settings.adBlocker ? (
                     <ToggleRight className="w-10 h-10 text-brand-500" />
                   ) : (
                     <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />

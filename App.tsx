@@ -17,8 +17,19 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isEmergency, setIsEmergency] = useState(false); // New Emergency State
-  const [mode, setMode] = useState<ConnectionMode>(ConnectionMode.STANDARD);
-  const [currentIdentity, setCurrentIdentity] = useState<VirtualIdentity>(MOCK_IDENTITIES[0]);
+  
+  // Persistent State: Mode
+  const [mode, setMode] = useState<ConnectionMode>(() => {
+    const saved = localStorage.getItem('vpnMode');
+    return saved ? (saved as ConnectionMode) : ConnectionMode.STANDARD;
+  });
+
+  // Persistent State: Current Identity (Last Server)
+  const [currentIdentity, setCurrentIdentity] = useState<VirtualIdentity>(() => {
+    const saved = localStorage.getItem('currentIdentity');
+    return saved ? JSON.parse(saved) : MOCK_IDENTITIES[0];
+  });
+
   const [entryIdentity, setEntryIdentity] = useState<VirtualIdentity | null>(null); // Entry node for Double Hop
   const [isRenumbering, setIsRenumbering] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
@@ -32,15 +43,21 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWithdrawal, setShowWithdrawal] = useState(false);
   const [balance, setBalance] = useState(0.0000);
-  const [appSettings, setAppSettings] = useState<AppSettings>({
-    protocol: 'wireguard',
-    dns: 'cloudflare',
-    killSwitch: true,
-    splitTunneling: false,
-    adBlocker: false,
-    autoRotation: false,
-    rotationInterval: 10,
-    obfuscationLevel: 'standard'
+  
+  // Persistent State: App Settings
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => {
+    const saved = localStorage.getItem('appSettings');
+    return saved ? JSON.parse(saved) : {
+      protocol: 'wireguard',
+      dns: 'cloudflare',
+      killSwitch: true,
+      splitTunneling: false,
+      adBlocker: false, 
+      autoConnect: false,
+      autoRotation: false,
+      rotationInterval: 10,
+      obfuscationLevel: 'standard'
+    };
   });
 
   useEffect(() => {
@@ -50,6 +67,19 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDark]);
+
+  // Persistence Effects
+  useEffect(() => {
+    localStorage.setItem('appSettings', JSON.stringify(appSettings));
+  }, [appSettings]);
+
+  useEffect(() => {
+    localStorage.setItem('vpnMode', mode);
+  }, [mode]);
+
+  useEffect(() => {
+    localStorage.setItem('currentIdentity', JSON.stringify(currentIdentity));
+  }, [currentIdentity]);
 
   // Earning Logic
   useEffect(() => {
@@ -79,67 +109,94 @@ function App() {
     setLogs(prev => [...prev, newLog].slice(-50));
   };
 
-  const toggleConnection = async () => {
-    if (isEmergency) return; // Prevent toggling during emergency
+  const connectVPN = useCallback(() => {
+    setIsDisconnecting(false);
+    addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
+    
+    if (mode === ConnectionMode.DOUBLE_HOP) {
+       // Select a random entry node different from current identity
+       const potentialEntryNodes = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
+       const selectedEntry = potentialEntryNodes[Math.floor(Math.random() * potentialEntryNodes.length)];
+       setEntryIdentity(selectedEntry);
 
-    if (isConnected) {
-      setIsDisconnecting(true);
-      addLog('Déconnexion initiée...', 'warning');
-      setTimeout(() => {
-        setIsConnected(false);
-        setIsDisconnecting(false);
-        setEntryIdentity(null);
-        setSecurityReport(null);
-        addLog('Déconnecté du réseau sécurisé', 'info');
-      }, 1500);
+       setTimeout(() => {
+           addLog(`Tunnel établi vers le nœud d'entrée (${selectedEntry.country})...`, 'info');
+       }, 500);
+       setTimeout(() => {
+           addLog('Relais confirmé. Routage vers le nœud de sortie...', 'success');
+       }, 1000);
     } else {
-      setIsDisconnecting(false);
-      addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
-      
+       setEntryIdentity(null);
+    }
+
+    setTimeout(() => {
+      setIsConnected(true);
       if (mode === ConnectionMode.DOUBLE_HOP) {
-         // Select a random entry node different from current identity
-         const potentialEntryNodes = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
-         const selectedEntry = potentialEntryNodes[Math.floor(Math.random() * potentialEntryNodes.length)];
-         setEntryIdentity(selectedEntry);
-
-         setTimeout(() => {
-             addLog(`Tunnel établi vers le nœud d'entrée (${selectedEntry.country})...`, 'info');
-         }, 500);
-         setTimeout(() => {
-             addLog('Relais confirmé. Routage vers le nœud de sortie...', 'success');
-         }, 1000);
+           addLog(`Double Hop Actif: Trafic routé via 2 serveurs sécurisés`, 'success');
+      } else if (mode === ConnectionMode.SMART_DNS) {
+           addLog(`Smart DNS Activé: Routage intelligent via ${appSettings.dns}`, 'success');
+           addLog(`Note: Votre IP d'origine est conservée pour les connexions directes.`, 'warning');
       } else {
-         setEntryIdentity(null);
+           addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
       }
+      
+      // DNS Log
+      const dnsLabels: Record<string, string> = {
+        cloudflare: 'Cloudflare DNS',
+        google: 'Google DNS',
+        quad9: 'Quad9 DNS',
+        opendns: 'OpenDNS',
+        custom: 'Renumerate Private'
+      };
+      const dnsLabel = dnsLabels[appSettings.dns] || 'DNS';
+      addLog(`Résolution DNS: ${dnsLabel} actif`, 'info');
+      
+      if (appSettings.killSwitch) addLog('Kill Switch activé : Protection active', 'success');
+      if (appSettings.adBlocker) addLog('AdBlocker AI : Filtrage publicitaire activé', 'info');
+      if (appSettings.autoRotation) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
+      
+      // Trigger Analysis manually here since handleAnalyze isn't defined yet in this scope
+      // We'll use a useEffect on isConnected to trigger analysis instead, or assume handleAnalyze is called later.
+    }, 1500);
+  }, [appSettings, mode, currentIdentity]);
 
-      setTimeout(() => {
-        setIsConnected(true);
-        if (mode === ConnectionMode.DOUBLE_HOP) {
-             addLog(`Double Hop Actif: Trafic routé via 2 serveurs sécurisés`, 'success');
-        } else if (mode === ConnectionMode.SMART_DNS) {
-             addLog(`Smart DNS Activé: Routage intelligent via ${appSettings.dns}`, 'success');
-             addLog(`Note: Votre IP d'origine est conservée pour les connexions directes.`, 'warning');
-        } else {
-             addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
-        }
-        
-        // DNS Log
-        const dnsLabels: Record<string, string> = {
-          cloudflare: 'Cloudflare DNS',
-          google: 'Google DNS',
-          quad9: 'Quad9 DNS',
-          opendns: 'OpenDNS',
-          custom: 'Renumerate Private'
-        };
-        const dnsLabel = dnsLabels[appSettings.dns] || 'DNS';
-        addLog(`Résolution DNS: ${dnsLabel} actif`, 'info');
-        
-        if (appSettings.killSwitch) addLog('Kill Switch activé : Protection active', 'success');
-        if (appSettings.autoRotation) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
-        handleAnalyze();
-      }, 1500);
+  const disconnectVPN = useCallback(() => {
+    setIsDisconnecting(true);
+    addLog('Déconnexion initiée...', 'warning');
+    setTimeout(() => {
+      setIsConnected(false);
+      setIsDisconnecting(false);
+      setEntryIdentity(null);
+      setSecurityReport(null);
+      addLog('Déconnecté du réseau sécurisé', 'info');
+    }, 1500);
+  }, []);
+
+  const toggleConnection = async () => {
+    if (isEmergency) return;
+    if (isConnected) {
+      disconnectVPN();
+    } else {
+      connectVPN();
     }
   };
+
+  // Trigger analysis when connected
+  useEffect(() => {
+    if (isConnected && !isDisconnecting && !isEmergency) {
+      handleAnalyze();
+    }
+  }, [isConnected]);
+
+  // Auto Connect Effect
+  const hasAutoConnected = useRef(false);
+  useEffect(() => {
+    if (!hasAutoConnected.current && appSettings.autoConnect && !isConnected && !isEmergency) {
+        hasAutoConnected.current = true;
+        addLog('🚀 Démarrage : Connexion automatique activée', 'info');
+        connectVPN();
+    }
+  }, []);
 
   const handleAnalyze = async (identity: VirtualIdentity = currentIdentity) => {
     if (!isConnected && !isEmergency) return;
@@ -293,12 +350,7 @@ function App() {
   };
 
   const handleUpdateSettings = (key: keyof AppSettings, value: any) => {
-    // Feature Locking Logic
-    if (key === 'adBlocker' && value === true && userPlan !== 'elite') {
-        addLog('AdBlocker AI nécessite le plan ELITE', 'warning');
-        setShowPricing(true);
-        return;
-    }
+    // Feature Locking Logic - DNS Custom still locked
     if (key === 'dns' && value === 'custom' && userPlan === 'free') {
         addLog('DNS Sécurisé nécessite le plan PRO', 'warning');
         setShowPricing(true);
@@ -308,6 +360,10 @@ function App() {
     setAppSettings(prev => ({ ...prev, [key]: value }));
     if (key === 'autoRotation') {
         addLog(`Rotation automatique ${value ? 'activée' : 'désactivée'}`, 'info');
+    } else if (key === 'adBlocker') {
+        addLog(`AdBlocker AI ${value ? 'activé' : 'désactivé'}`, 'info');
+    } else if (key === 'autoConnect') {
+        addLog(`Connexion automatique au démarrage ${value ? 'activée' : 'désactivée'}`, 'info');
     } else if (key === 'rotationInterval') {
         addLog(`Intervalle de rotation : ${value} min`, 'info');
     } else if (key === 'obfuscationLevel') {
