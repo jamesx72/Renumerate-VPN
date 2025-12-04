@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { FileUp, Lock, Unlock, File, ArrowRight, X } from 'lucide-react';
+import { FileUp, Lock, Unlock, File, ArrowRight, X, Check, Loader2 } from 'lucide-react';
 
 interface Props {
   isConnected: boolean;
@@ -136,17 +136,33 @@ export const SecureFileTransfer: React.FC<Props> = ({ isConnected, addLog }) => 
                             Envoyer {isEncrypted ? 'Sécurisé' : ''}
                         </button>
                     ) : (
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                                <span>{status === 'encrypting' ? 'Chiffrement...' : status === 'transferring' ? 'Envoi...' : 'Terminé'}</span>
-                                <span>{Math.round(progress)}%</span>
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-end">
+                                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                    {status === 'encrypting' && <Lock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
+                                    {status === 'transferring' && <Loader2 className="w-3.5 h-3.5 text-brand-500 animate-spin" />}
+                                    {status === 'completed' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                                    
+                                    {status === 'encrypting' ? 'Chiffrement...' : 
+                                     status === 'transferring' ? 'Téléversement...' : 
+                                     'Terminé'}
+                                </span>
+                                <span className="text-xs font-bold font-mono text-slate-700 dark:text-slate-200">{Math.round(progress)}%</span>
                             </div>
-                            <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            
+                            <div className="h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden border border-slate-300 dark:border-slate-600 relative">
                                 <div 
-                                    className={`h-full transition-all duration-200 ${status === 'completed' ? 'bg-emerald-500' : status === 'encrypting' ? 'bg-amber-500' : 'bg-brand-500'}`} 
+                                    className={`h-full transition-all duration-200 relative ${
+                                        status === 'completed' ? 'bg-emerald-500' : 
+                                        status === 'encrypting' ? 'bg-amber-500' : 
+                                        'bg-brand-500'
+                                    }`} 
                                     style={{ width: `${progress}%` }}
                                 >
-                                    {status !== 'completed' && <div className="w-full h-full animate-shimmer opacity-30 bg-white"></div>}
+                                    {/* Striped animation overlay */}
+                                    {status !== 'completed' && (
+                                        <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:12px_12px] animate-[shimmer_1s_linear_infinite]"></div>
+                                    )}
                                 </div>
                             </div>
                         </div>

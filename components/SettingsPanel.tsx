@@ -1,14 +1,37 @@
 import React from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw } from 'lucide-react';
-import { AppSettings } from '../types';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown } from 'lucide-react';
+import { AppSettings, PlanTier } from '../types';
 
 interface Props {
   settings: AppSettings;
   updateSettings: (key: keyof AppSettings, value: any) => void;
   onClose: () => void;
+  userPlan: PlanTier;
+  onShowPricing: () => void;
 }
 
-export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose }) => {
+export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose, userPlan, onShowPricing }) => {
+  
+  const isFeatureLocked = (featureLevel: 'pro' | 'elite') => {
+    if (featureLevel === 'elite') return userPlan !== 'elite';
+    if (featureLevel === 'pro') return userPlan === 'free';
+    return false;
+  };
+
+  const LockedBadge = ({ level }: { level: 'pro' | 'elite' }) => (
+    <button 
+      onClick={onShowPricing}
+      className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+        level === 'elite' 
+          ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-200 dark:hover:bg-emerald-500/20' 
+          : 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20 hover:bg-amber-200 dark:hover:bg-amber-500/20'
+      }`}
+    >
+      <Lock className="w-2.5 h-2.5" />
+      {level}
+    </button>
+  );
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-end">
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
@@ -113,13 +136,21 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                 </button>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className={`flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 transition-opacity ${isFeatureLocked('elite') ? 'opacity-75' : ''}`}>
                 <div>
-                  <div className="font-medium">AdBlocker NetShield</div>
+                  <div className="font-medium flex items-center gap-2">
+                    AdBlocker NetShield
+                    {isFeatureLocked('elite') && <LockedBadge level="elite" />}
+                  </div>
                   <div className="text-xs text-slate-500">Bloque pubs et traqueurs</div>
                 </div>
-                <button onClick={() => updateSettings('adBlocker', !settings.adBlocker)}>
-                  {settings.adBlocker ? (
+                <button 
+                  onClick={() => isFeatureLocked('elite') ? onShowPricing() : updateSettings('adBlocker', !settings.adBlocker)}
+                  className={isFeatureLocked('elite') ? 'cursor-pointer' : ''}
+                >
+                  {isFeatureLocked('elite') ? (
+                    <Lock className="w-6 h-6 text-slate-300 dark:text-slate-600" />
+                  ) : settings.adBlocker ? (
                     <ToggleRight className="w-10 h-10 text-brand-500" />
                   ) : (
                     <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
@@ -134,20 +165,30 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
               <Zap className="w-4 h-4" /> Serveurs DNS
             </h3>
-            <select 
-              value={settings.dns}
-              onChange={(e) => updateSettings('dns', e.target.value)}
-              className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:border-brand-500 transition-colors"
-            >
-              <option value="cloudflare">Cloudflare (1.1.1.1) - Rapide</option>
-              <option value="google">Google (8.8.8.8) - Standard</option>
-              <option value="custom">Renumerate Secure DNS - Privé</option>
-            </select>
+            <div className="space-y-2">
+              <select 
+                value={settings.dns}
+                onChange={(e) => updateSettings('dns', e.target.value)}
+                className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:border-brand-500 transition-colors appearance-none"
+              >
+                <option value="cloudflare">Cloudflare (1.1.1.1) - Rapide</option>
+                <option value="google">Google (8.8.8.8) - Standard</option>
+                <option value="custom" disabled={isFeatureLocked('pro')}>
+                   Renumerate Secure DNS {isFeatureLocked('pro') ? '(PRO Only)' : '- Privé'}
+                </option>
+              </select>
+              {isFeatureLocked('pro') && (
+                <div onClick={onShowPricing} className="flex items-center gap-2 text-xs text-amber-500 cursor-pointer hover:underline pl-1">
+                  <Crown className="w-3 h-3" />
+                  Débloquer le DNS Privé
+                </div>
+              )}
+            </div>
           </section>
 
           <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
             <p className="text-xs text-center text-slate-400">
-              Version 2.4.0-stable • Build 20240315
+              Version 2.4.0-stable • {userPlan.toUpperCase()} Edition
             </p>
           </div>
         </div>

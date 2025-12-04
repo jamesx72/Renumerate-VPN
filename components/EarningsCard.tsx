@@ -1,5 +1,5 @@
 import React from 'react';
-import { Coins, TrendingUp, Lock, Wallet, Zap } from 'lucide-react';
+import { Coins, TrendingUp, Lock, Wallet, Zap, ArrowUpRight } from 'lucide-react';
 import { PlanTier } from '../types';
 
 interface Props {
@@ -7,9 +7,10 @@ interface Props {
   plan: PlanTier;
   balance: number;
   onUpgrade: () => void;
+  onWithdraw: () => void;
 }
 
-export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUpgrade }) => {
+export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUpgrade, onWithdraw }) => {
   const isPremium = plan !== 'free';
   const isEarning = isConnected && isPremium;
 
@@ -74,16 +75,29 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUp
             </div>
             
             {/* Progress/Activity Bar */}
-            <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+            <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-4">
               {isEarning && (
                 <div className="h-full bg-gradient-to-r from-amber-400 to-amber-600 w-full animate-shimmer relative">
                   <div className="absolute inset-0 bg-white/30 w-1/2 skew-x-12 -translate-x-full animate-[shimmer_1s_infinite]"></div>
                 </div>
               )}
             </div>
+
+            <button
+              onClick={onWithdraw}
+              disabled={balance < 1}
+              className={`w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 transition-all ${
+                balance >= 1 
+                  ? 'bg-amber-500 hover:bg-amber-400 text-white shadow-lg shadow-amber-500/20'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              <ArrowUpRight className="w-4 h-4" />
+              Retirer fonds
+            </button>
             
             {!isConnected && (
-              <p className="text-xs text-slate-400 mt-2 text-center">
+              <p className="text-[10px] text-slate-400 mt-2 text-center">
                 Connectez-vous pour reprendre le minage.
               </p>
             )}
