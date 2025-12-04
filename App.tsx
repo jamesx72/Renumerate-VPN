@@ -38,7 +38,8 @@ function App() {
     splitTunneling: false,
     adBlocker: false,
     autoRotation: false,
-    rotationInterval: 10
+    rotationInterval: 10,
+    obfuscationLevel: 'standard'
   });
 
   useEffect(() => {
@@ -263,6 +264,8 @@ function App() {
         addLog(`Rotation automatique ${value ? 'activée' : 'désactivée'}`, 'info');
     } else if (key === 'rotationInterval') {
         addLog(`Intervalle de rotation : ${value} min`, 'info');
+    } else if (key === 'obfuscationLevel') {
+        addLog(`Niveau d'obfuscation réglé sur : ${value.toUpperCase()}`, 'info');
     } else {
         addLog(`Configuration mise à jour: ${key} -> ${value}`, 'info');
     }

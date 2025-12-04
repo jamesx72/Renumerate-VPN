@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -73,6 +73,40 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
             </div>
           </section>
 
+          {/* Split Tunneling */}
+          <section>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+              <Network className="w-4 h-4" /> Tunneling (Split)
+            </h3>
+            <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="font-medium">Split Tunneling</div>
+                    <div className="text-xs text-slate-500">Choisir les apps qui contournent le VPN</div>
+                  </div>
+                  <button onClick={() => updateSettings('splitTunneling', !settings.splitTunneling)}>
+                    {settings.splitTunneling ? (
+                      <ToggleRight className="w-10 h-10 text-brand-500" />
+                    ) : (
+                      <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+                    )}
+                  </button>
+                </div>
+                
+                {settings.splitTunneling && (
+                    <div className="animate-shimmer space-y-2">
+                        <p className="text-xs font-bold text-slate-500 mb-2 uppercase">Applications Exclues</p>
+                        {['Netflix', 'Banking App', 'Local Mail'].map(app => (
+                            <div key={app} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                <input type="checkbox" defaultChecked className="accent-brand-500 rounded" />
+                                <span>{app}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+          </section>
+
           {/* Auto Rotation Section */}
           <section>
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
@@ -135,6 +169,32 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                   )}
                 </button>
               </div>
+
+               {/* Obfuscation Level */}
+               <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <div className="flex justify-between mb-2">
+                    <span className="font-medium">Niveau d'Obfuscation</span>
+                    <span className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded uppercase">{settings.obfuscationLevel}</span>
+                  </div>
+                  <div className="flex gap-2">
+                      {(['standard', 'high', 'ultra'] as const).map(level => (
+                          <button
+                            key={level}
+                            onClick={() => updateSettings('obfuscationLevel', level)}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-lg capitalize border transition-colors ${
+                                settings.obfuscationLevel === level 
+                                ? 'bg-brand-500 text-white border-brand-500' 
+                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                            }`}
+                          >
+                              {level}
+                          </button>
+                      ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2">
+                      *Ultra peut ralentir la connexion mais maximise l'anonymat.
+                  </p>
+               </div>
 
               <div className={`flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 transition-opacity ${isFeatureLocked('elite') ? 'opacity-75' : ''}`}>
                 <div>

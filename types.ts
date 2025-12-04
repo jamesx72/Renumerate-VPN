@@ -38,4 +38,5 @@ export interface AppSettings {
   adBlocker: boolean;
   autoRotation: boolean;
   rotationInterval: number;
+  obfuscationLevel: 'standard' | 'high' | 'ultra';
 }
