@@ -36,4 +36,6 @@ export interface AppSettings {
   killSwitch: boolean;
   splitTunneling: boolean;
   adBlocker: boolean;
+  autoRotation: boolean;
+  rotationInterval: number;
 }

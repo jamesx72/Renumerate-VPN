@@ -33,7 +33,9 @@ function App() {
     dns: 'cloudflare',
     killSwitch: true,
     splitTunneling: false,
-    adBlocker: false
+    adBlocker: false,
+    autoRotation: false,
+    rotationInterval: 10
   });
 
   useEffect(() => {
@@ -104,6 +106,7 @@ function App() {
         }
         
         if (appSettings.killSwitch) addLog('Kill Switch activé', 'success');
+        if (appSettings.autoRotation) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
         handleAnalyze();
       }, 1500);
     }
@@ -132,6 +135,31 @@ function App() {
       handleAnalyze(newIdentity);
     }, 2000);
   };
+
+  // Logic to handle auto-rotation interval
+  // We use a ref to access the latest handleRenumber function without triggering re-renders of the effect
+  const handleRenumberRef = useRef(handleRenumber);
+  useEffect(() => {
+    handleRenumberRef.current = handleRenumber;
+  }, [handleRenumber]);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    
+    if (isConnected && appSettings.autoRotation) {
+      const ms = Math.max(1, appSettings.rotationInterval) * 60 * 1000;
+      
+      interval = setInterval(() => {
+        if (handleRenumberRef.current) {
+           handleRenumberRef.current();
+        }
+      }, ms);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, currentIdentity]); // Reset timer if identity changes manually
 
   const handleAnalyze = async (identity: VirtualIdentity = currentIdentity) => {
     if (!isConnected) return;
@@ -167,7 +195,13 @@ function App() {
 
   const handleUpdateSettings = (key: keyof AppSettings, value: any) => {
     setAppSettings(prev => ({ ...prev, [key]: value }));
-    addLog(`Configuration mise à jour: ${key} -> ${value}`, 'info');
+    if (key === 'autoRotation') {
+        addLog(`Rotation automatique ${value ? 'activée' : 'désactivée'}`, 'info');
+    } else if (key === 'rotationInterval') {
+        addLog(`Intervalle de rotation : ${value} min`, 'info');
+    } else {
+        addLog(`Configuration mise à jour: ${key} -> ${value}`, 'info');
+    }
   };
 
   return (
@@ -374,6 +408,7 @@ function App() {
                      <div className="flex gap-1">
                        {appSettings.killSwitch && <div className="w-2 h-2 rounded-full bg-red-500" title="Kill Switch ON"></div>}
                        {appSettings.adBlocker && <div className="w-2 h-2 rounded-full bg-brand-500" title="AdBlocker ON"></div>}
+                       {appSettings.autoRotation && <div className="w-2 h-2 rounded-full bg-brand-300 animate-pulse" title="Auto Rotation ON"></div>}
                      </div>
                    )}
                 </div>
