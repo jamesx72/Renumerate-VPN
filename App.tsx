@@ -389,6 +389,17 @@ function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <div className={`bg-white dark:bg-slate-900 rounded-2xl p-8 border ${isEmergency ? 'border-red-500/30' : 'border-slate-200 dark:border-slate-800'} shadow-xl relative overflow-hidden transition-all duration-500`}>
+              
+              {/* Stealth Mode Indicator Banner */}
+              {mode === ConnectionMode.STEALTH && !isEmergency && (
+                 <div className="absolute top-0 left-0 w-full bg-indigo-950/90 border-b border-indigo-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-shimmer">
+                    <Ghost className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">
+                      Mode Furtif Activé - Trafic Obfusqué
+                    </span>
+                 </div>
+              )}
+
               <div className="absolute top-0 right-0 p-4 opacity-10">
                 {isEmergency ? <Siren className="w-64 h-64 text-red-500 animate-pulse" /> : <Wifi className="w-64 h-64" />}
               </div>
