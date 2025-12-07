@@ -9,11 +9,27 @@ interface Props {
 
 export const TransactionHistoryModal: React.FC<Props> = ({ transactions, onClose }) => {
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
   const itemsPerPage = 10;
 
-  const totalPages = Math.ceil(transactions.length / itemsPerPage);
+  // Logique de filtrage
+  const filteredTransactions = transactions.filter(tx => {
+    const searchLower = searchTerm.toLowerCase();
+    const methodLabel = tx.method === 'bank_transfer' ? 'virement' : tx.method; // Pour permettre la recherche en français
+    
+    return (
+      tx.id.toLowerCase().includes(searchLower) ||
+      tx.method.toLowerCase().includes(searchLower) ||
+      methodLabel.toLowerCase().includes(searchLower) ||
+      tx.status.toLowerCase().includes(searchLower) ||
+      tx.address.toLowerCase().includes(searchLower)
+    );
+  });
+
+  // Logique de pagination sur les résultats filtrés
+  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentTransactions = transactions.slice(startIndex, startIndex + itemsPerPage);
+  const currentTransactions = filteredTransactions.slice(startIndex, startIndex + itemsPerPage);
 
   const nextPage = () => {
     if (currentPage < totalPages) setCurrentPage(curr => curr + 1);
@@ -21,6 +37,11 @@ export const TransactionHistoryModal: React.FC<Props> = ({ transactions, onClose
 
   const prevPage = () => {
     if (currentPage > 1) setCurrentPage(curr => curr - 1);
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      setSearchTerm(e.target.value);
+      setCurrentPage(1); // Réinitialiser à la première page lors d'une recherche
   };
 
   return (
@@ -43,12 +64,26 @@ export const TransactionHistoryModal: React.FC<Props> = ({ transactions, onClose
            </button>
         </div>
 
+        {/* Search Bar */}
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-brand-500 transition-colors" />
+                <input 
+                    type="text" 
+                    placeholder="Rechercher par ID, méthode, statut..." 
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400"
+                />
+            </div>
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-            {transactions.length === 0 ? (
+            {filteredTransactions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                    <History className="w-12 h-12 mb-3 opacity-20" />
-                    <p>Aucune transaction trouvée.</p>
+                    <Search className="w-12 h-12 mb-3 opacity-20" />
+                    <p>{searchTerm ? 'Aucun résultat trouvé.' : 'Aucune transaction.'}</p>
                 </div>
             ) : (
                 <div className="space-y-1">
