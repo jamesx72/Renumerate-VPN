@@ -56,7 +56,21 @@ export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose 
   const handlePayment = (method: 'paypal' | 'card') => {
     setStep('processing');
     
-    // Simulation du délai de traitement PayPal/Stripe
+    // Intégration PayPal : Redirection vers la page de paiement
+    if (method === 'paypal' && selectedPlanId) {
+        const plan = plans.find(p => p.id === selectedPlanId);
+        if (plan && plan.rawPrice > 0) {
+            // Construction de l'URL de paiement PayPal standard
+            // Ajout de no_shipping=1 pour indiquer qu'il s'agit de biens numériques
+            const paypalUrl = `https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=papaoumar72@gmail.com&item_name=${encodeURIComponent(`RenumerateVPN ${plan.name} Subscription`)}&amount=${plan.rawPrice}&currency_code=EUR&no_shipping=1&no_note=1&return=${encodeURIComponent(window.location.href)}`;
+            
+            // Ouverture dans un nouvel onglet
+            window.open(paypalUrl, '_blank');
+        }
+    }
+
+    // Simulation de la validation du paiement pour l'UX (Optimistic UI)
+    // Dans un environnement de production, on attendrait la confirmation webhook (IPN)
     setTimeout(() => {
         if (selectedPlanId) {
             onUpgrade(selectedPlanId);
@@ -67,7 +81,7 @@ export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose 
                 onClose();
             }, 2000);
         }
-    }, 2500);
+    }, 5000); // Délai prolongé pour permettre à l'utilisateur de compléter le paiement
   };
 
   const selectedPlanData = plans.find(p => p.id === selectedPlanId);

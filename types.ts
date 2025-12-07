@@ -42,6 +42,18 @@ export interface Transaction {
   address: string;
 }
 
+export interface ConnectionSession {
+  id: string;
+  startTime: number;
+  endTime: number;
+  durationString: string;
+  serverCountry: string;
+  serverIp: string;
+  protocol: string;
+  mode: ConnectionMode;
+  dataUsed?: string; // Optionnel, pour une future implémentation
+}
+
 export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
   dns: 'cloudflare' | 'google' | 'quad9' | 'opendns' | 'custom';

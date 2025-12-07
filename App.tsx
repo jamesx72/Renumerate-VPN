@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight, History } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -9,9 +9,10 @@ import { EarningsCard } from './components/EarningsCard';
 import { SystemLogs } from './components/SystemLogs';
 import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
+import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
-import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction } from './types';
+import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession } from './types';
 import { analyzeSecurity } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
@@ -47,6 +48,14 @@ function App() {
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Connection History Logic
+  const connectionStartRef = useRef<number | null>(null);
+  const [connectionHistory, setConnectionHistory] = useState<ConnectionSession[]>(() => {
+    const saved = localStorage.getItem('connectionHistory');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [showConnectionHistory, setShowConnectionHistory] = useState(false);
 
   // New State for Monetization, Settings, and Earnings
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
@@ -100,6 +109,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('currentIdentity', JSON.stringify(currentIdentity));
   }, [currentIdentity]);
+
+  useEffect(() => {
+    localStorage.setItem('connectionHistory', JSON.stringify(connectionHistory));
+  }, [connectionHistory]);
 
   // Auto-cleanup logs based on retention setting
   useEffect(() => {
@@ -212,6 +225,7 @@ function App() {
 
   const connectVPN = useCallback(() => {
     setIsDisconnecting(false);
+    connectionStartRef.current = Date.now(); // Start timer
     addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
     
     // Obfuscation & Behavior Logic
@@ -302,6 +316,34 @@ function App() {
   const disconnectVPN = useCallback(() => {
     setIsDisconnecting(true);
     addLog('Déconnexion initiée...', 'warning');
+
+    // Record Session Logic
+    if (connectionStartRef.current) {
+        const endTime = Date.now();
+        const startTime = connectionStartRef.current;
+        const durationMs = endTime - startTime;
+        
+        // Calculate readable duration
+        const seconds = Math.floor((durationMs / 1000) % 60);
+        const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
+        const hours = Math.floor((durationMs / (1000 * 60 * 60)));
+        const durationString = `${hours > 0 ? hours + 'h ' : ''}${minutes}m ${seconds}s`;
+
+        const newSession: ConnectionSession = {
+            id: Math.random().toString(36).substr(2, 9),
+            startTime,
+            endTime,
+            durationString,
+            serverCountry: currentIdentity.country,
+            serverIp: currentIdentity.ip,
+            protocol: appSettings.protocol,
+            mode: mode
+        };
+
+        setConnectionHistory(prev => [newSession, ...prev].slice(0, 50)); // Keep last 50
+        connectionStartRef.current = null;
+    }
+
     setTimeout(() => {
       setIsConnected(false);
       setIsDisconnecting(false);
@@ -309,7 +351,7 @@ function App() {
       setSecurityReport(null);
       addLog('Déconnecté du réseau sécurisé', 'info');
     }, 1500);
-  }, [addLog]);
+  }, [addLog, currentIdentity, appSettings.protocol, mode]);
 
   const toggleConnection = async () => {
     if (isEmergency) return;
@@ -896,6 +938,17 @@ function App() {
         />
       )}
 
+      {showConnectionHistory && (
+        <ConnectionHistoryModal
+            history={connectionHistory}
+            onClose={() => setShowConnectionHistory(false)}
+            onClear={() => {
+                setConnectionHistory([]);
+                localStorage.removeItem('connectionHistory');
+            }}
+        />
+      )}
+
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex flex-col justify-center">
@@ -938,6 +991,14 @@ function App() {
             >
               <Crown className="w-4 h-4" />
               <span className="hidden sm:inline">{userPlan === 'free' ? 'Go Premium' : userPlan.toUpperCase()}</span>
+            </button>
+            
+            <button
+              onClick={() => setShowConnectionHistory(true)}
+              className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              title="Historique de connexion"
+            >
+              <History className="w-5 h-5" />
             </button>
 
             <button
