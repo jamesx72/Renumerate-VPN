@@ -17,9 +17,21 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
     e.preventDefault();
     setError('');
     
-    // Basic validation
-    if (!email.includes('@') || password.length < 6) {
-        setError('Email invalide ou mot de passe trop court (min 6 chars)');
+    // Validation spécifique côté client
+    if (!email) {
+        setError('L\'adresse email est requise.');
+        return;
+    }
+    if (!email.includes('@')) {
+        setError('Format d\'email invalide.');
+        return;
+    }
+    if (!password) {
+        setError('Le mot de passe est requis.');
+        return;
+    }
+    if (password.length < 6) {
+        setError('Le mot de passe doit contenir au moins 6 caractères.');
         return;
     }
 
@@ -27,6 +39,22 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
     
     // Simulate API call authentication delay
     setTimeout(() => {
+        // Simulation des erreurs serveur pour démonstration
+        if (isLogin) {
+            // Pour tester "Aucun compte", utiliser cet email
+            if (email === 'inconnu@exemple.com') {
+                setIsLoading(false);
+                setError('Aucun compte trouvé pour cet email.');
+                return;
+            }
+            // Pour tester "Mot de passe incorrect", utiliser ce mot de passe
+            if (password === 'faux') {
+                setIsLoading(false);
+                setError('Mot de passe incorrect.');
+                return;
+            }
+        }
+
         setIsLoading(false);
         setIsSuccess(true);
         setTimeout(() => {
@@ -111,7 +139,7 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
              </div>
 
              {error && (
-                 <div className="text-red-500 text-xs text-center font-medium bg-red-50 dark:bg-red-900/10 py-2 rounded-lg border border-red-100 dark:border-red-500/20">
+                 <div className="text-red-500 text-xs text-center font-medium bg-red-50 dark:bg-red-900/10 py-2 rounded-lg border border-red-100 dark:border-red-500/20 animate-in fade-in slide-in-from-top-2">
                      {error}
                  </div>
              )}
@@ -119,7 +147,7 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
              <button 
                 type="submit" 
                 disabled={isLoading}
-                className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-brand-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 mt-2"
+                className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-brand-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
              >
                 {isLoading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
