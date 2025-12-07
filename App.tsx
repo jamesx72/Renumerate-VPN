@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -8,6 +8,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
 import { SystemLogs } from './components/SystemLogs';
 import { WithdrawalModal } from './components/WithdrawalModal';
+import { AuthScreen } from './components/AuthScreen';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings } from './types';
 import { analyzeSecurity } from './services/geminiService';
@@ -19,6 +20,12 @@ function App() {
   const [isEmergency, setIsEmergency] = useState(false); // New Emergency State
   const [emergencyStep, setEmergencyStep] = useState<string>(''); // For granular UI feedback
   
+  // Auth State
+  const [user, setUser] = useState<{email: string} | null>(() => {
+    const saved = localStorage.getItem('user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   // Persistent State: Mode
   const [mode, setMode] = useState<ConnectionMode>(() => {
     const saved = localStorage.getItem('vpnMode');
@@ -201,12 +208,12 @@ function App() {
   // Auto Connect Effect
   const hasAutoConnected = useRef(false);
   useEffect(() => {
-    if (!hasAutoConnected.current && appSettings.autoConnect && !isConnected && !isEmergency) {
+    if (!hasAutoConnected.current && appSettings.autoConnect && !isConnected && !isEmergency && user) {
         hasAutoConnected.current = true;
         addLog('🚀 Démarrage : Connexion automatique activée', 'info');
         connectVPN();
     }
-  }, []);
+  }, [user]);
 
   const handleAnalyze = async (identity: VirtualIdentity = currentIdentity) => {
     if (!isConnected && !isEmergency) return;
@@ -454,6 +461,28 @@ function App() {
     }, 1000);
   };
 
+  // Auth Handlers
+  const handleLogin = (email: string) => {
+    const newUser = { email };
+    setUser(newUser);
+    localStorage.setItem('user', JSON.stringify(newUser));
+    // Note: We cannot easily access addLog from here if we rendered AuthScreen conditionally at top level
+    // but with the return logic below it is fine because logs state is preserved in App component
+    // Wait, if we return early, we might lose state if not careful, but React state preserves if component mounts.
+    // Actually if we return early, the App component effectively re-renders the other branch. 
+    // The previous state (logs) would be reset if the component unmounts, but App doesn't unmount, it just changes what it returns.
+    // However, hooks run before the return.
+  };
+
+  const handleLogout = () => {
+      if (isConnected) {
+          disconnectVPN();
+      }
+      setUser(null);
+      localStorage.removeItem('user');
+      setBalance(0);
+  };
+
   // Dynamic Styles for Emergency Mode
   const mainButtonColor = isEmergency 
     ? 'bg-red-500 shadow-red-500/50 animate-pulse-fast'
@@ -482,6 +511,15 @@ function App() {
         : isConnected 
             ? 'bg-emerald-500/10' 
             : 'bg-slate-500/10';
+
+  // Auth Guard
+  if (!user) {
+      return (
+          <>
+            <AuthScreen onLogin={handleLogin} />
+          </>
+      );
+  }
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} ${isEmergency ? 'border-4 border-red-500/50' : ''}`}>
@@ -557,6 +595,14 @@ function App() {
               className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
             >
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10 transition-colors"
+              title="Se déconnecter"
+            >
+              <LogOut className="w-5 h-5" />
             </button>
             
             <div className={`hidden sm:flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${statusBgColor} ${statusTextColor}`}>
