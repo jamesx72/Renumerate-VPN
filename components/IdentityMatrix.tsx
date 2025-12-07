@@ -18,6 +18,15 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
   const [copiedIp, setCopiedIp] = useState(false);
   const [localLatency, setLocalLatency] = useState(identity.latency);
   const [isMeasuring, setIsMeasuring] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Mise à jour de l'heure chaque seconde
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Synchronise la latence locale si l'identité change (ex: rotation)
   useEffect(() => {
@@ -160,9 +169,16 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                 
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
                 
-                <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300" title="Fuseau Horaire Serveur">
+                <div className="flex items-center gap-2" title="Date et Heure Système">
                    <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-                   <span className="text-sm font-mono">{identity.timezone || 'UTC+0'}</span>
+                   <div className="flex flex-col">
+                       <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 leading-none">
+                           {currentTime.toLocaleTimeString('fr-FR')}
+                       </span>
+                       <span className="text-[9px] text-slate-400 leading-none mt-0.5">
+                           {currentTime.toLocaleDateString('fr-FR')} • {identity.timezone || 'UTC+0'}
+                       </span>
+                   </div>
                 </div>
                 
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
