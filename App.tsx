@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight, History } from 'lucide-react';
-import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
+import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
 import { PricingModal } from './components/PricingModal';
@@ -1294,28 +1294,14 @@ function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                    <Activity className="w-4 h-4" /> Trafic Réseau
-                  </h3>
-                  <span className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-slate-500 font-mono">
-                    {appSettings.protocol.toUpperCase()}
-                  </span>
-                </div>
-                <TrafficMonitor isDark={isDark} />
-              </div>
-              
-              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                    <Lock className="w-4 h-4" /> Score d'Anonymat
-                  </h3>
-                </div>
-                <AnonymityScore score={isEmergency ? 10 : (securityReport?.score || (isConnected ? (userPlan === 'free' ? 75 : 99) : 0))} isDark={isDark} />
-              </div>
-            </div>
+            <Dashboard
+              isDark={isDark}
+              protocol={appSettings.protocol}
+              isEmergency={isEmergency}
+              securityReport={securityReport}
+              isConnected={isConnected}
+              userPlan={userPlan}
+            />
             
             <SecureFileTransfer isConnected={isConnected} addLog={addLog} />
 

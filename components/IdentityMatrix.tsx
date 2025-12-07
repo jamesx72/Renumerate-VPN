@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity, Settings, Ghost, Laptop } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Info, Share2, Check, Shield, Activity, Settings, Ghost, Laptop, X, Users, MapPin, Coins, CloudSun } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -19,6 +19,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
   const [localLatency, setLocalLatency] = useState(identity.latency);
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [showCityDetails, setShowCityDetails] = useState(false);
 
   // Mise à jour de l'heure chaque seconde
   useEffect(() => {
@@ -64,8 +65,21 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
       }
   };
 
+  const getCityDetails = (city: string) => {
+    const data: Record<string, any> = {
+      'Paris': { pop: '2.16M', region: 'Île-de-France', currency: 'Euro (€)', weather: '14°C Nuageux' },
+      'Zürich': { pop: '402K', region: 'Canton de Zurich', currency: 'Franc Suisse (CHF)', weather: '10°C Pluvieux' },
+      'Singapore': { pop: '5.6M', region: 'Central Region', currency: 'Dollar (SGD)', weather: '31°C Humide' },
+      'Reykjavik': { pop: '131K', region: 'Höfuðborgarsvæðið', currency: 'Couronne (ISK)', weather: '4°C Vent' },
+      'Panama City': { pop: '880K', region: 'Panamá', currency: 'Balboa (PAB)', weather: '29°C Ensoleillé' },
+      'Tallinn': { pop: '426K', region: 'Harju', currency: 'Euro (€)', weather: '8°C Variable' },
+    };
+    return data[city] || { pop: 'Inconnu', region: 'Inconnu', currency: 'USD', weather: '--' };
+  };
+
   const protocolVersion = getProtocolVersion(protocol);
   const protocolName = protocol === 'ikev2' ? 'IKEv2/IPsec' : protocol.charAt(0).toUpperCase() + protocol.slice(1);
+  const cityInfo = getCityDetails(identity.city);
 
   const getLatencyColor = (ms: number) => {
       if (ms < 50) return 'text-emerald-500';
@@ -74,7 +88,62 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {/* Modal Détails Ville */}
+      {showCityDetails && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm rounded-2xl" onClick={() => setShowCityDetails(false)}></div>
+            <div className="relative bg-white dark:bg-slate-900 w-full max-w-[280px] rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 p-4">
+                <button 
+                    onClick={() => setShowCityDetails(false)}
+                    className="absolute top-2 right-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+                
+                <div className="flex items-center gap-2 mb-4">
+                    <Building2 className="w-5 h-5 text-brand-500" />
+                    <h4 className="font-bold text-slate-900 dark:text-white">{identity.city}</h4>
+                </div>
+                
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                            <Users className="w-3.5 h-3.5" />
+                            <span>Population</span>
+                        </div>
+                        <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{cityInfo.pop}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>Région</span>
+                        </div>
+                        <span className="font-medium text-slate-700 dark:text-slate-200 text-right">{cityInfo.region}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                            <Coins className="w-3.5 h-3.5" />
+                            <span>Devise</span>
+                        </div>
+                        <span className="font-mono font-medium text-slate-700 dark:text-slate-200">{cityInfo.currency}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                            <CloudSun className="w-3.5 h-3.5" />
+                            <span>Météo</span>
+                        </div>
+                        <span className="font-medium text-slate-700 dark:text-slate-200">{cityInfo.weather}</span>
+                    </div>
+                </div>
+                
+                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px] text-center text-slate-400">
+                    Données simulées pour la démo
+                </div>
+            </div>
+        </div>
+      )}
+
       {mode === ConnectionMode.DOUBLE_HOP && entryIdentity && (
         <div className="bg-brand-50 dark:bg-brand-900/20 p-3 rounded-lg border border-brand-200 dark:border-brand-500/30 flex items-center justify-between text-xs sm:text-sm animate-pulse-fast">
           <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
@@ -152,16 +221,15 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                 
                 <div 
                   className="flex items-center gap-2 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded px-2 py-0.5 -ml-2 cursor-pointer transition-all duration-300 group hover:shadow-sm hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-500/20 min-w-0"
-                  onClick={() => console.log(`Cliqué sur la ville : ${identity.city}`)}
                 >
                   <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors shrink-0" />
                   <span key={identity.city} className="text-base text-slate-600 dark:text-slate-300 group-hover:text-brand-700 dark:group-hover:text-brand-300 group-hover:font-semibold transition-all animate-in fade-in duration-500 truncate">{identity.city}</span>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); console.log(`Afficher plus de détails pour ${identity.city}`); }}
+                    onClick={(e) => { e.stopPropagation(); setShowCityDetails(true); }}
                     className="p-1 rounded-full text-slate-600 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-900/50 hover:text-brand-600 transition-all ml-1 opacity-50 group-hover:opacity-100 shrink-0"
                     title="Plus de détails"
                   >
-                    <Plus className="w-3 h-3" />
+                    <Info className="w-3 h-3" />
                   </button>
                 </div>
                 
