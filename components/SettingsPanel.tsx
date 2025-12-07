@@ -8,12 +8,13 @@ interface Props {
   onClose: () => void;
   userPlan: PlanTier;
   onShowPricing: () => void;
+  initialTab?: 'general' | 'connection' | 'privacy' | 'advanced';
 }
 
 type TabId = 'general' | 'connection' | 'privacy' | 'advanced';
 
-export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose, userPlan, onShowPricing }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose, userPlan, onShowPricing, initialTab }) => {
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'general');
   
   const isFeatureLocked = (featureLevel: 'pro' | 'elite') => {
     if (featureLevel === 'elite') return userPlan !== 'elite';

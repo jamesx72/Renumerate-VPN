@@ -51,6 +51,7 @@ function App() {
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'connection' | 'privacy' | 'advanced'>('general');
   const [showWithdrawal, setShowWithdrawal] = useState(false);
   const [balance, setBalance] = useState(0.0000);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -526,6 +527,11 @@ function App() {
     }, 1500);
   };
 
+  const openSettings = (tab: 'general' | 'connection' | 'privacy' | 'advanced' = 'general') => {
+      setInitialSettingsTab(tab);
+      setShowSettings(true);
+  };
+
   const handleUpdateSettings = (key: keyof AppSettings, value: any) => {
     // Feature Locking Logic - DNS Custom still locked
     if (key === 'dns' && value === 'custom' && userPlan === 'free') {
@@ -798,6 +804,7 @@ function App() {
           onClose={() => setShowSettings(false)}
           userPlan={userPlan}
           onShowPricing={() => setShowPricing(true)}
+          initialTab={initialSettingsTab}
         />
       )}
 
@@ -841,7 +848,7 @@ function App() {
             </button>
 
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => openSettings('general')}
               className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
               title="Configuration"
             >
@@ -1196,6 +1203,8 @@ function App() {
                         mode={mode} 
                         securityReport={securityReport}
                         protocol={appSettings.protocol}
+                        obfuscationLevel={appSettings.obfuscationLevel}
+                        onOpenObfuscationSettings={() => openSettings('advanced')}
                       />
                       
                       {recommendedActions.length > 0 && (

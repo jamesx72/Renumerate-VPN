@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity, Sliders, Ghost } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -10,9 +10,11 @@ interface Props {
   mode: ConnectionMode;
   securityReport?: SecurityReport | null;
   protocol?: string;
+  obfuscationLevel?: 'standard' | 'high' | 'ultra';
+  onOpenObfuscationSettings?: () => void;
 }
 
-export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, isMasking = false, mode, securityReport, protocol = 'wireguard' }) => {
+export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, isMasking = false, mode, securityReport, protocol = 'wireguard', obfuscationLevel, onOpenObfuscationSettings }) => {
   const [copiedIp, setCopiedIp] = useState(false);
   const [localLatency, setLocalLatency] = useState(identity.latency);
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -106,7 +108,9 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
           </div>
           <div className="flex items-center justify-between">
             <div className={`font-mono text-xl tracking-wider ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
-               {isRotating ? 'RENUMBERING...' : identity.ip}
+               {isRotating ? 'RENUMBERING...' : (
+                   <span key={identity.ip} className="animate-in fade-in duration-500">{identity.ip}</span>
+               )}
             </div>
             {!isRotating && (
               <button 
@@ -150,7 +154,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                   onClick={() => console.log(`Cliqué sur la ville : ${identity.city}`)}
                 >
                   <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors" />
-                  <span className="text-base text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{identity.city}</span>
+                  <span key={identity.city} className="text-base text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors animate-in fade-in duration-500">{identity.city}</span>
                   <button 
                     onClick={(e) => { e.stopPropagation(); console.log(`Afficher plus de détails pour ${identity.city}`); }}
                     className="p-1 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:opacity-80 transition-all ml-1"
@@ -173,6 +177,26 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                    <Shield className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                    <span className="text-sm font-mono">{protocolName}</span>
                 </div>
+
+                {/* Indicateur Obfuscation et Bouton Sliders */}
+                {obfuscationLevel && (
+                    <>
+                        <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
+                        <div 
+                            className="flex items-center gap-2 group cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); onOpenObfuscationSettings?.(); }}
+                            title="Configurer le niveau d'obfuscation"
+                        >
+                            <Ghost className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors" />
+                            <span className="text-sm font-mono capitalize text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white">
+                                {obfuscationLevel}
+                            </span>
+                            <div className="p-0.5 rounded-full bg-slate-200 dark:bg-slate-700 opacity-0 group-hover:opacity-100 transition-all transform scale-90 group-hover:scale-100">
+                                <Sliders className="w-3 h-3 text-brand-500" />
+                            </div>
+                        </div>
+                    </>
+                )}
 
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
 
@@ -197,7 +221,9 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
             <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">MAC Virtuelle</span>
           </div>
           <div className={`font-mono text-base ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : isMasking ? 'text-indigo-600 dark:text-indigo-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
-             {isRotating ? 'XX:XX:XX:XX:XX:XX' : isMasking ? 'Spoofing MAC...' : identity.mac}
+             {isRotating ? 'XX:XX:XX:XX:XX:XX' : isMasking ? 'Spoofing MAC...' : (
+                 <span key={identity.mac} className="animate-in fade-in duration-500">{identity.mac}</span>
+             )}
           </div>
         </div>
 
@@ -207,7 +233,9 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
             <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">User Agent Spoof</span>
           </div>
           <div className={`font-mono text-sm font-bold ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : isMasking ? 'text-indigo-600 dark:text-indigo-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
-             {isRotating ? 'Generating Profile...' : isMasking ? 'Randomizing UA...' : identity.userAgentShort}
+             {isRotating ? 'Generating Profile...' : isMasking ? 'Randomizing UA...' : (
+                 <span key={identity.userAgentShort} className="animate-in fade-in duration-500">{identity.userAgentShort}</span>
+             )}
           </div>
         </div>
       </div>
