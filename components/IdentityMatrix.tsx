@@ -153,14 +153,14 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
                 
                 <div 
-                  className="flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 -ml-1.5 py-0.5 cursor-pointer transition-colors group"
+                  className="flex items-center gap-2 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded px-2 py-0.5 -ml-2 cursor-pointer transition-all duration-300 group hover:shadow-sm hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-500/20"
                   onClick={() => console.log(`Cliqué sur la ville : ${identity.city}`)}
                 >
                   <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors" />
-                  <span key={identity.city} className="text-base text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors animate-in fade-in duration-500">{identity.city}</span>
+                  <span key={identity.city} className="text-base text-slate-600 dark:text-slate-300 group-hover:text-brand-700 dark:group-hover:text-brand-300 group-hover:font-semibold transition-all animate-in fade-in duration-500">{identity.city}</span>
                   <button 
                     onClick={(e) => { e.stopPropagation(); console.log(`Afficher plus de détails pour ${identity.city}`); }}
-                    className="p-1 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:opacity-80 transition-all ml-1"
+                    className="p-1 rounded-full text-slate-600 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-900/50 hover:text-brand-600 transition-all ml-1 opacity-50 group-hover:opacity-100"
                     title="Plus de détails"
                   >
                     <Plus className="w-3 h-3" />
