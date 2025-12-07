@@ -329,7 +329,7 @@ function App() {
   const handleMasking = () => {
     if (!isConnected || isMasking || isEmergency || isRenumbering) return;
     setIsMasking(true);
-    addLog('Masquage des empreintes numériques en cours...', 'info');
+    addLog('Masquage des empreintes numériques (MAC/UA) en cours...', 'info');
 
     setTimeout(() => {
         const userAgents = ['Chrome / Win10', 'Firefox / MacOS', 'Safari / iOS', 'Edge / Win11', 'Brave / Linux', 'Opera / Android'];
@@ -346,11 +346,15 @@ function App() {
             return mac;
         };
         const newMAC = generateMAC();
+        
+        // Enhance: Randomize latency slightly to simulate stack changes
+        const latencyJitter = Math.floor(Math.random() * 20) - 10; // +/- 10ms
 
         setCurrentIdentity(prev => ({
             ...prev,
             mac: newMAC,
-            userAgentShort: randomUA
+            userAgentShort: randomUA,
+            latency: Math.max(5, prev.latency + latencyJitter)
         }));
 
         setIsMasking(false);

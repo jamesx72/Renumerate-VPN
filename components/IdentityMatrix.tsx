@@ -63,20 +63,20 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
 
         <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-sm dark:shadow-none">
           <div className="flex items-center gap-3 mb-2">
-            <Fingerprint className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+            <Fingerprint className={`w-5 h-5 ${isMasking ? 'text-indigo-600 dark:text-indigo-400' : 'text-brand-600 dark:text-brand-400'}`} />
             <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">MAC Virtuelle</span>
           </div>
-          <div className={`font-mono text-base ${isRotating || isMasking ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
+          <div className={`font-mono text-base ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : isMasking ? 'text-indigo-600 dark:text-indigo-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
              {isRotating ? 'XX:XX:XX:XX:XX:XX' : isMasking ? 'Spoofing MAC...' : identity.mac}
           </div>
         </div>
 
         <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-sm dark:shadow-none">
           <div className="flex items-center gap-3 mb-2">
-            <Monitor className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+            <Monitor className={`w-5 h-5 ${isMasking ? 'text-indigo-600 dark:text-indigo-400' : 'text-brand-600 dark:text-brand-400'}`} />
             <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">User Agent Spoof</span>
           </div>
-          <div className={`font-mono text-sm ${isRotating || isMasking ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
+          <div className={`font-mono text-sm ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : isMasking ? 'text-indigo-600 dark:text-indigo-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
              {isRotating ? 'Generating Profile...' : isMasking ? 'Randomizing UA...' : identity.userAgentShort}
           </div>
         </div>
