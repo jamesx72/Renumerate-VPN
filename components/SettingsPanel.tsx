@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users, Activity } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -196,6 +196,15 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                        <div className="text-left">
                           <div className={`text-sm font-bold flex items-center gap-2 ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>
                               {dns.name}
+                              
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+                                  isSelected 
+                                    ? 'bg-slate-900/5 dark:bg-white/10 border-transparent' 
+                                    : `bg-slate-50 dark:bg-slate-900 ${dns.color.replace('text-', 'text-')} border-slate-200 dark:border-slate-700`
+                              }`}>
+                                  {dns.tag}
+                              </span>
+
                               {dns.id === 'custom' && !isLocked && <span className="text-[9px] bg-brand-500 text-white px-1.5 rounded-full shadow-sm">PRO</span>}
                           </div>
                           <div className="text-[11px] font-medium text-slate-400 font-mono mb-0.5 flex items-center gap-1.5">
@@ -209,7 +218,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                     
                     <div className="flex flex-col items-end gap-2 relative z-10">
                          {/* Latency Indicator */}
-                        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-md">
+                        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-md min-w-[60px] justify-center border border-slate-200 dark:border-slate-700/50">
                              <div className="flex items-end gap-0.5 h-2.5">
                                 <div className={`w-0.5 rounded-[1px] ${dns.ms < 100 ? 'bg-emerald-500' : 'bg-slate-300'} h-1.5`} />
                                 <div className={`w-0.5 rounded-[1px] ${dns.ms < 50 ? 'bg-emerald-500' : 'bg-slate-300'} h-2.5`} />
