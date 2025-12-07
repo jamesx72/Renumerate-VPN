@@ -95,7 +95,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
             <Monitor className={`w-5 h-5 ${isMasking ? 'text-indigo-600 dark:text-indigo-400' : 'text-brand-600 dark:text-brand-400'}`} />
             <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">User Agent Spoof</span>
           </div>
-          <div className={`font-mono text-sm ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : isMasking ? 'text-indigo-600 dark:text-indigo-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
+          <div className={`font-mono text-sm font-bold ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : isMasking ? 'text-indigo-600 dark:text-indigo-400 animate-pulse' : 'text-slate-600 dark:text-slate-300'}`}>
              {isRotating ? 'Generating Profile...' : isMasking ? 'Randomizing UA...' : identity.userAgentShort}
           </div>
         </div>
