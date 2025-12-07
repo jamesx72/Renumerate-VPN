@@ -8,6 +8,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
 import { SystemLogs } from './components/SystemLogs';
 import { WithdrawalModal } from './components/WithdrawalModal';
+import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction } from './types';
@@ -53,6 +54,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'connection' | 'privacy' | 'advanced'>('general');
   const [showWithdrawal, setShowWithdrawal] = useState(false);
+  const [showHistory, setShowHistory] = useState(false); // History Modal State
   const [balance, setBalance] = useState(0.0000);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
@@ -887,6 +889,13 @@ function App() {
         />
       )}
 
+      {showHistory && (
+        <TransactionHistoryModal 
+            transactions={transactions}
+            onClose={() => setShowHistory(false)}
+        />
+      )}
+
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex flex-col justify-center">
@@ -1247,6 +1256,7 @@ function App() {
                 onUpgrade={() => setShowPricing(true)} 
                 onWithdraw={handleOpenWithdrawal}
                 transactions={transactions}
+                onViewHistory={() => setShowHistory(true)}
              />
 
              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 min-h-[300px]">
