@@ -571,15 +571,17 @@ function App() {
   const handleConfirmWithdrawal = async (method: string, address: string) => {
     const amount = parseFloat(balance.toFixed(4));
     
+    const methodLabel = method === 'crypto' ? 'Wallet' : method === 'paypal' ? 'PayPal' : 'Virement Bancaire';
+    
     // Log initiation
-    addLog(`Initialisation du retrait de ${amount} RNC vers ${method === 'crypto' ? 'Wallet' : 'PayPal'}...`, 'info');
+    addLog(`Initialisation du retrait de ${amount} RNC vers ${methodLabel}...`, 'info');
     
     // Create new transaction object
     const newTransaction: Transaction = {
         id: `TX-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
         date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
         amount: amount,
-        method: method as 'crypto' | 'paypal',
+        method: method as 'crypto' | 'paypal' | 'bank_transfer',
         status: 'completed',
         address: address
     };

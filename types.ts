@@ -36,7 +36,7 @@ export interface Transaction {
   id: string;
   date: string;
   amount: number;
-  method: 'crypto' | 'paypal';
+  method: 'crypto' | 'paypal' | 'bank_transfer';
   status: 'pending' | 'completed';
   address: string;
 }
