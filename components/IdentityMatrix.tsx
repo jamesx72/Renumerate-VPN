@@ -1,6 +1,6 @@
 import React from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, MapPin, Building2, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -62,7 +62,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                 <div className="flex items-center gap-2">
                   <div className="group relative flex items-center">
-                    <MapPin className="w-4 h-4 text-brand-500 cursor-help" />
+                    <Pin className="w-4 h-4 text-brand-500 cursor-help" />
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[10px] font-sans font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-xl z-20">
                       Emplacement virtuel actuel
                       <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
