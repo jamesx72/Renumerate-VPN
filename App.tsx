@@ -96,33 +96,44 @@ function App() {
     localStorage.setItem('currentIdentity', JSON.stringify(currentIdentity));
   }, [currentIdentity]);
 
-  // Load Transactions from Supabase
+  // Load Transactions from Supabase with LocalStorage Fallback
   useEffect(() => {
     const fetchTransactions = async () => {
         if (!user) return;
         
-        // Assume a table 'transactions' exists
-        const { data, error } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('user_email', user.email)
-            .order('created_at', { ascending: false }); // Assuming created_at or date column
+        try {
+            const { data, error } = await supabase
+                .from('transactions')
+                .select('*')
+                .eq('user_email', user.email)
+                .order('created_at', { ascending: false });
 
-        if (error) {
-            console.error('Error fetching transactions:', error);
-            // Fallback to local state/empty if error for now, or you could add a log
-        } else if (data) {
-            // Map Supabase data to Transaction type if necessary, usually it matches if column names are same
-            // Handling potential date format differences or column mapping
-            const mappedTransactions: Transaction[] = data.map((t: any) => ({
-                id: t.id,
-                date: t.date || new Date(t.created_at).toLocaleDateString('fr-FR'),
-                amount: t.amount,
-                method: t.method,
-                status: t.status,
-                address: t.address
-            }));
-            setTransactions(mappedTransactions);
+            if (error) {
+                console.warn('Supabase fetch error (using local backup):', error.message || error);
+                // Fallback to local storage
+                const saved = localStorage.getItem(`transactions_${user.email}`);
+                if (saved) {
+                    setTransactions(JSON.parse(saved));
+                }
+            } else if (data) {
+                const mappedTransactions: Transaction[] = data.map((t: any) => ({
+                    id: t.id,
+                    date: t.date || new Date(t.created_at).toLocaleDateString('fr-FR'),
+                    amount: t.amount,
+                    method: t.method,
+                    status: t.status,
+                    address: t.address
+                }));
+                setTransactions(mappedTransactions);
+                // Update local storage backup
+                localStorage.setItem(`transactions_${user.email}`, JSON.stringify(mappedTransactions));
+            }
+        } catch (e) {
+            console.warn('Network error, loading local transactions:', e);
+            const saved = localStorage.getItem(`transactions_${user.email}`);
+            if (saved) {
+                setTransactions(JSON.parse(saved));
+            }
         }
     };
 
@@ -596,27 +607,38 @@ function App() {
     setTimeout(async () => {
         addLog(`Vérification de l'adresse ${address.substring(0,6)}...${address.substring(address.length-4)}`, 'info');
         
-        // Save to Supabase
-        const { error } = await supabase.from('transactions').insert([{
-            id: newTransaction.id,
-            date: newTransaction.date,
-            amount: newTransaction.amount,
-            method: newTransaction.method,
-            status: newTransaction.status,
-            address: newTransaction.address,
-            user_email: user?.email
-        }]);
+        // Save to Supabase (Best Effort)
+        try {
+            const { error } = await supabase.from('transactions').insert([{
+                id: newTransaction.id,
+                date: newTransaction.date,
+                amount: newTransaction.amount,
+                method: newTransaction.method,
+                status: newTransaction.status,
+                address: newTransaction.address,
+                user_email: user?.email
+            }]);
 
-        if (error) {
-            console.error('Supabase Error:', error);
-            addLog('Erreur lors de la sauvegarde sur la base de données', 'error');
-        } else {
-            addLog('Transaction enregistrée sur Supabase', 'success');
+            if (error) {
+                console.warn('Supabase Insert Error:', error.message);
+                addLog('Mode hors ligne : Transaction sauvegardée localement', 'warning');
+            } else {
+                addLog('Transaction synchronisée sur le cloud', 'success');
+            }
+        } catch (e) {
+            console.warn('Network error during insert:', e);
+            addLog('Mode hors ligne : Transaction sauvegardée localement', 'warning');
         }
 
         setTimeout(() => {
-            // Update transactions list locally (Optimistic UI)
-            setTransactions(prev => [newTransaction, ...prev]);
+            // Update transactions list locally (Optimistic UI) and persist to LocalStorage
+            setTransactions(prev => {
+                const updated = [newTransaction, ...prev];
+                if (user) {
+                    localStorage.setItem(`transactions_${user.email}`, JSON.stringify(updated));
+                }
+                return updated;
+            });
             
             // Reset balance
             setBalance(0);
