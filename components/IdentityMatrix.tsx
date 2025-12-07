@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -14,12 +14,34 @@ interface Props {
 
 export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, isMasking = false, mode, securityReport, protocol = 'wireguard' }) => {
   const [copiedIp, setCopiedIp] = useState(false);
+  const [localLatency, setLocalLatency] = useState(identity.latency);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+
+  // Synchronise la latence locale si l'identité change (ex: rotation)
+  useEffect(() => {
+    setLocalLatency(identity.latency);
+  }, [identity.latency]);
 
   const handleCopyIp = () => {
     if (isRotating) return;
     navigator.clipboard.writeText(identity.ip);
     setCopiedIp(true);
     setTimeout(() => setCopiedIp(false), 2000);
+  };
+
+  const handleLatencyClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isMeasuring || isRotating) return;
+
+    setIsMeasuring(true);
+    
+    // Simulation d'un ping réseau
+    setTimeout(() => {
+        // Génère une nouvelle latence réaliste (entre 10ms et 150ms)
+        const newLatency = Math.floor(Math.random() * 140) + 10;
+        setLocalLatency(newLatency);
+        setIsMeasuring(false);
+    }, 1500);
   };
 
   const getProtocolVersion = (p: string) => {
@@ -33,6 +55,12 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
 
   const protocolVersion = getProtocolVersion(protocol);
   const protocolName = protocol === 'ikev2' ? 'IKEv2/IPsec' : protocol.charAt(0).toUpperCase() + protocol.slice(1);
+
+  const getLatencyColor = (ms: number) => {
+      if (ms < 50) return 'text-emerald-500';
+      if (ms < 120) return 'text-amber-500';
+      return 'text-red-500';
+  };
 
   return (
     <div className="space-y-4">
@@ -103,7 +131,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
           </div>
           <div className={`font-mono text-lg ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
             {isRotating ? '---' : (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <div className="group relative flex items-center">
                     <Pin className="w-4 h-4 text-brand-500 cursor-help" />
@@ -114,7 +142,9 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                   </div>
                   <span className="font-bold">{identity.country}</span>
                 </div>
+                
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
+                
                 <div 
                   className="flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 -ml-1.5 py-0.5 cursor-pointer transition-colors group"
                   onClick={() => console.log(`Cliqué sur la ville : ${identity.city}`)}
@@ -129,15 +159,32 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                     <Plus className="w-3 h-3" />
                   </button>
                 </div>
+                
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
+                
                 <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300" title="Fuseau Horaire Serveur">
                    <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                    <span className="text-sm font-mono">{identity.timezone || 'UTC+0'}</span>
                 </div>
+                
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
+                
                 <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300" title={`Protocole: ${protocolName} ${protocolVersion}`}>
                    <Shield className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                    <span className="text-sm font-mono">{protocolName}</span>
+                </div>
+
+                <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
+
+                <div 
+                    onClick={handleLatencyClick}
+                    className="flex items-center gap-2 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors"
+                    title={isMeasuring ? "Mesure en cours..." : "Cliquer pour rafraîchir la latence"}
+                >
+                   <Activity className={`w-3.5 h-3.5 ${isMeasuring ? 'text-brand-500 animate-spin' : getLatencyColor(localLatency)}`} />
+                   <span className={`text-sm font-mono ${isMeasuring ? 'text-brand-500' : 'text-slate-600 dark:text-slate-300'}`}>
+                        {isMeasuring ? '...' : `${localLatency}ms`}
+                   </span>
                 </div>
               </div>
             )}
