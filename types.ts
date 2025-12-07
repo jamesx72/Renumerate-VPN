@@ -41,4 +41,8 @@ export interface AppSettings {
   autoRotation: boolean;
   rotationInterval: number;
   obfuscationLevel: 'standard' | 'high' | 'ultra';
+  // Advanced Settings
+  mtuSize: number;
+  ipv6LeakProtection: boolean;
+  localNetworkSharing: boolean;
 }

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -65,7 +65,10 @@ function App() {
       autoConnect: false,
       autoRotation: false,
       rotationInterval: 10,
-      obfuscationLevel: 'standard'
+      obfuscationLevel: 'standard',
+      mtuSize: 1420,
+      ipv6LeakProtection: true,
+      localNetworkSharing: false
     };
   });
 
@@ -199,6 +202,7 @@ function App() {
       if (appSettings.killSwitch) addLog('Kill Switch activé : Protection active', 'success');
       if (appSettings.adBlocker) addLog('AdBlocker AI : Filtrage publicitaire activé', 'info');
       if (appSettings.autoRotation) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
+      if (appSettings.ipv6LeakProtection) addLog('Protection fuite IPv6 : Active', 'info');
       
       // Trigger Analysis manually here since handleAnalyze isn't defined yet in this scope
       // We'll use a useEffect on isConnected to trigger analysis instead, or assume handleAnalyze is called later.
@@ -457,6 +461,8 @@ function App() {
     }
 
     setAppSettings(prev => ({ ...prev, [key]: value }));
+    
+    // Updated logging for new settings
     if (key === 'autoRotation') {
         addLog(`Rotation automatique ${value ? 'activée' : 'désactivée'}`, 'info');
     } else if (key === 'adBlocker') {
@@ -465,6 +471,12 @@ function App() {
         addLog(`Connexion automatique au démarrage ${value ? 'activée' : 'désactivée'}`, 'info');
     } else if (key === 'rotationInterval') {
         addLog(`Intervalle de rotation : ${value} min`, 'info');
+    } else if (key === 'mtuSize') {
+        addLog(`Taille MTU ajustée : ${value} bytes`, 'info');
+    } else if (key === 'ipv6LeakProtection') {
+        addLog(`Protection fuite IPv6 ${value ? 'activée' : 'désactivée'}`, 'info');
+    } else if (key === 'localNetworkSharing') {
+        addLog(`Partage réseau local ${value ? 'activé' : 'désactivé'}`, value ? 'warning' : 'info');
     } else if (key === 'obfuscationLevel') {
         const labels: Record<string, string> = { standard: 'Standard', high: 'Élevé', ultra: 'Ultra' };
         addLog(`Niveau d'obfuscation réglé sur : ${labels[value as string] || value}`, 'info');
@@ -516,6 +528,98 @@ function App() {
       localStorage.removeItem('user');
       setBalance(0);
   };
+
+  // Recommendation Logic
+  const recommendedActions = useMemo(() => {
+    if (!securityReport || !isConnected) return [];
+    
+    const recs = [];
+    const { threatLevel } = securityReport;
+
+    // 1. Obfuscation Recommendation
+    if ((threatLevel === 'Critique' || threatLevel === 'Élevé') && appSettings.obfuscationLevel !== 'ultra') {
+        recs.push({
+            id: 'set_ultra',
+            label: "Activer Obfuscation Ultra",
+            subLabel: "Recommandé pour menace critique",
+            icon: Ghost,
+            color: 'text-indigo-500',
+            borderColor: 'border-indigo-200 dark:border-indigo-500/30',
+            bgColor: 'bg-indigo-50 dark:bg-indigo-500/10',
+            handler: () => {
+                handleUpdateSettings('obfuscationLevel', 'ultra');
+                addLog('Action recommandée appliquée : Obfuscation Ultra', 'success');
+            }
+        });
+    } else if (threatLevel === 'Moyen' && appSettings.obfuscationLevel === 'standard') {
+        recs.push({
+            id: 'set_high',
+            label: "Obfuscation Élevée",
+            subLabel: "Recommandé pour menace moyenne",
+            icon: Shield,
+            color: 'text-amber-500',
+            borderColor: 'border-amber-200 dark:border-amber-500/30',
+            bgColor: 'bg-amber-50 dark:bg-amber-500/10',
+            handler: () => {
+                handleUpdateSettings('obfuscationLevel', 'high');
+                addLog('Action recommandée appliquée : Obfuscation Élevée', 'success');
+            }
+        });
+    }
+
+    // 2. Kill Switch Recommendation
+    if (threatLevel !== 'Faible' && !appSettings.killSwitch) {
+        recs.push({
+            id: 'enable_killswitch',
+            label: "Activer Kill Switch",
+            subLabel: "Protection coupure indispensable",
+            icon: ToggleRight,
+            color: 'text-red-500',
+            borderColor: 'border-red-200 dark:border-red-500/30',
+            bgColor: 'bg-red-50 dark:bg-red-500/10',
+            handler: () => {
+                handleUpdateSettings('killSwitch', true);
+                addLog('Action recommandée appliquée : Kill Switch activé', 'success');
+            }
+        });
+    }
+
+    // 3. AdBlocker Recommendation
+    if (threatLevel !== 'Faible' && !appSettings.adBlocker) {
+         recs.push({
+            id: 'enable_adblock',
+            label: "Activer AdBlocker",
+            subLabel: "Filtrer les trackers malveillants",
+            icon: Zap,
+            color: 'text-brand-500',
+            borderColor: 'border-brand-200 dark:border-brand-500/30',
+            bgColor: 'bg-brand-50 dark:bg-brand-500/10',
+            handler: () => {
+                handleUpdateSettings('adBlocker', true);
+                addLog('Action recommandée appliquée : AdBlocker activé', 'success');
+            }
+        });
+    }
+    
+    // 4. Auto Rotation Recommendation for High Threats
+    if ((threatLevel === 'Critique' || threatLevel === 'Élevé') && !appSettings.autoRotation) {
+        recs.push({
+           id: 'enable_rotation',
+           label: "Rotation Auto",
+           subLabel: "Changer d'IP périodiquement",
+           icon: RefreshCw,
+           color: 'text-emerald-500',
+           borderColor: 'border-emerald-200 dark:border-emerald-500/30',
+           bgColor: 'bg-emerald-50 dark:bg-emerald-500/10',
+           handler: () => {
+               handleUpdateSettings('autoRotation', true);
+               addLog('Action recommandée appliquée : Rotation automatique activée', 'success');
+           }
+       });
+   }
+
+    return recs;
+  }, [securityReport, isConnected, appSettings]);
 
   // Dynamic Styles for Emergency Mode
   const mainButtonColor = isEmergency 
@@ -962,14 +1066,45 @@ function App() {
                 </div>
                 
                 {isConnected || isEmergency ? (
-                  <IdentityMatrix 
-                    identity={currentIdentity} 
-                    entryIdentity={entryIdentity} 
-                    isRotating={isRenumbering || isEmergency} 
-                    isMasking={isMasking} 
-                    mode={mode} 
-                    securityReport={securityReport}
-                  />
+                  <>
+                      <IdentityMatrix 
+                        identity={currentIdentity} 
+                        entryIdentity={entryIdentity} 
+                        isRotating={isRenumbering || isEmergency} 
+                        isMasking={isMasking} 
+                        mode={mode} 
+                        securityReport={securityReport}
+                      />
+                      
+                      {recommendedActions.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
+                             <h4 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <Zap className="w-3.5 h-3.5 text-amber-500" /> Actions Recommandées
+                             </h4>
+                             <div className="grid grid-cols-1 gap-2">
+                               {recommendedActions.map(action => {
+                                  const Icon = action.icon;
+                                  return (
+                                      <button 
+                                        key={action.id}
+                                        onClick={action.handler}
+                                        className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${action.bgColor} ${action.borderColor} group`}
+                                      >
+                                          <div className={`p-1.5 rounded-md bg-white dark:bg-slate-900/50 shadow-sm ${action.color}`}>
+                                              <Icon className="w-4 h-4" />
+                                          </div>
+                                          <div className="flex-1">
+                                              <div className={`text-xs font-bold ${action.color}`}>{action.label}</div>
+                                              <div className="text-[10px] text-slate-500 dark:text-slate-400">{action.subLabel}</div>
+                                          </div>
+                                          <ArrowRight className={`w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0 ${action.color}`} />
+                                      </button>
+                                  );
+                               })}
+                             </div>
+                          </div>
+                      )}
+                  </>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                     <Shield className="w-12 h-12 mb-2 opacity-20" />
