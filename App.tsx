@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight, History } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight, History, Info } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -22,6 +22,7 @@ function App() {
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isEmergency, setIsEmergency] = useState(false); // New Emergency State
   const [emergencyStep, setEmergencyStep] = useState<string>(''); // For granular UI feedback
+  const [notification, setNotification] = useState<string | null>(null); // Notification state
   
   // Auth State
   const [user, setUser] = useState<{email: string} | null>(() => {
@@ -96,6 +97,16 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDark]);
+
+  // Notification Timer Effect
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   // Persistence Effects
   useEffect(() => {
@@ -474,6 +485,7 @@ function App() {
     }
     if (!isConnected) {
         setMode(newMode);
+        setNotification(`Mode de connexion changé : ${newMode}`);
         addLog(`Mode de connexion réglé sur : ${newMode}`, 'info');
         
         // Specific log for Stealth mode selection
@@ -903,6 +915,14 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} ${isEmergency ? 'border-4 border-red-500/50' : ''}`}>
       
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-2 bg-slate-900/90 text-white rounded-full shadow-2xl border border-slate-700/50 backdrop-blur-md flex items-center gap-3 animate-in slide-in-from-top-full fade-in duration-300">
+             <div className="w-2 h-2 rounded-full bg-brand-500"></div>
+             <span className="text-sm font-medium">{notification}</span>
+        </div>
+      )}
+
       {/* Modals */}
       {showPricing && (
         <PricingModal 
