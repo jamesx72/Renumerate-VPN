@@ -115,7 +115,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
             {!isRotating && (
               <button 
                 onClick={handleCopyIp}
-                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/30 transition-all shadow-sm group border border-slate-200 dark:border-slate-700 hover:border-brand-200 dark:hover:border-brand-500/30"
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/30 transition-all shadow-sm group border border-slate-200 dark:border-slate-700 hover:border-brand-200 dark:hover:border-brand-500/30 hover:scale-105 hover:shadow-md"
                 title="Copier l'adresse IP"
               >
                 {copiedIp ? (
@@ -136,14 +136,8 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
           <div className={`font-mono text-lg ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
             {isRotating ? '---' : (
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <div className="group relative flex items-center">
-                    <Pin className="w-4 h-4 text-brand-500 cursor-help" />
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[10px] font-sans font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-xl z-20">
-                      Emplacement virtuel actuel
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-2" title="Emplacement VPN actuel">
+                  <Pin className="w-4 h-4 text-brand-500 cursor-help" />
                   <span className="font-bold">{identity.country}</span>
                 </div>
                 
