@@ -41,13 +41,32 @@ export const SystemLogs: React.FC<Props> = ({ logs, onClear, retentionHours = 16
          </div>
          
          <div className="flex items-center gap-2">
+             {/* Filters */}
+             <div className="flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg">
+                <Filter className="w-3 h-3 text-slate-600 mr-1" />
+                {(['all', 'info', 'success', 'warning', 'error'] as const).map(f => (
+                    <button
+                        key={f}
+                        onClick={() => setFilter(f)}
+                        className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold transition-all ${
+                            filter === f 
+                                ? 'bg-slate-700 text-white shadow-sm ring-1 ring-slate-600' 
+                                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+                        }`}
+                        title={`Filtrer par ${f}`}
+                    >
+                        {f === 'all' ? 'ALL' : f.charAt(0)}
+                    </button>
+                ))}
+             </div>
+
              {/* Retention Menu */}
              {onRetentionChange && (
                  <div className="relative">
                      <button 
                         onClick={() => setShowRetentionMenu(!showRetentionMenu)}
-                        className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-[10px] uppercase font-bold ${
-                            showRetentionMenu ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+                        className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-[10px] uppercase font-bold border border-transparent ${
+                            showRetentionMenu ? 'bg-slate-700 text-white border-slate-600' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
                         }`}
                         title="Configurer la rétention des logs"
                      >
@@ -77,31 +96,11 @@ export const SystemLogs: React.FC<Props> = ({ logs, onClear, retentionHours = 16
                          </div>
                      )}
                      
-                     {/* Click outside listener could be added here for better UX */}
                      {showRetentionMenu && (
                          <div className="fixed inset-0 z-10" onClick={() => setShowRetentionMenu(false)}></div>
                      )}
                  </div>
              )}
-
-             {/* Filters */}
-             <div className="flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg">
-                <Filter className="w-3 h-3 text-slate-600 mr-1" />
-                {(['all', 'info', 'success', 'warning', 'error'] as const).map(f => (
-                    <button
-                        key={f}
-                        onClick={() => setFilter(f)}
-                        className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold transition-all ${
-                            filter === f 
-                                ? 'bg-slate-700 text-white shadow-sm ring-1 ring-slate-600' 
-                                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
-                        }`}
-                        title={`Filtrer par ${f}`}
-                    >
-                        {f === 'all' ? 'ALL' : f.charAt(0)}
-                    </button>
-                ))}
-             </div>
              
              {/* Clear Button */}
              {onClear && (
