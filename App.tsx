@@ -435,6 +435,29 @@ function App() {
     };
   }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, currentIdentity, isEmergency]);
 
+  // Keyboard Shortcuts Handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S: Toggle Connection
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        toggleConnection();
+      }
+      // Ctrl+R: Renumber Identity
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        handleRenumber();
+      }
+      // Ctrl+M: Masking
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        handleMasking();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleConnection, handleRenumber, handleMasking]);
 
   const shareIdentity = () => {
     if (!currentIdentity) return;
