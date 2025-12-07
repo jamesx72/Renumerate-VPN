@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -20,7 +20,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
 
   const LockedBadge = ({ level }: { level: 'pro' | 'elite' }) => (
     <button 
-      onClick={onShowPricing}
+      onClick={(e) => { e.stopPropagation(); onShowPricing(); }}
       className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
         level === 'elite' 
           ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-200 dark:hover:bg-emerald-500/20' 
@@ -52,11 +52,11 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
   ];
 
   const dnsProviders = [
-    { id: 'cloudflare', name: 'Cloudflare', ip: '1.1.1.1', tag: 'Rapide', ms: 12, desc: 'Focus vitesse & vie privée' },
-    { id: 'google', name: 'Google', ip: '8.8.8.8', tag: 'Standard', ms: 24, desc: 'Haute disponibilité' },
-    { id: 'quad9', name: 'Quad9', ip: '9.9.9.9', tag: 'Sécurité', ms: 45, desc: 'Bloque les malwares' },
-    { id: 'opendns', name: 'OpenDNS', ip: '208.67.222.222', tag: 'Famille', ms: 38, desc: 'Contrôle parental' },
-    { id: 'custom', name: 'Renumerate Private DNS', ip: 'Privé', tag: 'Anonyme', locked: true, ms: 5, desc: 'Non-journalisé • Interne' }
+    { id: 'cloudflare', name: 'Cloudflare', ip: '1.1.1.1', tag: 'Rapide', ms: 12, desc: 'Vitesse & Privée', icon: Zap, color: 'text-orange-500', bg: 'bg-orange-500', border: 'border-orange-500' },
+    { id: 'google', name: 'Google', ip: '8.8.8.8', tag: 'Standard', ms: 24, desc: 'Haute disponibilité', icon: Globe, color: 'text-blue-500', bg: 'bg-blue-500', border: 'border-blue-500' },
+    { id: 'quad9', name: 'Quad9', ip: '9.9.9.9', tag: 'Sécurité', ms: 45, desc: 'Anti-Malware', icon: Shield, color: 'text-indigo-500', bg: 'bg-indigo-500', border: 'border-indigo-500' },
+    { id: 'opendns', name: 'OpenDNS', ip: '208.67.222.222', tag: 'Famille', ms: 38, desc: 'Contrôle parental', icon: Users, color: 'text-cyan-600', bg: 'bg-cyan-600', border: 'border-cyan-600' },
+    { id: 'custom', name: 'Renumerate DNS', ip: 'Interne', tag: 'Anonyme', locked: true, ms: 5, desc: 'Zero-Logs • Privé', icon: Ghost, color: 'text-brand-500', bg: 'bg-brand-500', border: 'border-brand-500' }
   ];
 
   const splitApps = [
@@ -157,6 +157,87 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                   </div>
                 </button>
               ))}
+            </div>
+          </section>
+
+          {/* DNS Settings - ENHANCED VISUALS */}
+          <section>
+             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
+              <Zap className="w-4 h-4" /> Serveurs DNS
+            </h3>
+            <div className="space-y-3">
+              {dnsProviders.map((dns) => {
+                const isLocked = dns.locked && isFeatureLocked('pro');
+                const isSelected = settings.dns === dns.id;
+                const Icon = dns.icon;
+
+                return (
+                  <button
+                    key={dns.id}
+                    onClick={() => isLocked ? onShowPricing() : updateSettings('dns', dns.id)}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-300 relative overflow-hidden group ${
+                        isSelected
+                          ? `${dns.border} ${dns.bg.replace('bg-', 'bg-')}/5 dark:${dns.bg.replace('bg-', 'bg-')}/10 shadow-lg`
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
+                    } ${isLocked ? 'opacity-70 grayscale-[0.5]' : ''}`}
+                  >
+                    {/* Background glow effect when selected */}
+                    {isSelected && <div className={`absolute -right-10 -top-10 w-24 h-24 ${dns.bg} opacity-10 blur-3xl rounded-full pointer-events-none`}></div>}
+
+                    <div className="flex items-start gap-4 relative z-10">
+                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+                         isSelected 
+                           ? `${dns.bg} text-white shadow-md` 
+                           : `bg-slate-100 dark:bg-slate-800 ${dns.color}`
+                       }`}>
+                          {isLocked ? <Lock className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                       </div>
+                       
+                       <div className="text-left">
+                          <div className={`text-sm font-bold flex items-center gap-2 ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>
+                              {dns.name}
+                              {dns.id === 'custom' && !isLocked && <span className="text-[9px] bg-brand-500 text-white px-1.5 rounded-full shadow-sm">PRO</span>}
+                          </div>
+                          <div className="text-[11px] font-medium text-slate-400 font-mono mb-0.5 flex items-center gap-1.5">
+                             <span className={isSelected ? dns.color : ''}>{dns.ip}</span>
+                             {isSelected && <span className="w-1 h-1 rounded-full bg-slate-300"></span>}
+                             {isSelected && <span>{dns.desc}</span>}
+                          </div>
+                          {!isSelected && <div className="text-[10px] text-slate-400">{dns.desc}</div>}
+                       </div>
+                    </div>
+                    
+                    <div className="flex flex-col items-end gap-2 relative z-10">
+                         {/* Latency Indicator */}
+                        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-md">
+                             <div className="flex items-end gap-0.5 h-2.5">
+                                <div className={`w-0.5 rounded-[1px] ${dns.ms < 100 ? 'bg-emerald-500' : 'bg-slate-300'} h-1.5`} />
+                                <div className={`w-0.5 rounded-[1px] ${dns.ms < 50 ? 'bg-emerald-500' : 'bg-slate-300'} h-2.5`} />
+                                <div className={`w-0.5 rounded-[1px] ${dns.ms < 20 ? 'bg-emerald-500' : 'bg-slate-300'} h-full`} />
+                             </div>
+                             <span className="text-[9px] font-mono font-bold text-slate-600 dark:text-slate-300">
+                                {dns.ms}ms
+                              </span>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                             {dns.locked && isLocked && <LockedBadge level="pro" />}
+                             
+                             {/* Radio Check */}
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                                isSelected 
+                                  ? `${dns.border} ${dns.bg.replace('bg-', 'text-')}` // Use color text for the dot? No, let's use bg for border and dot
+                                  : 'border-slate-300 dark:border-slate-700'
+                            }`}
+                            style={{ borderColor: isSelected ? '' : '' }} // Rely on classes
+                            >
+                                {isSelected && <div className={`w-2.5 h-2.5 rounded-full ${dns.bg}`} />}
+                            </div>
+                        </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </section>
 
@@ -354,77 +435,6 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                   </div>
                 </div>
               )}
-            </div>
-          </section>
-
-          {/* DNS Settings */}
-          <section>
-             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
-              <Zap className="w-4 h-4" /> Serveurs DNS
-            </h3>
-            <div className="space-y-3">
-              {dnsProviders.map((dns) => {
-                const isLocked = dns.locked && isFeatureLocked('pro');
-                const isSelected = settings.dns === dns.id;
-
-                return (
-                  <button
-                    key={dns.id}
-                    onClick={() => isLocked ? onShowPricing() : updateSettings('dns', dns.id)}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
-                        isSelected
-                          ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10 shadow-sm ring-1 ring-brand-500/20'
-                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
-                    } ${isLocked ? 'opacity-75' : ''}`}
-                  >
-                    <div className="flex items-start gap-3">
-                       <div className={`mt-1 w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                          {isLocked ? <Lock className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
-                       </div>
-                       <div className="text-left">
-                          <div className={`text-sm font-bold flex items-center gap-2 ${isSelected ? 'text-brand-700 dark:text-brand-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                              {dns.name}
-                              {dns.id === 'custom' && <span className="text-[9px] bg-brand-500 text-white px-1.5 rounded-full shadow-sm shadow-brand-500/30">PRO</span>}
-                          </div>
-                          <div className="text-xs text-slate-500 font-mono mb-0.5">{dns.ip}</div>
-                          <div className="text-[10px] text-slate-400 leading-tight">{dns.desc}</div>
-                       </div>
-                    </div>
-                    
-                    <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-2">
-                             {/* Signal Bars */}
-                             <div className="flex items-end gap-0.5 h-3" title={`${dns.ms}ms`}>
-                                <div className={`w-1 rounded-[1px] ${dns.ms < 50 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'} h-1.5`} />
-                                <div className={`w-1 rounded-[1px] ${dns.ms < 30 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'} h-2.5`} />
-                                <div className={`w-1 rounded-[1px] ${dns.ms < 15 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'} h-3.5`} />
-                             </div>
-                             <span className={`text-[9px] font-mono px-1 rounded border ${isSelected ? 'border-brand-200 dark:border-brand-500/30 text-brand-600 dark:text-brand-400' : 'border-slate-200 dark:border-slate-700 text-slate-400'}`}>
-                                {dns.ms}ms
-                              </span>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                            {!isLocked && (
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                    isSelected 
-                                        ? 'bg-brand-200 dark:bg-brand-500/30 text-brand-700 dark:text-brand-300 border-brand-300 dark:border-brand-500/40' 
-                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-                                }`}>
-                                    {dns.tag}
-                                </span>
-                            )}
-                             {dns.locked && isLocked && <LockedBadge level="pro" />}
-                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                isSelected ? 'border-brand-500 bg-brand-500' : 'border-slate-300 dark:border-slate-600'
-                            }`}>
-                                {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                            </div>
-                        </div>
-                    </div>
-                  </button>
-                );
-              })}
             </div>
           </section>
         </div>

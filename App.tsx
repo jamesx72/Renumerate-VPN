@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -17,6 +17,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isEmergency, setIsEmergency] = useState(false); // New Emergency State
+  const [emergencyStep, setEmergencyStep] = useState<string>(''); // For granular UI feedback
   
   // Persistent State: Mode
   const [mode, setMode] = useState<ConnectionMode>(() => {
@@ -224,40 +225,54 @@ function App() {
   };
 
   const handleEmergencyProtocol = useCallback(() => {
-    if (!isConnected || !appSettings.killSwitch) return;
+    // If Kill Switch is OFF, just standard drop
+    if (!appSettings.killSwitch) {
+        addLog('⚠️ Connexion interrompue. Kill Switch inactif : IP exposée.', 'error');
+        disconnectVPN();
+        return;
+    }
 
-    // Simulate Drop
-    addLog('⚠️ DÉTECTION PERTE RÉSEAU !', 'error');
+    // Step 0: Trigger
+    addLog('🚨 DÉCONNEXION ACCIDENTELLE DÉTECTÉE', 'error');
     setIsEmergency(true);
-    setIsConnected(false); // Visually disconnect
+    setIsConnected(false);
+    setEmergencyStep('BLOCAGE TRAFIC');
     
-    // Step 1: Engage Kill Switch
-    addLog('🛡️ KILL SWITCH ENGAGÉ : Trafic Internet Bloqué', 'warning');
+    // Step 1: Engage Kill Switch (Immediate)
+    addLog('🛡️ KILL SWITCH ENGAGÉ : Trafic Internet totalement bloqué', 'warning');
     
+    // Step 2: Purge
     setTimeout(() => {
-        // Step 2: Emergency Renumeration
-        addLog('🚨 PROTOCOLE D\'URGENCE : Renumérotation forcée...', 'info');
-        
-        // Use a functional update or logic that doesn't depend on stale closure if possible, 
-        // but for this mock, currentIdentity from render scope is acceptable as it doesn't change fast.
-        const availableIds = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
-        const newIdentity = availableIds[Math.floor(Math.random() * availableIds.length)];
-        
+        setEmergencyStep('PURGE SESSION');
+        addLog('♻️ Purge des clés de session compromises...', 'info');
+
+        // Step 3: Forced Renumbering (Find NEW identity)
         setTimeout(() => {
-            setCurrentIdentity(newIdentity);
-            addLog(`✅ IDENTITÉ D'URGENCE ACQUISE : ${newIdentity.ip}`, 'success');
+            setEmergencyStep('RENUMÉROTATION');
+            addLog('🔄 Renumérotation forcée : Acquisition nouvelle identité...', 'warning');
             
-            // Step 3: Re-establish
+            const availableIds = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
+            const newIdentity = availableIds[Math.floor(Math.random() * availableIds.length)];
+            
+            // Step 4: Apply New ID
             setTimeout(() => {
-                setIsConnected(true);
-                setIsEmergency(false);
-                addLog('🚀 CONNEXION SÉCURISÉE RÉTABLIE', 'success');
-                handleAnalyze(newIdentity);
-            }, 1200);
-            
-        }, 2000);
-    }, 1500);
-  }, [isConnected, appSettings.killSwitch, currentIdentity]);
+                setCurrentIdentity(newIdentity);
+                addLog(`✅ Nouvelle IP sécurisée acquise : ${newIdentity.ip}`, 'success');
+                setEmergencyStep('RECONNEXION');
+                
+                // Step 5: Re-establish
+                setTimeout(() => {
+                    setIsConnected(true);
+                    setIsEmergency(false);
+                    setEmergencyStep('');
+                    addLog('🚀 TUNNEL RÉTABLI AVEC SUCCÈS', 'success');
+                    handleAnalyze(newIdentity);
+                }, 1000);
+                
+            }, 2000); // Time to find new IP
+        }, 1500); // Time to purge
+    }, 1000); // Time to block
+  }, [isConnected, appSettings.killSwitch, currentIdentity, disconnectVPN]);
 
   // Listen for offline events
   useEffect(() => {
@@ -307,7 +322,8 @@ function App() {
     if (!isConnected || isDisconnecting || isEmergency) return;
     
     if (!appSettings.killSwitch) {
-        addLog('Activez le Kill Switch pour cette simulation.', 'warning');
+        addLog('⚠️ Simulation : Perte réseau (Kill Switch Inactif)', 'error');
+        disconnectVPN();
         return;
     }
 
@@ -318,7 +334,7 @@ function App() {
         setIsDisconnecting(false);
         // This triggers the emergency state which will now show "NON PROTÉGÉ"
         handleEmergencyProtocol();
-    }, 1500);
+    }, 1000);
   };
 
   const handleRenumberRef = useRef(handleRenumber);
@@ -514,7 +530,7 @@ function App() {
               <div className={`w-2 h-2 rounded-full ${isEmergency ? 'bg-red-500 animate-ping' : isDisconnecting ? 'bg-amber-500 animate-pulse' : isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`} />
               <span>
                   {isEmergency 
-                    ? 'NON PROTÉGÉ' 
+                    ? 'URGENCE : RENUMÉROTATION' 
                     : isDisconnecting
                         ? 'DÉCONNEXION...'
                         : isConnected 
@@ -607,9 +623,17 @@ function App() {
                 </h2>
                 
                 {isEmergency && (
-                    <div className="mt-2 text-sm font-bold text-red-400 animate-pulse flex items-center gap-2 bg-red-950/30 px-4 py-2 rounded-full border border-red-500/30">
-                        <AlertTriangle className="w-4 h-4" />
-                        Renumérotation d'urgence en cours...
+                    <div className="mt-3 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+                        <div className="text-sm font-bold text-red-400 animate-pulse flex items-center gap-2 bg-red-950/30 px-4 py-2 rounded-full border border-red-500/30 shadow-lg shadow-red-500/10">
+                            <AlertTriangle className="w-4 h-4" />
+                            KILL SWITCH ACTIF : RENUMÉROTATION
+                        </div>
+                        {emergencyStep && (
+                            <div className="text-xs font-mono text-red-300 flex items-center gap-2 mt-1">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                {emergencyStep}...
+                            </div>
+                        )}
                     </div>
                 )}
                 
