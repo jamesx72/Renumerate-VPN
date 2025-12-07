@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity, Settings, Ghost } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity, Settings, Ghost, Laptop } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -252,6 +252,16 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
              {isRotating ? 'Generating Profile...' : isMasking ? 'Randomizing UA...' : (
                  <span key={identity.userAgentShort} className="animate-in fade-in duration-500">{identity.userAgentShort}</span>
              )}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-lg shadow-brand-600/10">
+          <div className="flex items-center gap-3 mb-2">
+            <Laptop className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+            <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Connexions Actives</span>
+          </div>
+          <div className={`font-mono text-lg font-bold ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+             {isRotating ? '--' : '3 Appareils'}
           </div>
         </div>
       </div>
