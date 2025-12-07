@@ -42,11 +42,19 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUp
       </div>
 
       <div className="relative z-10">
-        <div className="flex items-baseline gap-1 mb-2">
-          <span className="text-3xl font-mono font-bold text-slate-900 dark:text-white tracking-tighter">
-            {balance.toFixed(4)}
-          </span>
-          <span className="text-sm font-bold text-amber-500">RNC</span>
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-1 mb-2">
+          <div className="flex items-baseline gap-1">
+            <span className="text-3xl font-mono font-bold text-slate-900 dark:text-white tracking-tighter">
+              {balance.toFixed(4)}
+            </span>
+            <span className="text-sm font-bold text-amber-500">RNC</span>
+          </div>
+          {isEarning && (
+            <span className="text-xs font-mono font-bold text-emerald-500 mb-1.5 flex items-center gap-1 animate-pulse">
+                <TrendingUp className="w-3 h-3" />
+                +{rate} RNC/sec
+            </span>
+          )}
         </div>
 
         {!isPremium ? (

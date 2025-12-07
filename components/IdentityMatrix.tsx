@@ -1,6 +1,6 @@
 import React from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, MapPin, Building2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, MapPin, Building2, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -74,6 +74,11 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                 <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300">
                   <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
                   <span>{identity.city}</span>
+                </div>
+                <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
+                <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300" title="Fuseau Horaire Serveur">
+                   <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                   <span className="text-sm font-mono">{identity.timezone || 'UTC+0'}</span>
                 </div>
               </div>
             )}

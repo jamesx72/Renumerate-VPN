@@ -6,6 +6,7 @@ export interface VirtualIdentity {
   mac: string;
   userAgentShort: string;
   latency: number;
+  timezone: string;
 }
 
 export interface SecurityReport {
