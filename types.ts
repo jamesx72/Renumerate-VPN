@@ -26,6 +26,7 @@ export enum ConnectionMode {
 export interface LogEntry {
   id: string;
   timestamp: string;
+  timestampRaw: number;
   event: string;
   type: 'info' | 'warning' | 'success' | 'error';
 }
@@ -57,4 +58,5 @@ export interface AppSettings {
   mtuSize: number;
   ipv6LeakProtection: boolean;
   localNetworkSharing: boolean;
+  logRetentionHours: number;
 }

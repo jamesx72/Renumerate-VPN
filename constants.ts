@@ -10,6 +10,6 @@ export const MOCK_IDENTITIES: VirtualIdentity[] = [
 ];
 
 export const INITIAL_LOGS = [
-  { id: '1', timestamp: '10:00:01', event: 'Système initialisé', type: 'info' },
-  { id: '2', timestamp: '10:00:02', event: 'Module de cryptage chargé', type: 'success' },
+  { id: '1', timestamp: '10:00:01', timestampRaw: Date.now(), event: 'Système initialisé', type: 'info' as const },
+  { id: '2', timestamp: '10:00:02', timestampRaw: Date.now(), event: 'Module de cryptage chargé', type: 'success' as const },
 ];

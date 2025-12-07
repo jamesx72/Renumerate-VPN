@@ -73,7 +73,8 @@ function App() {
       obfuscationLevel: 'standard',
       mtuSize: 1420,
       ipv6LeakProtection: true,
-      localNetworkSharing: false
+      localNetworkSharing: false,
+      logRetentionHours: 168 // Default 7 days
     };
   });
 
@@ -98,14 +99,36 @@ function App() {
     localStorage.setItem('currentIdentity', JSON.stringify(currentIdentity));
   }, [currentIdentity]);
 
+  // Auto-cleanup logs based on retention setting
+  useEffect(() => {
+    const cleanupLogs = () => {
+        if (appSettings.logRetentionHours <= 0) return; // 0 = Keep forever
+        
+        const cutoffTime = Date.now() - (appSettings.logRetentionHours * 60 * 60 * 1000);
+        setLogs(prevLogs => {
+            const newLogs = prevLogs.filter(log => log.timestampRaw > cutoffTime);
+            return newLogs.length !== prevLogs.length ? newLogs : prevLogs;
+        });
+    };
+
+    // Run cleanup on mount and when retention setting changes
+    cleanupLogs();
+    
+    // Also run periodically (every hour)
+    const interval = setInterval(cleanupLogs, 3600000);
+    return () => clearInterval(interval);
+  }, [appSettings.logRetentionHours]);
+
   const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toLocaleTimeString('fr-FR'),
+      timestampRaw: Date.now(),
       event,
       type
     };
-    setLogs(prev => [...prev, newLog].slice(-50));
+    // Increase limit to 500 to allow retention time to be the primary factor
+    setLogs(prev => [...prev, newLog].slice(-500));
   }, []);
 
   const clearLogs = useCallback(() => {
@@ -587,6 +610,10 @@ function App() {
         const labels: Record<string, string> = { standard: 'Standard', high: 'Élevé', ultra: 'Ultra' };
         addLog(`Niveau d'obfuscation réglé sur : ${labels[value as string] || value}`, 'info');
         if (value !== 'standard') addLog('Note : Une obfuscation plus élevée peut augmenter la latence.', 'warning');
+    } else if (key === 'logRetentionHours') {
+        const val = value as number;
+        const label = val === 0 ? 'Infini' : val === 24 ? '24 Heures' : val === 168 ? '7 Jours' : val === 720 ? '30 Jours' : `${val}h`;
+        addLog(`Rétention des logs réglée sur : ${label}`, 'info');
     } else if (key === 'autoReconnect') {
         addLog(`Reconnexion automatique ${value ? 'activée' : 'désactivée'}`, 'info');
     } else if (key === 'reconnectDelay') {
@@ -1289,7 +1316,12 @@ function App() {
              </div>
 
              {/* Styled Terminal / Logs System */}
-             <SystemLogs logs={logs} onClear={clearLogs} />
+             <SystemLogs 
+                logs={logs} 
+                onClear={clearLogs} 
+                retentionHours={appSettings.logRetentionHours} 
+                onRetentionChange={(h) => handleUpdateSettings('logRetentionHours', h)}
+             />
           </div>
         </div>
       </main>

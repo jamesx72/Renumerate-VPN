@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity, Sliders, Ghost } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield, Activity, Settings, Ghost } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -185,7 +185,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                                 {obfuscationLevel}
                             </span>
                             <div className="p-0.5 rounded-full bg-slate-200 dark:bg-slate-700 opacity-0 group-hover:opacity-100 transition-all transform scale-90 group-hover:scale-100">
-                                <Sliders className="w-3 h-3 text-brand-500" />
+                                <Settings className="w-3 h-3 text-brand-500" />
                             </div>
                         </div>
                     </>

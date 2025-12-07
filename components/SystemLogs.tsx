@@ -1,15 +1,18 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Terminal, XCircle, CheckCircle, AlertTriangle, Info, Filter, Trash2 } from 'lucide-react';
+import { Terminal, XCircle, CheckCircle, AlertTriangle, Info, Filter, Trash2, Clock, Check } from 'lucide-react';
 import { LogEntry } from '../types';
 
 interface Props {
   logs: LogEntry[];
   onClear?: () => void;
+  retentionHours?: number;
+  onRetentionChange?: (hours: number) => void;
 }
 
-export const SystemLogs: React.FC<Props> = ({ logs, onClear }) => {
+export const SystemLogs: React.FC<Props> = ({ logs, onClear, retentionHours = 168, onRetentionChange }) => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<'all' | 'error' | 'warning' | 'success' | 'info'>('all');
+  const [showRetentionMenu, setShowRetentionMenu] = useState(false);
 
   // Auto-scroll when logs update or filter changes
   useEffect(() => {
@@ -17,6 +20,13 @@ export const SystemLogs: React.FC<Props> = ({ logs, onClear }) => {
   }, [logs, filter]);
 
   const filteredLogs = logs.filter(log => filter === 'all' || log.type === filter);
+
+  const retentionOptions = [
+    { label: '24 Heures', value: 24 },
+    { label: '7 Jours', value: 168 },
+    { label: '30 Jours', value: 720 },
+    { label: 'Infini', value: 0 },
+  ];
 
   return (
     <div className="bg-slate-950 rounded-2xl p-4 border border-slate-800 h-[400px] flex flex-col shadow-inner font-mono relative overflow-hidden group">
@@ -31,6 +41,49 @@ export const SystemLogs: React.FC<Props> = ({ logs, onClear }) => {
          </div>
          
          <div className="flex items-center gap-2">
+             {/* Retention Menu */}
+             {onRetentionChange && (
+                 <div className="relative">
+                     <button 
+                        onClick={() => setShowRetentionMenu(!showRetentionMenu)}
+                        className={`p-1.5 rounded transition-colors flex items-center gap-1.5 text-[10px] uppercase font-bold ${
+                            showRetentionMenu ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+                        }`}
+                        title="Configurer la rétention des logs"
+                     >
+                        <Clock className="w-3 h-3" />
+                     </button>
+                     
+                     {showRetentionMenu && (
+                         <div className="absolute top-full right-0 mt-1 w-32 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-20 py-1">
+                             <div className="px-2 py-1 text-[9px] text-slate-500 uppercase font-bold border-b border-slate-700/50 mb-1">
+                                 Auto-Suppression
+                             </div>
+                             {retentionOptions.map(opt => (
+                                 <button
+                                    key={opt.value}
+                                    onClick={() => {
+                                        onRetentionChange(opt.value);
+                                        setShowRetentionMenu(false);
+                                    }}
+                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 flex items-center justify-between ${
+                                        retentionHours === opt.value ? 'text-brand-400 font-bold' : 'text-slate-400'
+                                    }`}
+                                 >
+                                     {opt.label}
+                                     {retentionHours === opt.value && <Check className="w-3 h-3" />}
+                                 </button>
+                             ))}
+                         </div>
+                     )}
+                     
+                     {/* Click outside listener could be added here for better UX */}
+                     {showRetentionMenu && (
+                         <div className="fixed inset-0 z-10" onClick={() => setShowRetentionMenu(false)}></div>
+                     )}
+                 </div>
+             )}
+
              {/* Filters */}
              <div className="flex items-center gap-1 bg-slate-900/50 p-1 rounded-lg">
                 <Filter className="w-3 h-3 text-slate-600 mr-1" />
