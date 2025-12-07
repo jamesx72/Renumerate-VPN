@@ -183,18 +183,20 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                 </div>
 
                 {obfuscationLevel && (
-                    <div 
-                        className="flex items-center gap-2 group cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors min-w-0"
-                        onClick={(e) => { e.stopPropagation(); onOpenObfuscationSettings?.(); }}
-                        title="Configurer le niveau d'obfuscation"
-                    >
-                        <Ghost className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors shrink-0" />
-                        <span className="text-sm font-mono capitalize text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white truncate">
-                            {obfuscationLevel}
-                        </span>
-                        <div className="p-0.5 rounded-full bg-slate-200 dark:bg-slate-700 opacity-0 group-hover:opacity-100 transition-all transform scale-90 group-hover:scale-100 shrink-0">
-                            <Settings className="w-3 h-3 text-brand-500" />
+                    <div className="flex items-center min-w-0 -ml-1.5">
+                        <div className="flex items-center gap-2 px-1.5 py-0.5 min-w-0">
+                            <Ghost className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                            <span className="text-sm font-mono capitalize text-slate-600 dark:text-slate-300 truncate">
+                                {obfuscationLevel}
+                            </span>
                         </div>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onOpenObfuscationSettings?.(); }}
+                            className="ml-0.5 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-brand-500 transition-colors shrink-0"
+                            title="Configurer le niveau d'obfuscation"
+                        >
+                            <Settings className="w-3 h-3" />
+                        </button>
                     </div>
                 )}
 
