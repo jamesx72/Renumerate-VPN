@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -33,6 +33,7 @@ function App() {
 
   const [entryIdentity, setEntryIdentity] = useState<VirtualIdentity | null>(null); // Entry node for Double Hop
   const [isRenumbering, setIsRenumbering] = useState(false);
+  const [isMasking, setIsMasking] = useState(false); // New Masking State
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -299,7 +300,7 @@ function App() {
   };
 
   const handleRenumber = () => {
-    if (!isConnected || isRenumbering || isEmergency) return;
+    if (!isConnected || isRenumbering || isEmergency || isMasking) return;
     setIsRenumbering(true);
     addLog('Rotation d\'identité en cours...', 'warning');
     
@@ -315,6 +316,38 @@ function App() {
       setIsRenumbering(false);
       addLog(`Nouvelle identité assignée : ${newIdentity.country}`, 'success');
       handleAnalyze(newIdentity);
+    }, 2000);
+  };
+
+  const handleMasking = () => {
+    if (!isConnected || isMasking || isEmergency || isRenumbering) return;
+    setIsMasking(true);
+    addLog('Masquage des empreintes numériques en cours...', 'info');
+
+    setTimeout(() => {
+        const userAgents = ['Chrome / Win10', 'Firefox / MacOS', 'Safari / iOS', 'Edge / Win11', 'Brave / Linux', 'Opera / Android'];
+        const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+        
+        const generateMAC = () => {
+            const hex = "0123456789ABCDEF";
+            let mac = "";
+            for (let i = 0; i < 6; i++) {
+                mac += hex.charAt(Math.floor(Math.random() * 16));
+                mac += hex.charAt(Math.floor(Math.random() * 16));
+                if (i < 5) mac += ":";
+            }
+            return mac;
+        };
+        const newMAC = generateMAC();
+
+        setCurrentIdentity(prev => ({
+            ...prev,
+            mac: newMAC,
+            userAgentShort: randomUA
+        }));
+
+        setIsMasking(false);
+        addLog(`Empreinte masquée : ${randomUA} | ${newMAC}`, 'success');
     }, 2000);
   };
 
@@ -728,18 +761,34 @@ function App() {
                 <div className="flex flex-wrap gap-3 mt-6 justify-center">
                     <button
                       onClick={handleRenumber}
-                      disabled={!isConnected || isRenumbering || isEmergency}
+                      disabled={!isConnected || isRenumbering || isEmergency || isMasking}
                       title={!isConnected ? "Connectez-vous pour renuméroter" : isRenumbering ? "En cours..." : "Changer d'identité"}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border ${
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
                         !isConnected || isEmergency 
                           ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
                           : isRenumbering
                             ? 'bg-brand-500/10 text-brand-500 border-brand-500/20 cursor-wait'
-                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400 hover:shadow-lg hover:shadow-brand-500/10'
+                            : 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-brand-200 dark:border-brand-500/30 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-700 dark:hover:text-brand-300 hover:shadow-lg hover:shadow-brand-500/10 hover:scale-105'
                       }`}
                     >
                       <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
                       <span>{isRenumbering ? 'Renumérotation...' : 'Renuméroter'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleMasking}
+                      disabled={!isConnected || isMasking || isEmergency || isRenumbering}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
+                        !isConnected || isEmergency 
+                          ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
+                          : isMasking
+                            ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20 cursor-wait'
+                            : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-500 dark:hover:border-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 hover:shadow-lg hover:shadow-indigo-500/10 hover:scale-105'
+                      }`}
+                      title={!isConnected ? "Connectez-vous pour masquer" : isMasking ? "Masquage..." : "Masquer les empreintes (MAC/UA)"}
+                    >
+                      <Fingerprint className={`w-4 h-4 ${isMasking ? 'animate-pulse' : ''}`} />
+                      <span>{isMasking ? 'Masquage...' : 'Masquer'}</span>
                     </button>
 
                     <button
@@ -823,7 +872,7 @@ function App() {
                 </div>
                 
                 {isConnected || isEmergency ? (
-                  <IdentityMatrix identity={currentIdentity} entryIdentity={entryIdentity} isRotating={isRenumbering || isEmergency} mode={mode} />
+                  <IdentityMatrix identity={currentIdentity} entryIdentity={entryIdentity} isRotating={isRenumbering || isEmergency} isMasking={isMasking} mode={mode} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                     <Shield className="w-12 h-12 mb-2 opacity-20" />
