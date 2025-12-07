@@ -148,6 +148,15 @@ function App() {
         setTimeout(() => addLog('Génération de trafic de couverture...', 'info'), 3800);
     }
 
+    // Logic specifically for STEALTH Mode connection
+    if (mode === ConnectionMode.STEALTH) {
+        connectionDelay = 3500; // Force a longer delay for realism
+        setTimeout(() => addLog('Mode Furtif : Initialisation du moteur d\'obfuscation...', 'info'), 600);
+        setTimeout(() => addLog('Analyse des signatures DPI (Deep Packet Inspection)...', 'info'), 1500);
+        setTimeout(() => addLog('Suppression des métadonnées du protocole VPN...', 'info'), 2200);
+        setTimeout(() => addLog('Encapsulation SSL/TLS sur le port 443 (HTTPS)...', 'warning'), 3000);
+    }
+
     if (mode === ConnectionMode.DOUBLE_HOP) {
        // Select a random entry node different from current identity
        const potentialEntryNodes = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
@@ -175,6 +184,8 @@ function App() {
       } else if (mode === ConnectionMode.SMART_DNS) {
            addLog(`Smart DNS Activé: Routage intelligent via ${appSettings.dns}`, 'success');
            addLog(`Note: Votre IP d'origine est conservée pour les connexions directes.`, 'warning');
+      } else if (mode === ConnectionMode.STEALTH) {
+           addLog(`Connexion Furtive établie : Trafic indiscernable du HTTPS standard`, 'success');
       } else {
            addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
       }
@@ -335,6 +346,11 @@ function App() {
     if (!isConnected) {
         setMode(newMode);
         addLog(`Mode de connexion réglé sur : ${newMode}`, 'info');
+        
+        // Specific log for Stealth mode selection
+        if (newMode === ConnectionMode.STEALTH) {
+            addLog('Mode Furtif : Le trafic sera camouflé en HTTPS pour contourner les pare-feux.', 'warning');
+        }
     }
   };
 

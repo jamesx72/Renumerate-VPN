@@ -51,7 +51,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-lg shadow-brand-600/10">
+        <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-lg shadow-brand-600/10 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-brand-500/20">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
               <Network className="w-5 h-5 text-brand-600 dark:text-brand-400" />
