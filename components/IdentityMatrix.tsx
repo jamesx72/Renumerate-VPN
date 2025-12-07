@@ -144,84 +144,73 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
           </div>
           <div className={`font-mono text-lg ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
             {isRotating ? '---' : (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-wrap">
-                <div className="flex items-center gap-2" title="Emplacement VPN actuel">
-                  <Pin className="w-4 h-4 text-brand-500 cursor-help" />
-                  <span className="font-bold">{identity.country}</span>
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-y-3 gap-x-2">
+                <div className="flex items-center gap-2 min-w-0" title="Emplacement VPN actuel">
+                  <Pin className="w-4 h-4 text-brand-500 cursor-help shrink-0" />
+                  <span className="font-bold truncate">{identity.country}</span>
                 </div>
                 
-                <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
-                
                 <div 
-                  className="flex items-center gap-2 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded px-2 py-0.5 -ml-2 cursor-pointer transition-all duration-300 group hover:shadow-sm hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-500/20"
+                  className="flex items-center gap-2 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded px-2 py-0.5 -ml-2 cursor-pointer transition-all duration-300 group hover:shadow-sm hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-500/20 min-w-0"
                   onClick={() => console.log(`Cliqué sur la ville : ${identity.city}`)}
                 >
-                  <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors" />
-                  <span key={identity.city} className="text-base text-slate-600 dark:text-slate-300 group-hover:text-brand-700 dark:group-hover:text-brand-300 group-hover:font-semibold transition-all animate-in fade-in duration-500">{identity.city}</span>
+                  <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors shrink-0" />
+                  <span key={identity.city} className="text-base text-slate-600 dark:text-slate-300 group-hover:text-brand-700 dark:group-hover:text-brand-300 group-hover:font-semibold transition-all animate-in fade-in duration-500 truncate">{identity.city}</span>
                   <button 
                     onClick={(e) => { e.stopPropagation(); console.log(`Afficher plus de détails pour ${identity.city}`); }}
-                    className="p-1 rounded-full text-slate-600 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-900/50 hover:text-brand-600 transition-all ml-1 opacity-50 group-hover:opacity-100"
+                    className="p-1 rounded-full text-slate-600 dark:text-slate-400 hover:bg-brand-100 dark:hover:bg-brand-900/50 hover:text-brand-600 transition-all ml-1 opacity-50 group-hover:opacity-100 shrink-0"
                     title="Plus de détails"
                   >
                     <Plus className="w-3 h-3" />
                   </button>
                 </div>
                 
-                <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
-                
-                <div className="flex items-center gap-2" title="Date et Heure Système">
-                   <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-                   <div className="flex flex-col">
-                       <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 leading-none">
+                <div className="flex items-center gap-2 min-w-0" title="Date et Heure Système">
+                   <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                   <div className="flex flex-col min-w-0">
+                       <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-200 leading-none truncate">
                            {currentTime.toLocaleTimeString('fr-FR')}
                        </span>
-                       <span className="text-[9px] text-slate-400 leading-none mt-0.5">
+                       <span className="text-[9px] text-slate-400 leading-none mt-0.5 truncate">
                            {currentTime.toLocaleDateString('fr-FR')} • {identity.timezone || 'UTC+0'}
                        </span>
                    </div>
                 </div>
                 
-                <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
-                
-                <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300" title={`Protocole: ${protocolName} ${protocolVersion}`}>
-                   <Shield className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-                   <span className="text-sm font-mono">{protocolName}</span>
+                <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300 min-w-0" title={`Protocole: ${protocolName} ${protocolVersion}`}>
+                   <Shield className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                   <span className="text-sm font-mono truncate">{protocolName}</span>
                 </div>
 
                 {obfuscationLevel && (
-                    <>
-                        <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
-                        <div 
-                            className="flex items-center gap-2 group cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); onOpenObfuscationSettings?.(); }}
-                            title="Configurer le niveau d'obfuscation"
-                        >
-                            <Ghost className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors" />
-                            <span className="text-sm font-mono capitalize text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white">
-                                {obfuscationLevel}
-                            </span>
-                            <div className="p-0.5 rounded-full bg-slate-200 dark:bg-slate-700 opacity-0 group-hover:opacity-100 transition-all transform scale-90 group-hover:scale-100">
-                                <Settings className="w-3 h-3 text-brand-500" />
-                            </div>
+                    <div 
+                        className="flex items-center gap-2 group cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors min-w-0"
+                        onClick={(e) => { e.stopPropagation(); onOpenObfuscationSettings?.(); }}
+                        title="Configurer le niveau d'obfuscation"
+                    >
+                        <Ghost className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-brand-500 transition-colors shrink-0" />
+                        <span className="text-sm font-mono capitalize text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white truncate">
+                            {obfuscationLevel}
+                        </span>
+                        <div className="p-0.5 rounded-full bg-slate-200 dark:bg-slate-700 opacity-0 group-hover:opacity-100 transition-all transform scale-90 group-hover:scale-100 shrink-0">
+                            <Settings className="w-3 h-3 text-brand-500" />
                         </div>
-                    </>
+                    </div>
                 )}
-
-                <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
 
                 <div 
                     onClick={handleLatencyClick}
-                    className={`flex items-center gap-2 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors ${isMeasuring ? 'cursor-wait' : ''}`}
+                    className={`flex items-center gap-2 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors min-w-0 ${isMeasuring ? 'cursor-wait' : ''}`}
                     title={isMeasuring ? "Mesure en cours..." : "Cliquer pour rafraîchir la latence"}
                 >
-                   <Activity className={`w-3.5 h-3.5 ${isMeasuring ? 'text-brand-500 animate-pulse' : getLatencyColor(localLatency)}`} />
+                   <Activity className={`w-3.5 h-3.5 shrink-0 ${isMeasuring ? 'text-brand-500 animate-pulse' : getLatencyColor(localLatency)}`} />
                    
                    {isMeasuring ? (
                        <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                            <div className="h-full bg-brand-500 w-1/2 animate-[shimmer_1s_infinite]"></div>
                        </div>
                    ) : (
-                       <span className="text-sm font-mono text-slate-600 dark:text-slate-300">
+                       <span className="text-sm font-mono text-slate-600 dark:text-slate-300 truncate">
                             {localLatency}ms
                        </span>
                    )}
