@@ -1193,6 +1193,7 @@ function App() {
                         isMasking={isMasking} 
                         mode={mode} 
                         securityReport={securityReport}
+                        protocol={appSettings.protocol}
                       />
                       
                       {recommendedActions.length > 0 && (

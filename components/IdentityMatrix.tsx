@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check, Shield } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -9,9 +9,10 @@ interface Props {
   isMasking?: boolean;
   mode: ConnectionMode;
   securityReport?: SecurityReport | null;
+  protocol?: string;
 }
 
-export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, isMasking = false, mode, securityReport }) => {
+export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, isMasking = false, mode, securityReport, protocol = 'wireguard' }) => {
   const [copiedIp, setCopiedIp] = useState(false);
 
   const handleCopyIp = () => {
@@ -20,6 +21,18 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
     setCopiedIp(true);
     setTimeout(() => setCopiedIp(false), 2000);
   };
+
+  const getProtocolVersion = (p: string) => {
+      switch(p) {
+          case 'wireguard': return 'v1.0.202309';
+          case 'openvpn': return 'v2.6.8';
+          case 'ikev2': return 'v5.9.2';
+          default: return 'v1.0.0';
+      }
+  };
+
+  const protocolVersion = getProtocolVersion(protocol);
+  const protocolName = protocol === 'ikev2' ? 'IKEv2/IPsec' : protocol.charAt(0).toUpperCase() + protocol.slice(1);
 
   return (
     <div className="space-y-4">
@@ -80,6 +93,18 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                 )}
               </button>
             )}
+          </div>
+          
+          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                 <Shield className="w-3 h-3 text-slate-400 dark:text-slate-500" />
+                 <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    {protocolName}
+                 </span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800/50 px-1.5 py-0.5 rounded">
+                 {protocolVersion}
+              </span>
           </div>
         </div>
 
