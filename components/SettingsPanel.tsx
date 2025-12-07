@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -74,6 +74,8 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
         updateSettings('protocol', 'wireguard');
         updateSettings('dns', 'cloudflare');
         updateSettings('killSwitch', true);
+        updateSettings('autoReconnect', true);
+        updateSettings('reconnectDelay', 3);
         updateSettings('splitTunneling', false);
         updateSettings('adBlocker', false);
         updateSettings('autoConnect', false);
@@ -260,6 +262,51 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                 </div>
                                 </button>
                             ))}
+                        </div>
+
+                         {/* Auto Reconnect Settings */}
+                         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden mb-6">
+                            <div className="p-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                        <RotateCcw className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                                    </div>
+                                    <div>
+                                        <div className="font-medium text-slate-900 dark:text-white">Reconnexion Automatique</div>
+                                        <div className="text-xs text-slate-500">Tenter de rétablir le tunnel après une coupure.</div>
+                                    </div>
+                                </div>
+                                <button onClick={() => updateSettings('autoReconnect', !settings.autoReconnect)} className="transition-transform active:scale-95">
+                                    {settings.autoReconnect ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
+                                </button>
+                            </div>
+
+                            {settings.autoReconnect && (
+                                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50">
+                                    <div className="flex justify-between items-center mb-3 text-xs">
+                                        <span className="font-bold text-slate-500 flex items-center gap-2">
+                                            <Timer className="w-3.5 h-3.5" />
+                                            Délai avant tentative
+                                        </span>
+                                        <span className="font-mono text-brand-500 bg-brand-50 dark:bg-brand-500/10 px-2 py-0.5 rounded border border-brand-100 dark:border-brand-500/20">
+                                            {settings.reconnectDelay} sec
+                                        </span>
+                                    </div>
+                                    <input 
+                                        type="range" 
+                                        min="0" 
+                                        max="30" 
+                                        step="1"
+                                        value={settings.reconnectDelay} 
+                                        onChange={(e) => updateSettings('reconnectDelay', parseInt(e.target.value))}
+                                        className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                                    />
+                                    <div className="flex justify-between mt-2 text-[10px] text-slate-400">
+                                        <span>Immédiat</span>
+                                        <span>30 secondes</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* MTU Size Slider */}

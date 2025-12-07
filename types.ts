@@ -45,6 +45,8 @@ export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
   dns: 'cloudflare' | 'google' | 'quad9' | 'opendns' | 'custom';
   killSwitch: boolean;
+  autoReconnect: boolean;
+  reconnectDelay: number;
   splitTunneling: boolean;
   adBlocker: boolean;
   autoConnect: boolean;

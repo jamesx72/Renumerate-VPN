@@ -63,6 +63,8 @@ function App() {
       protocol: 'wireguard',
       dns: 'cloudflare',
       killSwitch: true,
+      autoReconnect: true,
+      reconnectDelay: 3,
       splitTunneling: false,
       adBlocker: false, 
       autoConnect: false,
@@ -96,6 +98,23 @@ function App() {
     localStorage.setItem('currentIdentity', JSON.stringify(currentIdentity));
   }, [currentIdentity]);
 
+  const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
+    const newLog: LogEntry = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toLocaleTimeString('fr-FR'),
+      event,
+      type
+    };
+    setLogs(prev => [...prev, newLog].slice(-50));
+  }, []);
+
+  const clearLogs = useCallback(() => {
+    setLogs([]);
+    setTimeout(() => {
+        addLog('Journaux système effacés', 'info');
+    }, 100);
+  }, [addLog]);
+
   // Load Transactions from Supabase with LocalStorage Fallback
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -109,7 +128,14 @@ function App() {
                 .order('created_at', { ascending: false });
 
             if (error) {
-                console.warn('Supabase fetch error (using local backup):', error.message || error);
+                // Gestion d'erreur améliorée pour éviter [object Object]
+                const errorMsg = typeof error === 'object' && error !== null && 'message' in error 
+                    ? (error as any).message 
+                    : JSON.stringify(error);
+                
+                console.warn(`Supabase fetch warning: ${errorMsg}`);
+                addLog('Synchro cloud impossible : Mode hors ligne', 'warning');
+                
                 // Fallback to local storage
                 const saved = localStorage.getItem(`transactions_${user.email}`);
                 if (saved) {
@@ -128,8 +154,9 @@ function App() {
                 // Update local storage backup
                 localStorage.setItem(`transactions_${user.email}`, JSON.stringify(mappedTransactions));
             }
-        } catch (e) {
-            console.warn('Network error, loading local transactions:', e);
+        } catch (e: any) {
+            console.error('Fetch transactions network error:', e);
+            addLog('Erreur réseau : Chargement historique local', 'error');
             const saved = localStorage.getItem(`transactions_${user.email}`);
             if (saved) {
                 setTransactions(JSON.parse(saved));
@@ -138,7 +165,7 @@ function App() {
     };
 
     fetchTransactions();
-  }, [user]);
+  }, [user, addLog]);
 
   // Earning Logic
   useEffect(() => {
@@ -157,24 +184,6 @@ function App() {
       if (interval) clearInterval(interval);
     };
   }, [isConnected, userPlan, isEmergency]);
-
-  const addLog = (event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
-    const newLog: LogEntry = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toLocaleTimeString('fr-FR'),
-      event,
-      type
-    };
-    setLogs(prev => [...prev, newLog].slice(-50));
-  };
-
-  const clearLogs = () => {
-    setLogs([]);
-    // Add a small delay to show the "Logs cleared" message after clearing
-    setTimeout(() => {
-        addLog('Journaux système effacés', 'info');
-    }, 100);
-  };
 
   const connectVPN = useCallback(() => {
     setIsDisconnecting(false);
@@ -262,10 +271,8 @@ function App() {
       if (appSettings.autoRotation) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
       if (appSettings.ipv6LeakProtection) addLog('Protection fuite IPv6 : Active', 'info');
       
-      // Trigger Analysis manually here since handleAnalyze isn't defined yet in this scope
-      // We'll use a useEffect on isConnected to trigger analysis instead, or assume handleAnalyze is called later.
     }, connectionDelay);
-  }, [appSettings, mode, currentIdentity]);
+  }, [appSettings, mode, currentIdentity, addLog]);
 
   const disconnectVPN = useCallback(() => {
     setIsDisconnecting(true);
@@ -277,7 +284,7 @@ function App() {
       setSecurityReport(null);
       addLog('Déconnecté du réseau sécurisé', 'info');
     }, 1500);
-  }, []);
+  }, [addLog]);
 
   const toggleConnection = async () => {
     if (isEmergency) return;
@@ -288,24 +295,7 @@ function App() {
     }
   };
 
-  // Trigger analysis when connected
-  useEffect(() => {
-    if (isConnected && !isDisconnecting && !isEmergency) {
-      handleAnalyze();
-    }
-  }, [isConnected]);
-
-  // Auto Connect Effect
-  const hasAutoConnected = useRef(false);
-  useEffect(() => {
-    if (!hasAutoConnected.current && appSettings.autoConnect && !isConnected && !isEmergency && user) {
-        hasAutoConnected.current = true;
-        addLog('🚀 Démarrage : Connexion automatique activée', 'info');
-        connectVPN();
-    }
-  }, [user]);
-
-  const handleAnalyze = async (identity: VirtualIdentity = currentIdentity) => {
+  const handleAnalyze = useCallback(async (identity: VirtualIdentity = currentIdentity) => {
     if (!isConnected && !isEmergency) return;
     setAnalyzing(true);
     // Only log if not in emergency loop to avoid clutter
@@ -320,7 +310,24 @@ function App() {
     } finally {
       setAnalyzing(false);
     }
-  };
+  }, [isConnected, isEmergency, mode, currentIdentity, addLog]);
+
+  // Trigger analysis when connected
+  useEffect(() => {
+    if (isConnected && !isDisconnecting && !isEmergency) {
+      handleAnalyze();
+    }
+  }, [isConnected, isDisconnecting, isEmergency, handleAnalyze]);
+
+  // Auto Connect Effect
+  const hasAutoConnected = useRef(false);
+  useEffect(() => {
+    if (!hasAutoConnected.current && appSettings.autoConnect && !isConnected && !isEmergency && user) {
+        hasAutoConnected.current = true;
+        addLog('🚀 Démarrage : Connexion automatique activée', 'info');
+        connectVPN();
+    }
+  }, [user, appSettings.autoConnect, isConnected, isEmergency, connectVPN, addLog]);
 
   const handleEmergencyProtocol = useCallback(() => {
     // If Kill Switch is OFF, just standard drop
@@ -356,21 +363,29 @@ function App() {
             setTimeout(() => {
                 setCurrentIdentity(newIdentity);
                 addLog(`✅ Nouvelle IP sécurisée acquise : ${newIdentity.ip}`, 'success');
-                setEmergencyStep('RECONNEXION');
+                setEmergencyStep(`ATTENTE (${appSettings.reconnectDelay}s)`);
                 
-                // Step 5: Re-establish
+                // Step 5: Re-establish with configured delay
                 setTimeout(() => {
-                    setIsConnected(true);
-                    setIsEmergency(false);
-                    setEmergencyStep('');
-                    addLog('🚀 TUNNEL RÉTABLI AVEC SUCCÈS', 'success');
-                    handleAnalyze(newIdentity);
-                }, 1000);
+                    if (appSettings.autoReconnect) {
+                        setIsConnected(true);
+                        setIsEmergency(false);
+                        setEmergencyStep('');
+                        addLog('🚀 TUNNEL RÉTABLI AVEC SUCCÈS', 'success');
+                        handleAnalyze(newIdentity);
+                    } else {
+                         // End of emergency sequence without reconnection
+                         setIsEmergency(false);
+                         setEmergencyStep('');
+                         addLog('Connexion coupée. Reconnexion automatique désactivée.', 'warning');
+                         disconnectVPN();
+                    }
+                }, appSettings.reconnectDelay * 1000);
                 
             }, 2000); // Time to find new IP
         }, 1500); // Time to purge
     }, 1000); // Time to block
-  }, [isConnected, appSettings.killSwitch, currentIdentity, disconnectVPN]);
+  }, [isConnected, appSettings.killSwitch, appSettings.autoReconnect, appSettings.reconnectDelay, currentIdentity, disconnectVPN, addLog, handleAnalyze]);
 
   // Listen for offline events
   useEffect(() => {
@@ -401,7 +416,7 @@ function App() {
     }
   };
 
-  const handleRenumber = () => {
+  const handleRenumber = useCallback(() => {
     if (!isConnected || isRenumbering || isEmergency || isMasking) return;
     setIsRenumbering(true);
     addLog('Rotation d\'identité en cours...', 'warning');
@@ -419,9 +434,9 @@ function App() {
       addLog(`Nouvelle identité assignée : ${newIdentity.country}`, 'success');
       handleAnalyze(newIdentity);
     }, 2000);
-  };
+  }, [isConnected, isRenumbering, isEmergency, isMasking, currentIdentity, entryIdentity, addLog, handleAnalyze]);
 
-  const handleMasking = () => {
+  const handleMasking = useCallback(() => {
     if (!isConnected || isMasking || isEmergency || isRenumbering) return;
     setIsMasking(true);
     addLog('Masquage des empreintes numériques (MAC/UA) en cours...', 'info');
@@ -455,7 +470,7 @@ function App() {
         setIsMasking(false);
         addLog(`Empreinte masquée : ${randomUA} | ${newMAC}`, 'success');
     }, 2000);
-  };
+  }, [isConnected, isMasking, isEmergency, isRenumbering, addLog]);
 
   const handleSimulateDrop = () => {
     if (!isConnected || isDisconnecting || isEmergency) return;
@@ -496,7 +511,7 @@ function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, currentIdentity, isEmergency]);
+  }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, isEmergency]);
 
   // Keyboard Shortcuts Handler
   useEffect(() => {
@@ -572,6 +587,10 @@ function App() {
         const labels: Record<string, string> = { standard: 'Standard', high: 'Élevé', ultra: 'Ultra' };
         addLog(`Niveau d'obfuscation réglé sur : ${labels[value as string] || value}`, 'info');
         if (value !== 'standard') addLog('Note : Une obfuscation plus élevée peut augmenter la latence.', 'warning');
+    } else if (key === 'autoReconnect') {
+        addLog(`Reconnexion automatique ${value ? 'activée' : 'désactivée'}`, 'info');
+    } else if (key === 'reconnectDelay') {
+        addLog(`Délai de reconnexion défini sur ${value}s`, 'info');
     } else {
         addLog(`Configuration mise à jour: ${key} -> ${value}`, 'info');
     }
@@ -620,7 +639,10 @@ function App() {
             }]);
 
             if (error) {
-                console.warn('Supabase Insert Error:', error.message);
+                const errorMsg = typeof error === 'object' && error !== null && 'message' in error 
+                    ? (error as any).message 
+                    : JSON.stringify(error);
+                console.warn('Supabase Insert Warning:', errorMsg);
                 addLog('Mode hors ligne : Transaction sauvegardée localement', 'warning');
             } else {
                 addLog('Transaction synchronisée sur le cloud', 'success');
@@ -756,7 +778,7 @@ function App() {
    }
 
     return recs;
-  }, [securityReport, isConnected, appSettings]);
+  }, [securityReport, isConnected, appSettings, addLog]);
 
   // Dynamic Styles for Emergency Mode
   const mainButtonColor = isEmergency 
