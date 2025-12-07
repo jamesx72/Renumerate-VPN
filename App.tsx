@@ -130,6 +130,21 @@ function App() {
     setIsDisconnecting(false);
     addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
     
+    // Obfuscation & Behavior Logic
+    let connectionDelay = 1500;
+    const obsLevel = appSettings.obfuscationLevel;
+
+    if (obsLevel === 'high') {
+        connectionDelay = 3000;
+        setTimeout(() => addLog('Obfuscation (Élevé) : Injection de paquets leurres...', 'info'), 800);
+        setTimeout(() => addLog('Chiffrement des en-têtes de paquets...', 'info'), 1800);
+    } else if (obsLevel === 'ultra') {
+        connectionDelay = 5000;
+        setTimeout(() => addLog('Obfuscation (Ultra) : Encapsulation SSL/TLS (Stealth)...', 'info'), 1000);
+        setTimeout(() => addLog('Contournement DPI : Fragmentation aléatoire des paquets...', 'warning'), 2500);
+        setTimeout(() => addLog('Génération de trafic de couverture...', 'info'), 3800);
+    }
+
     if (mode === ConnectionMode.DOUBLE_HOP) {
        // Select a random entry node different from current identity
        const potentialEntryNodes = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
@@ -142,6 +157,10 @@ function App() {
        setTimeout(() => {
            addLog('Relais confirmé. Routage vers le nœud de sortie...', 'success');
        }, 1000);
+
+       // Increase delay for Double Hop if not already long enough
+       if (connectionDelay < 2500) connectionDelay = 2500;
+       else connectionDelay += 1000;
     } else {
        setEntryIdentity(null);
     }
@@ -155,6 +174,15 @@ function App() {
            addLog(`Note: Votre IP d'origine est conservée pour les connexions directes.`, 'warning');
       } else {
            addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
+      }
+      
+      // Apply Obfuscation Side Effects (Latency penalty simulation)
+      if (obsLevel !== 'standard') {
+          addLog(`Mode Obfusqué ${obsLevel.toUpperCase()} actif : Anonymat renforcé`, 'success');
+          setCurrentIdentity(prev => ({
+              ...prev,
+              latency: prev.latency + (obsLevel === 'high' ? 45 : 120)
+          }));
       }
       
       // DNS Log
@@ -174,7 +202,7 @@ function App() {
       
       // Trigger Analysis manually here since handleAnalyze isn't defined yet in this scope
       // We'll use a useEffect on isConnected to trigger analysis instead, or assume handleAnalyze is called later.
-    }, 1500);
+    }, connectionDelay);
   }, [appSettings, mode, currentIdentity]);
 
   const disconnectVPN = useCallback(() => {
@@ -438,7 +466,9 @@ function App() {
     } else if (key === 'rotationInterval') {
         addLog(`Intervalle de rotation : ${value} min`, 'info');
     } else if (key === 'obfuscationLevel') {
-        addLog(`Niveau d'obfuscation réglé sur : ${value.toUpperCase()}`, 'info');
+        const labels: Record<string, string> = { standard: 'Standard', high: 'Élevé', ultra: 'Ultra' };
+        addLog(`Niveau d'obfuscation réglé sur : ${labels[value as string] || value}`, 'info');
+        if (value !== 'standard') addLog('Note : Une obfuscation plus élevée peut augmenter la latence.', 'warning');
     } else {
         addLog(`Configuration mise à jour: ${key} -> ${value}`, 'info');
     }
