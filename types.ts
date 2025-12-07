@@ -32,6 +32,15 @@ export interface LogEntry {
 
 export type PlanTier = 'free' | 'pro' | 'elite';
 
+export interface Transaction {
+  id: string;
+  date: string;
+  amount: number;
+  method: 'crypto' | 'paypal';
+  status: 'pending' | 'completed';
+  address: string;
+}
+
 export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
   dns: 'cloudflare' | 'google' | 'quad9' | 'opendns' | 'custom';

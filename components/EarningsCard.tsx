@@ -1,6 +1,6 @@
 import React from 'react';
-import { Coins, TrendingUp, Lock, Wallet, Zap, ArrowUpRight } from 'lucide-react';
-import { PlanTier } from '../types';
+import { Coins, TrendingUp, Lock, Wallet, Zap, ArrowUpRight, History, CheckCircle, CreditCard } from 'lucide-react';
+import { PlanTier, Transaction } from '../types';
 
 interface Props {
   isConnected: boolean;
@@ -8,9 +8,10 @@ interface Props {
   balance: number;
   onUpgrade: () => void;
   onWithdraw: () => void;
+  transactions?: Transaction[];
 }
 
-export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUpgrade, onWithdraw }) => {
+export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUpgrade, onWithdraw, transactions = [] }) => {
   const isPremium = plan !== 'free';
   const isEarning = isConnected && isPremium;
 
@@ -18,7 +19,7 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUp
   const rate = plan === 'elite' ? '0.012' : plan === 'pro' ? '0.004' : '0.000';
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 relative overflow-hidden group">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 relative overflow-hidden group flex flex-col h-full">
       {/* Background decoration */}
       <div className="absolute top-0 right-0 p-4 opacity-5">
         <Coins className="w-24 h-24 rotate-12" />
@@ -41,7 +42,7 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUp
         )}
       </div>
 
-      <div className="relative z-10">
+      <div className="relative z-10 mb-6">
         <div className="flex flex-wrap items-end gap-x-3 gap-y-1 mb-2">
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-mono font-bold text-slate-900 dark:text-white tracking-tighter">
@@ -112,6 +113,41 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, balance, onUp
           </div>
         )}
       </div>
+
+      {/* Transaction History Section */}
+      {transactions.length > 0 && isPremium && (
+          <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-800">
+             <div className="flex items-center gap-2 mb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                 <History className="w-3.5 h-3.5" />
+                 Dernières Transactions
+             </div>
+             <div className="space-y-2 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
+                 {transactions.slice(0, 3).map((tx) => (
+                     <div key={tx.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                         <div className="flex items-center gap-3">
+                             <div className={`p-1.5 rounded-full ${tx.method === 'crypto' ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-500' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-500'}`}>
+                                 {tx.method === 'crypto' ? <Wallet className="w-3 h-3" /> : <CreditCard className="w-3 h-3" />}
+                             </div>
+                             <div>
+                                 <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Retrait</span>
+                                    <span className="text-[10px] text-slate-400 font-mono">#{tx.id.split('-')[1]}</span>
+                                 </div>
+                                 <div className="text-[10px] text-slate-400">{tx.date}</div>
+                             </div>
+                         </div>
+                         <div className="text-right">
+                             <div className="text-xs font-bold font-mono text-emerald-500">-{tx.amount}</div>
+                             <div className="flex items-center justify-end gap-1 text-[10px] text-slate-400">
+                                 {tx.status === 'completed' && <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />}
+                                 <span className="capitalize">{tx.status}</span>
+                             </div>
+                         </div>
+                     </div>
+                 ))}
+             </div>
+          </div>
+      )}
     </div>
   );
 };

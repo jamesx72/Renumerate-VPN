@@ -10,8 +10,9 @@ import { SystemLogs } from './components/SystemLogs';
 import { WithdrawalModal } from './components/WithdrawalModal';
 import { AuthScreen } from './components/AuthScreen';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
-import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings } from './types';
+import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction } from './types';
 import { analyzeSecurity } from './services/geminiService';
+import { supabase } from './services/supabaseClient';
 
 function App() {
   const [isDark, setIsDark] = useState(true);
@@ -52,6 +53,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWithdrawal, setShowWithdrawal] = useState(false);
   const [balance, setBalance] = useState(0.0000);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   
   // Persistent State: App Settings
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
@@ -92,6 +94,39 @@ function App() {
   useEffect(() => {
     localStorage.setItem('currentIdentity', JSON.stringify(currentIdentity));
   }, [currentIdentity]);
+
+  // Load Transactions from Supabase
+  useEffect(() => {
+    const fetchTransactions = async () => {
+        if (!user) return;
+        
+        // Assume a table 'transactions' exists
+        const { data, error } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_email', user.email)
+            .order('created_at', { ascending: false }); // Assuming created_at or date column
+
+        if (error) {
+            console.error('Error fetching transactions:', error);
+            // Fallback to local state/empty if error for now, or you could add a log
+        } else if (data) {
+            // Map Supabase data to Transaction type if necessary, usually it matches if column names are same
+            // Handling potential date format differences or column mapping
+            const mappedTransactions: Transaction[] = data.map((t: any) => ({
+                id: t.id,
+                date: t.date || new Date(t.created_at).toLocaleDateString('fr-FR'),
+                amount: t.amount,
+                method: t.method,
+                status: t.status,
+                address: t.address
+            }));
+            setTransactions(mappedTransactions);
+        }
+    };
+
+    fetchTransactions();
+  }, [user]);
 
   // Earning Logic
   useEffect(() => {
@@ -533,17 +568,55 @@ function App() {
     setShowWithdrawal(true);
   };
 
-  const handleConfirmWithdrawal = (method: string, address: string) => {
-    const amount = balance.toFixed(4);
-    addLog(`Retrait de ${amount} RNC via ${method === 'crypto' ? 'Crypto' : 'PayPal'} initié vers ${address}...`, 'info');
+  const handleConfirmWithdrawal = async (method: string, address: string) => {
+    const amount = parseFloat(balance.toFixed(4));
     
-    // Reset balance
-    setBalance(0);
-    setShowWithdrawal(false);
+    // Log initiation
+    addLog(`Initialisation du retrait de ${amount} RNC vers ${method === 'crypto' ? 'Wallet' : 'PayPal'}...`, 'info');
     
-    setTimeout(() => {
-        addLog(`Transaction confirmée: ${amount} RNC envoyés avec succès.`, 'success');
-    }, 1000);
+    // Create new transaction object
+    const newTransaction: Transaction = {
+        id: `TX-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+        date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
+        amount: amount,
+        method: method as 'crypto' | 'paypal',
+        status: 'completed',
+        address: address
+    };
+
+    // Simulate blockchain/bank process steps in logs
+    setTimeout(async () => {
+        addLog(`Vérification de l'adresse ${address.substring(0,6)}...${address.substring(address.length-4)}`, 'info');
+        
+        // Save to Supabase
+        const { error } = await supabase.from('transactions').insert([{
+            id: newTransaction.id,
+            date: newTransaction.date,
+            amount: newTransaction.amount,
+            method: newTransaction.method,
+            status: newTransaction.status,
+            address: newTransaction.address,
+            user_email: user?.email
+        }]);
+
+        if (error) {
+            console.error('Supabase Error:', error);
+            addLog('Erreur lors de la sauvegarde sur la base de données', 'error');
+        } else {
+            addLog('Transaction enregistrée sur Supabase', 'success');
+        }
+
+        setTimeout(() => {
+            // Update transactions list locally (Optimistic UI)
+            setTransactions(prev => [newTransaction, ...prev]);
+            
+            // Reset balance
+            setBalance(0);
+            setShowWithdrawal(false);
+            
+            addLog(`Transaction confirmée [${newTransaction.id}] : ${amount} RNC envoyés.`, 'success');
+        }, 1000);
+    }, 800);
   };
 
   // Auth Handlers
@@ -551,12 +624,6 @@ function App() {
     const newUser = { email };
     setUser(newUser);
     localStorage.setItem('user', JSON.stringify(newUser));
-    // Note: We cannot easily access addLog from here if we rendered AuthScreen conditionally at top level
-    // but with the return logic below it is fine because logs state is preserved in App component
-    // Wait, if we return early, we might lose state if not careful, but React state preserves if component mounts.
-    // Actually if we return early, the App component effectively re-renders the other branch. 
-    // The previous state (logs) would be reset if the component unmounts, but App doesn't unmount, it just changes what it returns.
-    // However, hooks run before the return.
   };
 
   const handleLogout = () => {
@@ -566,6 +633,7 @@ function App() {
       setUser(null);
       localStorage.removeItem('user');
       setBalance(0);
+      setTransactions([]);
   };
 
   // Recommendation Logic
@@ -1098,6 +1166,7 @@ function App() {
                 balance={balance} 
                 onUpgrade={() => setShowPricing(true)} 
                 onWithdraw={handleOpenWithdrawal}
+                transactions={transactions}
              />
 
              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 min-h-[300px]">
