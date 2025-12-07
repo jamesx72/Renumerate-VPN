@@ -153,7 +153,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                   <span className="text-base text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{identity.city}</span>
                   <button 
                     onClick={(e) => { e.stopPropagation(); console.log(`Afficher plus de détails pour ${identity.city}`); }}
-                    className="p-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/30 border border-slate-200 dark:border-slate-700 hover:border-brand-200 dark:hover:border-brand-500/30 transition-all shadow-sm hover:shadow-md ml-1"
+                    className="p-1 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:opacity-80 transition-all ml-1"
                     title="Plus de détails"
                   >
                     <Plus className="w-3 h-3" />
