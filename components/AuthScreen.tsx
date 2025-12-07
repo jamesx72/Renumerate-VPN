@@ -45,11 +45,14 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 mb-4 shadow-inner border border-slate-200 dark:border-slate-700">
                <Shield className="w-8 h-8 text-brand-500" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
               Renumerate<span className="text-brand-500">VPN</span>
             </h1>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">
-              {isLogin ? 'Bon retour parmi nous' : 'Créez votre identité numérique'}
+            <p className="text-slate-600 dark:text-slate-300 text-sm font-medium tracking-wide mb-2">
+               Redéfinissez votre identité numérique.
+            </p>
+            <p className="text-slate-400 dark:text-slate-500 text-xs">
+              {isLogin ? 'Bon retour parmi nous' : 'Commencez votre expérience sécurisée'}
             </p>
           </div>
 

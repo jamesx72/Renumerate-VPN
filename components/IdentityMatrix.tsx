@@ -1,6 +1,6 @@
 import React from 'react';
 import { VirtualIdentity, ConnectionMode } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, MapPin, Building2 } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -57,7 +57,19 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
             <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Localisation Virtuelle</span>
           </div>
           <div className={`font-mono text-lg ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
-            {isRotating ? '---' : `${identity.city}, ${identity.country}`}
+            {isRotating ? '---' : (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-brand-500" />
+                  <span className="font-bold">{identity.country}</span>
+                </div>
+                <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
+                <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300">
+                  <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                  <span>{identity.city}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
