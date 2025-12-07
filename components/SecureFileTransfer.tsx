@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { FileUp, Lock, Unlock, File, ArrowRight, X, Check, Loader2 } from 'lucide-react';
+import { FileUp, Lock, Unlock, File, ArrowRight, X, Check, Loader2, ShieldAlert } from 'lucide-react';
 
 interface Props {
   isConnected: boolean;
@@ -33,17 +33,28 @@ export const SecureFileTransfer: React.FC<Props> = ({ isConnected, addLog }) => 
   const startTransfer = () => {
     if (!file || !isConnected) return;
 
+    // Security Check Log
+    if (!isEncrypted) {
+        addLog(`⚠️ Attention : Transfert non chiffré initié pour ${file.name}`, 'warning');
+    } else {
+        addLog(`🔒 Initialisation du chiffrement AES-256 pour ${file.name}`, 'info');
+    }
+
     let currentStep = 0;
     // Initial status based on encryption setting
     setStatus(isEncrypted ? 'encrypting' : 'transferring');
-    addLog(`Début du transfert: ${file.name} ${isEncrypted ? '(Chiffré)' : ''}`, 'info');
-
+    
     const interval = setInterval(() => {
       currentStep += Math.random() * 5 + 1;
       
       // If encrypted, switch to transferring state after 30%
       if (currentStep > 30 && isEncrypted && status !== 'transferring' && currentStep < 100) {
          setStatus('transferring');
+         if (status === 'encrypting') {
+             // Only log this once when switching state
+             // We can't easily log inside setInterval without refs or effects due to closure, 
+             // but checking status === 'encrypting' inside the interval helps mimic the transition
+         }
       }
 
       if (currentStep >= 100) {
@@ -79,10 +90,15 @@ export const SecureFileTransfer: React.FC<Props> = ({ isConnected, addLog }) => 
         {isConnected && (
             <button 
                 onClick={() => setIsEncrypted(!isEncrypted)}
-                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-colors ${isEncrypted ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'}`}
+                className={`flex items-center gap-1.5 text-[10px] px-3 py-1.5 rounded-full border transition-all font-bold ${
+                    isEncrypted 
+                    ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20' 
+                    : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20'
+                }`}
+                title={isEncrypted ? "Chiffrement Activé" : "Chiffrement Désactivé"}
             >
                 {isEncrypted ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                {isEncrypted ? 'AES-256' : 'Standard'}
+                {isEncrypted ? 'AES-256 ON' : 'AES-256 OFF'}
             </button>
         )}
       </div>
@@ -130,10 +146,14 @@ export const SecureFileTransfer: React.FC<Props> = ({ isConnected, addLog }) => 
                     {status === 'idle' ? (
                         <button 
                             onClick={startTransfer}
-                            className="w-full py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-500/20"
+                            className={`w-full py-2 rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 transition-all shadow-lg ${
+                                isEncrypted 
+                                    ? 'bg-brand-500 hover:bg-brand-600 text-white shadow-brand-500/20' 
+                                    : 'bg-slate-700 hover:bg-slate-600 text-slate-200 shadow-slate-700/20 border border-slate-600'
+                            }`}
                         >
-                            <ArrowRight className="w-4 h-4" />
-                            Envoyer {isEncrypted ? 'Sécurisé' : ''}
+                            {isEncrypted ? <Lock className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                            {isEncrypted ? 'Envoyer Sécurisé' : 'Envoyer Non Chiffré'}
                         </button>
                     ) : (
                         <div className="space-y-3">
@@ -143,7 +163,7 @@ export const SecureFileTransfer: React.FC<Props> = ({ isConnected, addLog }) => 
                                     {status === 'transferring' && <Loader2 className="w-3.5 h-3.5 text-brand-500 animate-spin" />}
                                     {status === 'completed' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
                                     
-                                    {status === 'encrypting' ? 'Chiffrement...' : 
+                                    {status === 'encrypting' ? 'Chiffrement AES-256...' : 
                                      status === 'transferring' ? 'Téléversement...' : 
                                      'Terminé'}
                                 </span>
