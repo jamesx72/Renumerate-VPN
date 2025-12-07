@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Mail, ArrowRight, Loader2, KeyRound } from 'lucide-react';
+import { Shield, Mail, ArrowRight, Loader2, KeyRound, CheckCircle } from 'lucide-react';
 
 interface Props {
   onLogin: (email: string) => void;
@@ -10,6 +10,7 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -27,9 +28,33 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
     // Simulate API call authentication delay
     setTimeout(() => {
         setIsLoading(false);
-        onLogin(email);
+        setIsSuccess(true);
+        setTimeout(() => {
+             onLogin(email);
+        }, 1500);
     }, 1500);
   };
+
+  if (isSuccess) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors duration-300">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl p-8 border border-slate-200 dark:border-slate-800 text-center animate-in fade-in zoom-in duration-300">
+           <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-500 shadow-lg shadow-emerald-500/20">
+              <CheckCircle className="w-10 h-10" />
+           </div>
+           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+             {isLogin ? 'Connexion réussie !' : 'Compte créé avec succès !'}
+           </h2>
+           <p className="text-slate-500 dark:text-slate-400">
+             Redirection vers votre interface sécurisée...
+           </p>
+           <div className="mt-6 flex justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
+           </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors duration-300">

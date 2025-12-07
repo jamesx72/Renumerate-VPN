@@ -932,35 +932,18 @@ function App() {
                 </div>
                 
                 {isConnected || isEmergency ? (
-                  <IdentityMatrix identity={currentIdentity} entryIdentity={entryIdentity} isRotating={isRenumbering || isEmergency} isMasking={isMasking} mode={mode} />
+                  <IdentityMatrix 
+                    identity={currentIdentity} 
+                    entryIdentity={entryIdentity} 
+                    isRotating={isRenumbering || isEmergency} 
+                    isMasking={isMasking} 
+                    mode={mode} 
+                    securityReport={securityReport}
+                  />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                     <Shield className="w-12 h-12 mb-2 opacity-20" />
                     <p>Connectez-vous pour masquer votre identité</p>
-                  </div>
-                )}
-
-                {securityReport && (
-                  <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
-                    <h4 className="text-sm font-medium mb-3 text-slate-500">Analyse IA Gemini</h4>
-                    <div className="space-y-3 text-sm">
-                       <div className="flex justify-between items-center">
-                         <span>Menace:</span>
-                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                           securityReport.threatLevel === 'Faible' ? 'bg-emerald-500/10 text-emerald-500' : 
-                           securityReport.threatLevel === 'Moyen' ? 'bg-amber-500/10 text-amber-500' : 
-                           'bg-red-500/10 text-red-500'
-                         }`}>{securityReport.threatLevel.toUpperCase()}</span>
-                       </div>
-                       <p className="text-slate-600 dark:text-slate-300 text-xs italic">"{securityReport.analysis}"</p>
-                       <ul className="space-y-1 mt-2">
-                         {securityReport.recommendations.map((rec, i) => (
-                           <li key={i} className="flex items-start gap-2 text-xs text-slate-500">
-                             <span className="text-brand-500">•</span> {rec}
-                           </li>
-                         ))}
-                       </ul>
-                    </div>
                   </div>
                 )}
              </div>
