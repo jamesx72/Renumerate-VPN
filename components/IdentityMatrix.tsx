@@ -178,7 +178,6 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                    <span className="text-sm font-mono">{protocolName}</span>
                 </div>
 
-                {/* Indicateur Obfuscation et Bouton Sliders */}
                 {obfuscationLevel && (
                     <>
                         <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
@@ -202,13 +201,20 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
 
                 <div 
                     onClick={handleLatencyClick}
-                    className="flex items-center gap-2 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors"
+                    className={`flex items-center gap-2 cursor-pointer group hover:bg-slate-100 dark:hover:bg-slate-800 rounded px-1.5 py-0.5 -ml-1.5 transition-colors ${isMeasuring ? 'cursor-wait' : ''}`}
                     title={isMeasuring ? "Mesure en cours..." : "Cliquer pour rafraîchir la latence"}
                 >
-                   <Activity className={`w-3.5 h-3.5 ${isMeasuring ? 'text-brand-500 animate-spin' : getLatencyColor(localLatency)}`} />
-                   <span className={`text-sm font-mono ${isMeasuring ? 'text-brand-500' : 'text-slate-600 dark:text-slate-300'}`}>
-                        {isMeasuring ? '...' : `${localLatency}ms`}
-                   </span>
+                   <Activity className={`w-3.5 h-3.5 ${isMeasuring ? 'text-brand-500 animate-pulse' : getLatencyColor(localLatency)}`} />
+                   
+                   {isMeasuring ? (
+                       <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                           <div className="h-full bg-brand-500 w-1/2 animate-[shimmer_1s_infinite]"></div>
+                       </div>
+                   ) : (
+                       <span className="text-sm font-mono text-slate-600 dark:text-slate-300">
+                            {localLatency}ms
+                       </span>
+                   )}
                 </div>
               </div>
             )}
