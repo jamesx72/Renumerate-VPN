@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Plus, Share2, Check } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -12,6 +12,15 @@ interface Props {
 }
 
 export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, isMasking = false, mode, securityReport }) => {
+  const [copiedIp, setCopiedIp] = useState(false);
+
+  const handleCopyIp = () => {
+    if (isRotating) return;
+    navigator.clipboard.writeText(identity.ip);
+    setCopiedIp(true);
+    setTimeout(() => setCopiedIp(false), 2000);
+  };
+
   return (
     <div className="space-y-4">
       {mode === ConnectionMode.DOUBLE_HOP && entryIdentity && (
@@ -43,12 +52,34 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-lg shadow-brand-600/10">
-          <div className="flex items-center gap-3 mb-2">
-            <Network className="w-5 h-5 text-brand-600 dark:text-brand-400" />
-            <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Adresse IP Publique</span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <Network className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+              <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Adresse IP Publique</span>
+            </div>
+            {copiedIp && (
+               <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded animate-in fade-in slide-in-from-right-2">
+                   IP copiée !
+               </span>
+            )}
           </div>
-          <div className={`font-mono text-xl tracking-wider ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
-             {isRotating ? 'RENUMBERING...' : identity.ip}
+          <div className="flex items-center justify-between">
+            <div className={`font-mono text-xl tracking-wider ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+               {isRotating ? 'RENUMBERING...' : identity.ip}
+            </div>
+            {!isRotating && (
+              <button 
+                onClick={handleCopyIp}
+                className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/30 transition-all shadow-sm group border border-slate-200 dark:border-slate-700 hover:border-brand-200 dark:hover:border-brand-500/30"
+                title="Copier l'adresse IP"
+              >
+                {copiedIp ? (
+                  <Check className="w-4 h-4 text-emerald-500" />
+                ) : (
+                  <Share2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -71,9 +102,16 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
                   <span className="font-bold">{identity.country}</span>
                 </div>
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
-                <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300">
+                <div className="flex items-center gap-2">
                   <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-                  <span>{identity.city}</span>
+                  <span className="text-base text-slate-600 dark:text-slate-300">{identity.city}</span>
+                  <button 
+                    onClick={() => console.log(`Afficher plus de détails pour ${identity.city}`)}
+                    className="p-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/30 border border-slate-200 dark:border-slate-700 hover:border-brand-200 dark:hover:border-brand-500/30 transition-all shadow-sm hover:shadow-md ml-1"
+                    title="Plus de détails"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
                 </div>
                 <div className="hidden sm:block w-px h-4 bg-slate-300 dark:bg-slate-700"></div>
                 <div className="flex items-center gap-2 text-base text-slate-600 dark:text-slate-300" title="Fuseau Horaire Serveur">

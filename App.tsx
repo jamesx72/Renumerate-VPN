@@ -650,6 +650,17 @@ function App() {
             ? 'bg-emerald-500/10' 
             : 'bg-slate-500/10';
 
+  // Calculate dynamic border color based on mode for the card
+  const cardBorderClass = isEmergency 
+    ? 'border-red-500/30 shadow-red-900/10' 
+    : isConnected && mode === ConnectionMode.STEALTH
+        ? 'border-indigo-500/30 shadow-indigo-500/10'
+        : isConnected && mode === ConnectionMode.DOUBLE_HOP
+            ? 'border-violet-500/30 shadow-violet-500/10'
+            : isConnected && mode === ConnectionMode.SMART_DNS
+                ? 'border-orange-500/30 shadow-orange-500/10'
+                : 'border-slate-200 dark:border-slate-800';
+
   // Auth Guard
   if (!user) {
       return (
@@ -780,11 +791,11 @@ function App() {
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <div className={`bg-white dark:bg-slate-900 rounded-2xl p-8 border ${isEmergency ? 'border-red-500/30' : 'border-slate-200 dark:border-slate-800'} shadow-xl relative overflow-hidden transition-all duration-500`}>
+            <div className={`bg-white dark:bg-slate-900 rounded-2xl p-8 border ${cardBorderClass} shadow-xl relative overflow-hidden transition-all duration-500`}>
               
               {/* Stealth Mode Indicator Banner */}
               {mode === ConnectionMode.STEALTH && isConnected && !isEmergency && (
-                 <div className="absolute top-0 left-0 w-full bg-indigo-950/90 border-b border-indigo-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-shimmer">
+                 <div className="absolute top-0 left-0 w-full bg-indigo-950/90 border-b border-indigo-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
                     <Ghost className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
                     <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">
                       Mode Furtif Activé - Trafic Obfusqué
@@ -794,7 +805,7 @@ function App() {
 
               {/* Double Hop Indicator Banner */}
               {mode === ConnectionMode.DOUBLE_HOP && isConnected && !isEmergency && (
-                <div className="absolute top-0 left-0 w-full bg-violet-950/90 border-b border-violet-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-shimmer">
+                <div className="absolute top-0 left-0 w-full bg-violet-950/90 border-b border-violet-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
                   <Layers className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
                   <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200">
                     Double Hop Actif - Relais Chiffré
@@ -804,7 +815,7 @@ function App() {
 
               {/* Smart DNS Indicator Banner */}
               {mode === ConnectionMode.SMART_DNS && isConnected && !isEmergency && (
-                <div className="absolute top-0 left-0 w-full bg-orange-950/90 border-b border-orange-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-shimmer">
+                <div className="absolute top-0 left-0 w-full bg-orange-950/90 border-b border-orange-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
                   <Globe className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
                   <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-200">
                     Smart DNS Actif - IP D'origine Conservée
@@ -837,7 +848,7 @@ function App() {
                 <button
                   onClick={toggleConnection}
                   disabled={isDisconnecting || isEmergency}
-                  className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl ${mainButtonColor}`}
+                  className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-700 ease-in-out shadow-2xl ${mainButtonColor}`}
                 >
                   {isEmergency ? (
                       <WifiOff className="w-12 h-12 text-white animate-shake" />
@@ -857,7 +868,7 @@ function App() {
                 </h2>
                 
                 {!isEmergency && !isDisconnecting && (
-                  <div className="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
+                  <div key={mode} className="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-1 duration-300">
                       {mode === ConnectionMode.STANDARD && <Zap className="w-3.5 h-3.5 text-brand-500" />}
                       {mode === ConnectionMode.STEALTH && <Ghost className="w-3.5 h-3.5 text-indigo-500" />}
                       {mode === ConnectionMode.DOUBLE_HOP && <Layers className="w-3.5 h-3.5 text-violet-500" />}
@@ -926,7 +937,7 @@ function App() {
                           key={m}
                           onClick={() => handleModeChange(m)}
                           disabled={isConnected || isEmergency}
-                          className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
+                          className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transform transition-all duration-300 hover:scale-105 active:scale-95 ${
                             isSelected
                               ? m === ConnectionMode.STEALTH
                                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
