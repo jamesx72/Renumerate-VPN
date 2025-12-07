@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2 } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './components/DashboardCharts';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -594,6 +594,23 @@ function App() {
                   </span>
                 </div>
               )}
+
+              {/* Kill Switch Toggle - Top Right */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUpdateSettings('killSwitch', !appSettings.killSwitch);
+                }}
+                className={`absolute top-6 right-6 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 backdrop-blur-md ${
+                  appSettings.killSwitch 
+                    ? 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)]' 
+                    : 'bg-slate-100/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+                title={appSettings.killSwitch ? "Désactiver Kill Switch" : "Activer Kill Switch"}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block">Kill Switch</span>
+                {appSettings.killSwitch ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+              </button>
 
               <div className="absolute top-0 right-0 p-4 opacity-10">
                 {isEmergency ? <Siren className="w-64 h-64 text-red-500 animate-pulse" /> : <Wifi className="w-64 h-64" />}
