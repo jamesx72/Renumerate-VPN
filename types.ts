@@ -72,3 +72,16 @@ export interface AppSettings {
   localNetworkSharing: boolean;
   logRetentionHours: number;
 }
+
+export interface DeviceNode {
+  id: string;
+  name: string;
+  type: 'mobile' | 'desktop' | 'iot' | 'server';
+  status: 'active' | 'idle' | 'syncing' | 'disconnected';
+  signalStrength: number;
+  transferRate: number;
+  latency: number;
+  autonomyProfile: 'provider' | 'balanced' | 'consumer';
+  tags: string[];
+  ip: string;
+}

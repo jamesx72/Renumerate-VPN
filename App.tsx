@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight, History, Info } from 'lucide-react';
+import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight, History, Info, Network } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
@@ -11,8 +11,9 @@ import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
+import { NetworkView } from './components/NetworkView'; // Import NetworkView
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
-import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession } from './types';
+import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode } from './types'; // Import DeviceNode
 import { analyzeSecurity } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
@@ -23,6 +24,7 @@ function App() {
   const [isEmergency, setIsEmergency] = useState(false); // New Emergency State
   const [emergencyStep, setEmergencyStep] = useState<string>(''); // For granular UI feedback
   const [notification, setNotification] = useState<string | null>(null); // Notification state
+  const [currentView, setCurrentView] = useState<'dashboard' | 'network'>('dashboard'); // New View State
   
   // Auth State
   const [user, setUser] = useState<{email: string} | null>(() => {
@@ -49,6 +51,9 @@ function App() {
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Network Nodes State
+  const [deviceNodes, setDeviceNodes] = useState<DeviceNode[]>([]);
 
   // Connection History Logic
   const connectionStartRef = useRef<number | null>(null);
@@ -97,6 +102,23 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDark]);
+
+  // Initial Mock Data Generation
+  useEffect(() => {
+      const mockNodes: DeviceNode[] = Array.from({ length: 12 }, (_, i) => ({
+          id: `node-${i}`,
+          name: `Renumerate Node ${i+1}`,
+          type: i % 4 === 0 ? 'server' : i % 3 === 0 ? 'iot' : 'mobile',
+          status: Math.random() > 0.3 ? 'active' : 'idle',
+          signalStrength: Math.floor(Math.random() * 60) + 40,
+          transferRate: Math.floor(Math.random() * 100),
+          latency: Math.floor(Math.random() * 120) + 10,
+          autonomyProfile: i % 3 === 0 ? 'provider' : i % 2 === 0 ? 'balanced' : 'consumer',
+          tags: ['Secure'],
+          ip: `10.8.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`
+      }));
+      setDeviceNodes(mockNodes);
+  }, []);
 
   // Notification Timer Effect
   useEffect(() => {
@@ -771,6 +793,26 @@ function App() {
       setTransactions([]);
   };
 
+  // Connect node from Network View
+  const handleConnectNode = (nodeId: string) => {
+      const target = deviceNodes.find(n => n.id === nodeId);
+      if (target) {
+          addLog(`Connexion manuelle au nœud : ${target.name}`, 'info');
+          setCurrentView('dashboard');
+          if (!isConnected) {
+              connectVPN();
+          } else {
+              // Simulate switch
+              setIsRenumbering(true);
+              setTimeout(() => {
+                  setCurrentIdentity(prev => ({ ...prev, ip: target.ip, latency: target.latency }));
+                  setIsRenumbering(false);
+                  addLog(`Basculement réussi vers ${target.name}`, 'success');
+              }, 1500);
+          }
+      }
+  };
+
   // Recommendation Logic
   const recommendedActions = useMemo(() => {
     if (!securityReport || !isConnected) return [];
@@ -979,6 +1021,24 @@ function App() {
             </div>
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide hidden md:block pl-10 -mt-1">Redéfinissez votre identité numérique.</span>
           </div>
+          
+          {/* Main Navigation */}
+          <div className="hidden md:flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg mx-4">
+              <button 
+                onClick={() => setCurrentView('dashboard')}
+                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${currentView === 'dashboard' ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                  Dashboard
+              </button>
+              <button 
+                onClick={() => setCurrentView('network')}
+                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${currentView === 'network' ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                  <Network className="w-3 h-3" />
+                  Réseau
+              </button>
+          </div>
+
           <div className="flex items-center gap-3">
             {/* Wallet Display & Withdrawal */}
             {userPlan !== 'free' && !isEmergency && (
@@ -1079,341 +1139,348 @@ function App() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <div className={`bg-white dark:bg-slate-900 rounded-2xl p-8 border ${cardBorderClass} shadow-xl relative overflow-hidden transition-all duration-500`}>
-              
-              {/* Stealth Mode Indicator Banner */}
-              {mode === ConnectionMode.STEALTH && isConnected && !isEmergency && (
-                 <div className="absolute top-0 left-0 w-full bg-indigo-950/90 border-b border-indigo-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
-                    <Ghost className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">
-                      Mode Furtif Activé - Trafic Obfusqué
-                    </span>
-                 </div>
-              )}
-
-              {/* Double Hop Indicator Banner */}
-              {mode === ConnectionMode.DOUBLE_HOP && isConnected && !isEmergency && (
-                <div className="absolute top-0 left-0 w-full bg-violet-950/90 border-b border-violet-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
-                  <Layers className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200">
-                    Double Hop Actif - Relais Chiffré
-                  </span>
-                </div>
-              )}
-
-              {/* Smart DNS Indicator Banner */}
-              {mode === ConnectionMode.SMART_DNS && isConnected && !isEmergency && (
-                <div className="absolute top-0 left-0 w-full bg-orange-950/90 border-b border-orange-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
-                  <Globe className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-200">
-                    Smart DNS Actif - IP D'origine Conservée
-                  </span>
-                </div>
-              )}
-
-              {/* Kill Switch Toggle - Top Right */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleUpdateSettings('killSwitch', !appSettings.killSwitch);
-                }}
-                className={`absolute top-6 right-6 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 backdrop-blur-md ${
-                  appSettings.killSwitch 
-                    ? 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)]' 
-                    : 'bg-slate-100/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-                title={appSettings.killSwitch ? "Désactiver Kill Switch" : "Activer Kill Switch"}
-              >
-                <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block">Kill Switch</span>
-                {appSettings.killSwitch ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-              </button>
-
-              <div className="absolute top-0 right-0 p-4 opacity-10">
-                {isEmergency ? <Siren className="w-64 h-64 text-red-500 animate-pulse" /> : <Wifi className="w-64 h-64" />}
-              </div>
-              
-              <div className="relative z-10 flex flex-col items-center justify-center py-8">
-                <button
-                  onClick={toggleConnection}
-                  disabled={isDisconnecting || isEmergency}
-                  className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-700 ease-in-out shadow-2xl ${mainButtonColor}`}
-                >
-                  {isEmergency ? (
-                      <WifiOff className="w-12 h-12 text-white animate-shake" />
-                  ) : (
-                      <Power className="w-12 h-12 text-white" />
-                  )}
-                </button>
+        
+        {currentView === 'network' ? (
+            <div className="h-[calc(100vh-140px)]">
+                <NetworkView nodes={deviceNodes} onConnectNode={handleConnectNode} />
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+                <div className={`bg-white dark:bg-slate-900 rounded-2xl p-8 border ${cardBorderClass} shadow-xl relative overflow-hidden transition-all duration-500`}>
                 
-                <h2 className={`mt-6 text-2xl font-bold ${isEmergency ? 'text-red-500' : ''}`}>
-                  {isEmergency 
-                    ? 'COUPURE DÉTECTÉE' 
-                    : isDisconnecting 
-                        ? 'Déconnexion...' 
-                        : isConnected 
-                            ? 'Connexion Active' 
-                            : 'Prêt à connecter'}
-                </h2>
-                
-                {!isEmergency && !isDisconnecting && (
-                  <div key={mode} className="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-1 duration-300">
-                      {mode === ConnectionMode.STANDARD && <Zap className="w-3.5 h-3.5 text-brand-500" />}
-                      {mode === ConnectionMode.STEALTH && <Ghost className="w-3.5 h-3.5 text-indigo-500" />}
-                      {mode === ConnectionMode.DOUBLE_HOP && <Layers className="w-3.5 h-3.5 text-violet-500" />}
-                      {mode === ConnectionMode.SMART_DNS && <Globe className="w-3.5 h-3.5 text-orange-500" />}
-                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">{mode}</span>
-                  </div>
+                {/* Stealth Mode Indicator Banner */}
+                {mode === ConnectionMode.STEALTH && isConnected && !isEmergency && (
+                    <div className="absolute top-0 left-0 w-full bg-indigo-950/90 border-b border-indigo-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
+                        <Ghost className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">
+                        Mode Furtif Activé - Trafic Obfusqué
+                        </span>
+                    </div>
                 )}
+
+                {/* Double Hop Indicator Banner */}
+                {mode === ConnectionMode.DOUBLE_HOP && isConnected && !isEmergency && (
+                    <div className="absolute top-0 left-0 w-full bg-violet-950/90 border-b border-violet-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
+                    <Layers className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200">
+                        Double Hop Actif - Relais Chiffré
+                    </span>
+                    </div>
+                )}
+
+                {/* Smart DNS Indicator Banner */}
+                {mode === ConnectionMode.SMART_DNS && isConnected && !isEmergency && (
+                    <div className="absolute top-0 left-0 w-full bg-orange-950/90 border-b border-orange-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
+                    <Globe className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-200">
+                        Smart DNS Actif - IP D'origine Conservée
+                    </span>
+                    </div>
+                )}
+
+                {/* Kill Switch Toggle - Top Right */}
+                <button
+                    onClick={(e) => {
+                    e.stopPropagation();
+                    handleUpdateSettings('killSwitch', !appSettings.killSwitch);
+                    }}
+                    className={`absolute top-6 right-6 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 backdrop-blur-md ${
+                    appSettings.killSwitch 
+                        ? 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)]' 
+                        : 'bg-slate-100/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                    title={appSettings.killSwitch ? "Désactiver Kill Switch" : "Activer Kill Switch"}
+                >
+                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block">Kill Switch</span>
+                    {appSettings.killSwitch ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+                </button>
+
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                    {isEmergency ? <Siren className="w-64 h-64 text-red-500 animate-pulse" /> : <Wifi className="w-64 h-64" />}
+                </div>
                 
-                {isEmergency && (
-                    <div className="mt-3 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-                        <div className="text-sm font-bold text-red-400 animate-pulse flex items-center gap-2 bg-red-950/30 px-4 py-2 rounded-full border border-red-500/30 shadow-lg shadow-red-500/10">
-                            <AlertTriangle className="w-4 h-4" />
-                            KILL SWITCH ACTIF : RENUMÉROTATION
-                        </div>
-                        {emergencyStep && (
-                            <div className="text-xs font-mono text-red-300 flex items-center gap-2 mt-1">
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                {emergencyStep}...
+                <div className="relative z-10 flex flex-col items-center justify-center py-8">
+                    <button
+                    onClick={toggleConnection}
+                    disabled={isDisconnecting || isEmergency}
+                    className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-700 ease-in-out shadow-2xl ${mainButtonColor}`}
+                    >
+                    {isEmergency ? (
+                        <WifiOff className="w-12 h-12 text-white animate-shake" />
+                    ) : (
+                        <Power className="w-12 h-12 text-white" />
+                    )}
+                    </button>
+                    
+                    <h2 className={`mt-6 text-2xl font-bold ${isEmergency ? 'text-red-500' : ''}`}>
+                    {isEmergency 
+                        ? 'COUPURE DÉTECTÉE' 
+                        : isDisconnecting 
+                            ? 'Déconnexion...' 
+                            : isConnected 
+                                ? 'Connexion Active' 
+                                : 'Prêt à connecter'}
+                    </h2>
+                    
+                    {!isEmergency && !isDisconnecting && (
+                    <div key={mode} className="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-1 duration-300">
+                        {mode === ConnectionMode.STANDARD && <Zap className="w-3.5 h-3.5 text-brand-500" />}
+                        {mode === ConnectionMode.STEALTH && <Ghost className="w-3.5 h-3.5 text-indigo-500" />}
+                        {mode === ConnectionMode.DOUBLE_HOP && <Layers className="w-3.5 h-3.5 text-violet-500" />}
+                        {mode === ConnectionMode.SMART_DNS && <Globe className="w-3.5 h-3.5 text-orange-500" />}
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">{mode}</span>
+                    </div>
+                    )}
+                    
+                    {isEmergency && (
+                        <div className="mt-3 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="text-sm font-bold text-red-400 animate-pulse flex items-center gap-2 bg-red-950/30 px-4 py-2 rounded-full border border-red-500/30 shadow-lg shadow-red-500/10">
+                                <AlertTriangle className="w-4 h-4" />
+                                KILL SWITCH ACTIF : RENUMÉROTATION
                             </div>
+                            {emergencyStep && (
+                                <div className="text-xs font-mono text-red-300 flex items-center gap-2 mt-1">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    {emergencyStep}...
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    
+                    {isConnected && !isDisconnecting && !isEmergency && (
+                    <div className={`mt-6 flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-700 ${isRenumbering ? 'opacity-50 scale-95 blur-[1px]' : 'opacity-100 scale-100'}`}>
+                        
+                        <div className="flex flex-col items-center gap-2 p-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800 backdrop-blur-sm">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                                {mode === ConnectionMode.SMART_DNS ? 'Serveur DNS Actif' : 'Serveur Connecté'}
+                            </span>
+                            
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xl font-bold text-slate-700 dark:text-white tracking-tight">{currentIdentity.ip}</span>
+                                </div>
+                                <div className="h-4 w-px bg-slate-300 dark:bg-slate-700"></div>
+                                <div className="flex items-center gap-2">
+                                    <Globe className="w-4 h-4 text-brand-500" />
+                                    <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{currentIdentity.country}</span>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-xs text-slate-400">{currentIdentity.city}</span>
+                                <button 
+                                    onClick={shareIdentity}
+                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-400 hover:text-brand-500"
+                                    title="Copier l'IP"
+                                >
+                                    <Share2 className="w-3 h-3" />
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap gap-3 justify-center w-full">
+                    {Object.values(ConnectionMode).map((m) => {
+                        const isSelected = mode === m;
+                        // Icon selection
+                        const Icon = m === ConnectionMode.STEALTH ? Ghost : m === ConnectionMode.DOUBLE_HOP ? Layers : m === ConnectionMode.SMART_DNS ? Globe : Zap;
+                        
+                        return (
+                            <button
+                            key={m}
+                            onClick={() => handleModeChange(m)}
+                            disabled={isConnected || isEmergency}
+                            className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transform transition-all duration-300 hover:scale-105 active:scale-95 ${
+                                isSelected
+                                ? m === ConnectionMode.STEALTH
+                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
+                                    : m === ConnectionMode.DOUBLE_HOP
+                                        ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
+                                        : m === ConnectionMode.SMART_DNS
+                                            ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
+                                            : 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            }`}
+                            >
+                            <Icon className={`w-4 h-4 ${isSelected ? 'animate-pulse' : ''}`} />
+                            <span>{m}</span>
+                            
+                            {/* Lock icon for premium modes */}
+                            {m !== ConnectionMode.STANDARD && userPlan === 'free' && (
+                                <div className="absolute -top-1.5 -right-1.5 bg-slate-900 text-amber-500 rounded-full p-0.5 border border-slate-700 shadow-sm z-10">
+                                    <Lock className="w-2.5 h-2.5" />
+                                </div>
+                            )}
+                            </button>
+                        )
+                    })}
+                    </div>
+
+                    <div className="flex flex-wrap gap-3 mt-6 justify-center">
+                        <button
+                        onClick={handleRenumber}
+                        disabled={!isConnected || isRenumbering || isEmergency || isMasking}
+                        title={!isConnected ? "Connectez-vous pour renuméroter" : isRenumbering ? "En cours..." : "Changer d'identité"}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
+                            !isConnected || isEmergency 
+                            ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
+                            : isRenumbering
+                                ? 'bg-brand-500/10 text-brand-500 border-brand-500/20 cursor-wait'
+                                : 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-brand-200 dark:border-brand-500/30 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-700 dark:hover:text-brand-300 hover:shadow-lg hover:shadow-brand-500/10 hover:scale-105'
+                        }`}
+                        >
+                        <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
+                        <span>{isRenumbering ? 'Renumérotation...' : 'Renuméroter'}</span>
+                        </button>
+
+                        <button
+                        onClick={handleMasking}
+                        disabled={!isConnected || isMasking || isEmergency || isRenumbering}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
+                            !isConnected || isEmergency 
+                            ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
+                            : isMasking
+                                ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20 cursor-wait'
+                                : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-500 dark:hover:border-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 hover:shadow-lg hover:shadow-indigo-500/10 hover:scale-105'
+                        }`}
+                        title={!isConnected ? "Connectez-vous pour masquer" : isMasking ? "Masquage..." : "Masquer les empreintes (MAC/UA)"}
+                        >
+                        <Fingerprint className={`w-4 h-4 ${isMasking ? 'animate-pulse' : ''}`} />
+                        <span>{isMasking ? 'Masquage...' : 'Masquer'}</span>
+                        </button>
+
+                        <button
+                        onClick={handleSimulateDrop}
+                        disabled={!isConnected || isDisconnecting || isEmergency}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border ${
+                            !isConnected || isDisconnecting || isEmergency
+                            ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
+                            : 'border-amber-500/20 text-amber-600 dark:text-amber-500 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10'
+                        }`}
+                        title={!appSettings.killSwitch ? "Activez Kill Switch d'abord" : "Simuler une coupure réseau"}
+                        >
+                        <WifiOff className="w-4 h-4" />
+                        <span className="hidden sm:inline">Simuler Drop</span>
+                        </button>
+
+                        {isConnected && !isEmergency && appSettings.killSwitch && (
+                            <button
+                            onClick={handleEmergencyProtocol}
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/10"
+                            title="Simuler une coupure réseau pour tester le Kill Switch"
+                        >
+                            <AlertTriangle className="w-4 h-4" />
+                            <span className="hidden sm:inline">Test Kill Switch</span>
+                        </button>
                         )}
                     </div>
-                )}
-                
-                {isConnected && !isDisconnecting && !isEmergency && (
-                  <div className={`mt-6 flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-700 ${isRenumbering ? 'opacity-50 scale-95 blur-[1px]' : 'opacity-100 scale-100'}`}>
-                    
-                    <div className="flex flex-col items-center gap-2 p-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800 backdrop-blur-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
-                            {mode === ConnectionMode.SMART_DNS ? 'Serveur DNS Actif' : 'Serveur Connecté'}
-                        </span>
-                        
-                        <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2">
-                                <span className="font-mono text-xl font-bold text-slate-700 dark:text-white tracking-tight">{currentIdentity.ip}</span>
-                            </div>
-                            <div className="h-4 w-px bg-slate-300 dark:bg-slate-700"></div>
-                            <div className="flex items-center gap-2">
-                                <Globe className="w-4 h-4 text-brand-500" />
-                                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{currentIdentity.country}</span>
-                            </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-2 mt-1">
-                             <span className="text-xs text-slate-400">{currentIdentity.city}</span>
-                             <button 
-                                onClick={shareIdentity}
-                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-400 hover:text-brand-500"
-                                title="Copier l'IP"
-                             >
-                                <Share2 className="w-3 h-3" />
-                             </button>
-                        </div>
-                    </div>
-
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap gap-3 justify-center w-full">
-                  {Object.values(ConnectionMode).map((m) => {
-                    const isSelected = mode === m;
-                    // Icon selection
-                    const Icon = m === ConnectionMode.STEALTH ? Ghost : m === ConnectionMode.DOUBLE_HOP ? Layers : m === ConnectionMode.SMART_DNS ? Globe : Zap;
-                    
-                    return (
-                        <button
-                          key={m}
-                          onClick={() => handleModeChange(m)}
-                          disabled={isConnected || isEmergency}
-                          className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transform transition-all duration-300 hover:scale-105 active:scale-95 ${
-                            isSelected
-                              ? m === ConnectionMode.STEALTH
-                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                                : m === ConnectionMode.DOUBLE_HOP
-                                    ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
-                                    : m === ConnectionMode.SMART_DNS
-                                        ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
-                                        : 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
-                          }`}
-                        >
-                          <Icon className={`w-4 h-4 ${isSelected ? 'animate-pulse' : ''}`} />
-                          <span>{m}</span>
-                          
-                          {/* Lock icon for premium modes */}
-                          {m !== ConnectionMode.STANDARD && userPlan === 'free' && (
-                            <div className="absolute -top-1.5 -right-1.5 bg-slate-900 text-amber-500 rounded-full p-0.5 border border-slate-700 shadow-sm z-10">
-                                <Lock className="w-2.5 h-2.5" />
-                            </div>
-                          )}
-                        </button>
-                    )
-                  })}
+                </div>
                 </div>
 
-                <div className="flex flex-wrap gap-3 mt-6 justify-center">
-                    <button
-                      onClick={handleRenumber}
-                      disabled={!isConnected || isRenumbering || isEmergency || isMasking}
-                      title={!isConnected ? "Connectez-vous pour renuméroter" : isRenumbering ? "En cours..." : "Changer d'identité"}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
-                        !isConnected || isEmergency 
-                          ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
-                          : isRenumbering
-                            ? 'bg-brand-500/10 text-brand-500 border-brand-500/20 cursor-wait'
-                            : 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-brand-200 dark:border-brand-500/30 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-700 dark:hover:text-brand-300 hover:shadow-lg hover:shadow-brand-500/10 hover:scale-105'
-                      }`}
-                    >
-                      <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
-                      <span>{isRenumbering ? 'Renumérotation...' : 'Renuméroter'}</span>
-                    </button>
+                <Dashboard
+                isDark={isDark}
+                protocol={appSettings.protocol}
+                isEmergency={isEmergency}
+                securityReport={securityReport}
+                isConnected={isConnected}
+                userPlan={userPlan}
+                />
+                
+                <SecureFileTransfer isConnected={isConnected} addLog={addLog} />
 
-                    <button
-                      onClick={handleMasking}
-                      disabled={!isConnected || isMasking || isEmergency || isRenumbering}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
-                        !isConnected || isEmergency 
-                          ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
-                          : isMasking
-                            ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20 cursor-wait'
-                            : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-500 dark:hover:border-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 hover:shadow-lg hover:shadow-indigo-500/10 hover:scale-105'
-                      }`}
-                      title={!isConnected ? "Connectez-vous pour masquer" : isMasking ? "Masquage..." : "Masquer les empreintes (MAC/UA)"}
-                    >
-                      <Fingerprint className={`w-4 h-4 ${isMasking ? 'animate-pulse' : ''}`} />
-                      <span>{isMasking ? 'Masquage...' : 'Masquer'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleSimulateDrop}
-                      disabled={!isConnected || isDisconnecting || isEmergency}
-                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border ${
-                        !isConnected || isDisconnecting || isEmergency
-                          ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
-                          : 'border-amber-500/20 text-amber-600 dark:text-amber-500 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10'
-                      }`}
-                      title={!appSettings.killSwitch ? "Activez Kill Switch d'abord" : "Simuler une coupure réseau"}
-                    >
-                      <WifiOff className="w-4 h-4" />
-                      <span className="hidden sm:inline">Simuler Drop</span>
-                    </button>
-
-                    {isConnected && !isEmergency && appSettings.killSwitch && (
-                         <button
-                         onClick={handleEmergencyProtocol}
-                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/10"
-                         title="Simuler une coupure réseau pour tester le Kill Switch"
-                       >
-                         <AlertTriangle className="w-4 h-4" />
-                         <span className="hidden sm:inline">Test Kill Switch</span>
-                       </button>
-                    )}
-                  </div>
-              </div>
             </div>
 
-            <Dashboard
-              isDark={isDark}
-              protocol={appSettings.protocol}
-              isEmergency={isEmergency}
-              securityReport={securityReport}
-              isConnected={isConnected}
-              userPlan={userPlan}
-            />
-            
-            <SecureFileTransfer isConnected={isConnected} addLog={addLog} />
+            <div className="space-y-6">
+                {/* Earnings Card */}
+                <EarningsCard 
+                    isConnected={isConnected} 
+                    plan={userPlan} 
+                    balance={balance} 
+                    onUpgrade={() => setShowPricing(true)} 
+                    onWithdraw={handleOpenWithdrawal}
+                    transactions={transactions}
+                    onViewHistory={() => setShowHistory(true)}
+                />
 
-          </div>
-
-          <div className="space-y-6">
-             {/* Earnings Card */}
-             <EarningsCard 
-                isConnected={isConnected} 
-                plan={userPlan} 
-                balance={balance} 
-                onUpgrade={() => setShowPricing(true)} 
-                onWithdraw={handleOpenWithdrawal}
-                transactions={transactions}
-                onViewHistory={() => setShowHistory(true)}
-             />
-
-             <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 min-h-[300px]">
-                <div className="flex items-center justify-between mb-6">
-                   <h3 className="font-bold text-lg flex items-center gap-2">
-                     <Globe className="w-5 h-5 text-brand-500" />
-                     {isConnected ? 'Identité Virtuelle' : 'Identité Réelle'}
-                   </h3>
-                   {isConnected && (
-                     <div className="flex gap-1">
-                       {appSettings.killSwitch && <div className={`w-2 h-2 rounded-full ${isEmergency ? 'bg-red-500 animate-pulse' : 'bg-red-500'}`} title="Kill Switch ON"></div>}
-                       {appSettings.adBlocker && <div className="w-2 h-2 rounded-full bg-brand-500" title="AdBlocker ON"></div>}
-                       {appSettings.autoRotation && <div className="w-2 h-2 rounded-full bg-brand-300 animate-pulse" title="Auto Rotation ON"></div>}
-                     </div>
-                   )}
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 min-h-[300px]">
+                    <div className="flex items-center justify-between mb-6">
+                    <h3 className="font-bold text-lg flex items-center gap-2">
+                        <Globe className="w-5 h-5 text-brand-500" />
+                        {isConnected ? 'Identité Virtuelle' : 'Identité Réelle'}
+                    </h3>
+                    {isConnected && (
+                        <div className="flex gap-1">
+                        {appSettings.killSwitch && <div className={`w-2 h-2 rounded-full ${isEmergency ? 'bg-red-500 animate-pulse' : 'bg-red-500'}`} title="Kill Switch ON"></div>}
+                        {appSettings.adBlocker && <div className="w-2 h-2 rounded-full bg-brand-500" title="AdBlocker ON"></div>}
+                        {appSettings.autoRotation && <div className="w-2 h-2 rounded-full bg-brand-300 animate-pulse" title="Auto Rotation ON"></div>}
+                        </div>
+                    )}
+                    </div>
+                    
+                    {isConnected || isEmergency ? (
+                    <>
+                        <IdentityMatrix 
+                            identity={currentIdentity} 
+                            entryIdentity={entryIdentity} 
+                            isRotating={isRenumbering || isEmergency} 
+                            isMasking={isMasking} 
+                            mode={mode} 
+                            securityReport={securityReport}
+                            protocol={appSettings.protocol}
+                            obfuscationLevel={appSettings.obfuscationLevel}
+                            onOpenObfuscationSettings={() => openSettings('advanced')}
+                        />
+                        
+                        {recommendedActions.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
+                                <h4 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <Zap className="w-3.5 h-3.5 text-amber-500" /> Actions Recommandées
+                                </h4>
+                                <div className="grid grid-cols-1 gap-2">
+                                {recommendedActions.map(action => {
+                                    const Icon = action.icon;
+                                    return (
+                                        <button 
+                                            key={action.id}
+                                            onClick={action.handler}
+                                            className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${action.bgColor} ${action.borderColor} group`}
+                                        >
+                                            <div className={`p-1.5 rounded-md bg-white dark:bg-slate-900/50 shadow-sm ${action.color}`}>
+                                                <Icon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className={`text-xs font-bold ${action.color}`}>{action.label}</div>
+                                                <div className="text-[10px] text-slate-500 dark:text-slate-400">{action.subLabel}</div>
+                                            </div>
+                                            <ArrowRight className={`w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0 ${action.color}`} />
+                                        </button>
+                                    );
+                                })}
+                                </div>
+                            </div>
+                        )}
+                    </>
+                    ) : (
+                    <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                        <Shield className="w-12 h-12 mb-2 opacity-20" />
+                        <p>Connectez-vous pour masquer votre identité</p>
+                    </div>
+                    )}
                 </div>
-                
-                {isConnected || isEmergency ? (
-                  <>
-                      <IdentityMatrix 
-                        identity={currentIdentity} 
-                        entryIdentity={entryIdentity} 
-                        isRotating={isRenumbering || isEmergency} 
-                        isMasking={isMasking} 
-                        mode={mode} 
-                        securityReport={securityReport}
-                        protocol={appSettings.protocol}
-                        obfuscationLevel={appSettings.obfuscationLevel}
-                        onOpenObfuscationSettings={() => openSettings('advanced')}
-                      />
-                      
-                      {recommendedActions.length > 0 && (
-                          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
-                             <h4 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <Zap className="w-3.5 h-3.5 text-amber-500" /> Actions Recommandées
-                             </h4>
-                             <div className="grid grid-cols-1 gap-2">
-                               {recommendedActions.map(action => {
-                                  const Icon = action.icon;
-                                  return (
-                                      <button 
-                                        key={action.id}
-                                        onClick={action.handler}
-                                        className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${action.bgColor} ${action.borderColor} group`}
-                                      >
-                                          <div className={`p-1.5 rounded-md bg-white dark:bg-slate-900/50 shadow-sm ${action.color}`}>
-                                              <Icon className="w-4 h-4" />
-                                          </div>
-                                          <div className="flex-1">
-                                              <div className={`text-xs font-bold ${action.color}`}>{action.label}</div>
-                                              <div className="text-[10px] text-slate-500 dark:text-slate-400">{action.subLabel}</div>
-                                          </div>
-                                          <ArrowRight className={`w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0 ${action.color}`} />
-                                      </button>
-                                  );
-                               })}
-                             </div>
-                          </div>
-                      )}
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                    <Shield className="w-12 h-12 mb-2 opacity-20" />
-                    <p>Connectez-vous pour masquer votre identité</p>
-                  </div>
-                )}
-             </div>
 
-             {/* Styled Terminal / Logs System */}
-             <SystemLogs 
-                logs={logs} 
-                onClear={clearLogs} 
-                retentionHours={appSettings.logRetentionHours} 
-                onRetentionChange={(h) => handleUpdateSettings('logRetentionHours', h)}
-             />
-          </div>
-        </div>
+                {/* Styled Terminal / Logs System */}
+                <SystemLogs 
+                    logs={logs} 
+                    onClear={clearLogs} 
+                    retentionHours={appSettings.logRetentionHours} 
+                    onRetentionChange={(h) => handleUpdateSettings('logRetentionHours', h)}
+                />
+            </div>
+            </div>
+        )}
       </main>
     </div>
   );
