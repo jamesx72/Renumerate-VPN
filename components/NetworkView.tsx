@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Grid, List, Save, Trash2, Filter, Settings2, CheckCircle2, 
   ChevronDown, Signal, Activity, Smartphone, Monitor, Server, Cpu, 
-  Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil, RotateCcw
+  Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil, RotateCcw,
+  ArrowRightLeft, ChevronUp, AlertTriangle, Info, Terminal
 } from 'lucide-react';
 import { DeviceNode } from '../types';
 
@@ -21,6 +22,13 @@ interface NetworkViewState {
     filterType: string;
     sortBy: 'name' | 'signal' | 'rate' | 'latency';
     visibleColumns: string[];
+}
+
+interface TransferLog {
+    id: string;
+    time: string;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'error';
 }
 
 interface Props {
@@ -81,6 +89,32 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
   // Edit State
   const [editingViewId, setEditingViewId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+
+  // Transfer Simulation State
+  const [transferState, setTransferState] = useState<{
+      isActive: boolean;
+      targetNodeId: string | null;
+      progress: number;
+      logs: TransferLog[];
+      isCollapsed: boolean;
+      status: 'idle' | 'running' | 'completed';
+  }>({
+      isActive: false,
+      targetNodeId: null,
+      progress: 0,
+      logs: [],
+      isCollapsed: false,
+      status: 'idle'
+  });
+  
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (transferState.logs.length > 0 && !transferState.isCollapsed) {
+        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [transferState.logs, transferState.isCollapsed]);
 
   // --- Persistence Effects ---
 
@@ -183,6 +217,59 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       setActiveViewId(null);
   };
 
+  const startTransferSimulation = (node: DeviceNode) => {
+    if (transferState.status === 'running') return;
+
+    setTransferState({
+        isActive: true,
+        targetNodeId: node.id,
+        progress: 0,
+        logs: [],
+        isCollapsed: false,
+        status: 'running'
+    });
+
+    const steps = [
+        { msg: `Initialisation de la connexion sécurisée vers ${node.name} (${node.ip})...`, type: 'info', progress: 5, delay: 500 },
+        { msg: "Résolution DNS et routage optimisé...", type: 'info', progress: 15, delay: 1200 },
+        { msg: "Handshake cryptographique (ECDH) réussi.", type: 'success', progress: 25, delay: 1800 },
+        { msg: "Canal sécurisé établi. Chiffrement AES-256-GCM actif.", type: 'success', progress: 40, delay: 2500 },
+        { msg: "Début du transfert de paquets...", type: 'info', progress: 50, delay: 3200 },
+        { msg: `Analyse des paquets en temps réel : Aucune anomalie détectée.`, type: 'info', progress: 65, delay: 4500 },
+        { msg: `Fluctuation mineure de la latence (${node.latency + Math.floor(Math.random()*20)}ms) - Compensation active.`, type: 'warning', progress: 80, delay: 5500 },
+        { msg: "Vérification de l'intégrité des données (Hash SHA-256)...", type: 'info', progress: 90, delay: 6500 },
+        { msg: "Transfert finalisé avec succès. Session close.", type: 'success', progress: 100, delay: 7200 }
+    ];
+
+    steps.forEach((step, index) => {
+        setTimeout(() => {
+            const newLog: TransferLog = {
+                id: Date.now().toString() + index,
+                time: new Date().toLocaleTimeString('fr-FR'),
+                message: step.msg,
+                type: step.type as any
+            };
+
+            setTransferState(prev => {
+                // If user closed panel, don't update logs but keep checking status
+                if (!prev.isActive) return prev;
+                
+                const isComplete = index === steps.length - 1;
+                return {
+                    ...prev,
+                    progress: step.progress,
+                    logs: [...prev.logs, newLog],
+                    status: isComplete ? 'completed' : 'running'
+                };
+            });
+        }, step.delay);
+    });
+  };
+
+  const closeTransferPanel = () => {
+      setTransferState(prev => ({ ...prev, isActive: false, status: 'idle' }));
+  };
+
   // --- Filtering & Sorting ---
 
   const filteredNodes = nodes
@@ -218,8 +305,16 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       }
   };
 
+  const getAutonomyColorClass = (profile: string) => {
+    switch(profile) {
+        case 'provider': return 'text-amber-500 dark:text-amber-400';
+        case 'consumer': return 'text-emerald-500 dark:text-emerald-400';
+        default: return 'text-brand-600 dark:text-brand-400';
+    }
+  };
+
   return (
-    <div className="h-full flex flex-col space-y-4">
+    <div className="h-full flex flex-col space-y-4 relative">
         {/* Toolbar */}
         <div className="flex flex-col xl:flex-row gap-4 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             
@@ -459,7 +554,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                                                 onClick={(e) => { e.stopPropagation(); onAutonomyUpdate(node.id, mode); }}
                                                 className={`p-1 rounded-md transition-all ${
                                                     node.autonomyProfile === mode 
-                                                    ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400 ring-1 ring-black/5 dark:ring-white/5' 
+                                                    ? `bg-white dark:bg-slate-700 shadow-sm ${getAutonomyColorClass(mode)} ring-1 ring-black/5 dark:ring-white/5` 
                                                     : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'
                                                 }`}
                                                 title={mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -494,6 +589,13 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                                         className="flex-1 py-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 transition-opacity"
                                     >
                                         Connecter
+                                    </button>
+                                    <button
+                                        onClick={() => startTransferSimulation(node)}
+                                        className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500 dark:hover:text-brand-400 transition-colors border border-slate-200 dark:border-slate-700"
+                                        title="Simuler un transfert"
+                                    >
+                                        <ArrowRightLeft className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
@@ -568,7 +670,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                                                         onClick={(e) => { e.stopPropagation(); onAutonomyUpdate(node.id, mode); }}
                                                         className={`p-1 rounded-md transition-all ${
                                                             node.autonomyProfile === mode 
-                                                            ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400 ring-1 ring-black/5 dark:ring-white/5' 
+                                                            ? `bg-white dark:bg-slate-700 shadow-sm ${getAutonomyColorClass(mode)} ring-1 ring-black/5 dark:ring-white/5` 
                                                             : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'
                                                         }`}
                                                         title={mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -580,12 +682,21 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                                         </td>
                                     )}
                                     <td className="px-4 py-3 text-right">
-                                        <button 
-                                            onClick={() => onConnectNode(node.id)}
-                                            className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-500 hover:text-white dark:hover:bg-brand-500 dark:hover:text-white text-slate-600 dark:text-slate-300 text-xs font-bold transition-all"
-                                        >
-                                            Connecter
-                                        </button>
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button 
+                                                onClick={() => onConnectNode(node.id)}
+                                                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-500 hover:text-white dark:hover:bg-brand-500 dark:hover:text-white text-slate-600 dark:text-slate-300 text-xs font-bold transition-all"
+                                            >
+                                                Connecter
+                                            </button>
+                                            <button
+                                                onClick={() => startTransferSimulation(node)}
+                                                className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors"
+                                                title="Simuler un transfert"
+                                            >
+                                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -594,6 +705,77 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                 </div>
             )}
         </div>
+
+        {/* Transfer Log Panel */}
+        {transferState.isActive && (
+            <div className={`fixed bottom-4 right-4 z-50 w-full max-w-sm bg-slate-900 rounded-xl shadow-2xl border border-slate-700 overflow-hidden flex flex-col transition-all duration-300 ${transferState.isCollapsed ? 'h-14' : 'h-80'}`}>
+                {/* Header */}
+                <div className="p-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between cursor-pointer" onClick={() => setTransferState(prev => ({...prev, isCollapsed: !prev.isCollapsed}))}>
+                     <div className="flex items-center gap-3">
+                         <div className={`p-1.5 rounded-lg ${transferState.status === 'completed' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-brand-500/20 text-brand-500'}`}>
+                             {transferState.status === 'completed' ? <CheckCircle2 className="w-4 h-4" /> : <Activity className="w-4 h-4 animate-pulse" />}
+                         </div>
+                         <div>
+                             <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                                 {transferState.status === 'completed' ? 'Transfert Terminé' : 'Transfert en cours...'}
+                             </h4>
+                             <div className="flex items-center gap-2 mt-0.5">
+                                 <div className="w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                     <div className={`h-full rounded-full transition-all duration-300 ${transferState.status === 'completed' ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{width: `${transferState.progress}%`}}></div>
+                                 </div>
+                                 <span className="text-[10px] text-slate-400 font-mono">{transferState.progress}%</span>
+                             </div>
+                         </div>
+                     </div>
+                     <div className="flex items-center gap-1">
+                         <button className="p-1 text-slate-400 hover:text-white transition-colors">
+                             <ChevronUp className={`w-4 h-4 transition-transform ${transferState.isCollapsed ? '' : 'rotate-180'}`} />
+                         </button>
+                         <button 
+                             onClick={(e) => { e.stopPropagation(); closeTransferPanel(); }}
+                             className="p-1 text-slate-400 hover:text-red-400 transition-colors"
+                         >
+                             <X className="w-4 h-4" />
+                         </button>
+                     </div>
+                </div>
+
+                {/* Logs List */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-950 p-2 space-y-1">
+                    {transferState.logs.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2">
+                             <Terminal className="w-6 h-6" />
+                             <span className="text-xs">Initialisation...</span>
+                        </div>
+                    ) : (
+                        <>
+                        {transferState.logs.map(log => (
+                            <div key={log.id} className="flex gap-2 p-1.5 rounded hover:bg-white/5 transition-colors text-[10px] group">
+                                <span className="text-slate-500 font-mono shrink-0 pt-0.5">{log.time}</span>
+                                <div className="flex-1 min-w-0">
+                                     <div className="flex items-center gap-1.5 mb-0.5">
+                                         {log.type === 'info' && <Info className="w-3 h-3 text-blue-500 shrink-0" />}
+                                         {log.type === 'success' && <Check className="w-3 h-3 text-emerald-500 shrink-0" />}
+                                         {log.type === 'warning' && <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />}
+                                         {log.type === 'error' && <X className="w-3 h-3 text-red-500 shrink-0" />}
+                                         <span className={`font-bold uppercase tracking-wider ${
+                                             log.type === 'info' ? 'text-blue-500' :
+                                             log.type === 'success' ? 'text-emerald-500' :
+                                             log.type === 'warning' ? 'text-amber-500' : 'text-red-500'
+                                         }`}>
+                                             {log.type}
+                                         </span>
+                                     </div>
+                                     <p className="text-slate-300 leading-relaxed">{log.message}</p>
+                                </div>
+                            </div>
+                        ))}
+                        <div ref={logsEndRef} />
+                        </>
+                    )}
+                </div>
+            </div>
+        )}
     </div>
   );
 };
