@@ -85,6 +85,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
   const [showViewsMenu, setShowViewsMenu] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   // Edit State
   const [editingViewId, setEditingViewId] = useState<string | null>(null);
@@ -115,6 +116,14 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [transferState.logs, transferState.isCollapsed]);
+
+  // Toast Timer
+  useEffect(() => {
+    if (toast) {
+        const timer = setTimeout(() => setToast(null), 3000);
+        return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // --- Persistence Effects ---
 
@@ -149,7 +158,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       if (!newViewName.trim()) return;
       const newView: SavedViewConfig = {
           id: Date.now().toString(),
-          name: newViewName,
+          name: newViewName.trim(),
           viewMode,
           filterType,
           searchQuery,
@@ -160,6 +169,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       setActiveViewId(newView.id);
       setNewViewName('');
       setShowViewsMenu(false);
+      setToast(`Vue "${newView.name}" sauvegardée`);
   };
 
   const handleLoadView = (view: SavedViewConfig) => {
@@ -170,12 +180,15 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       if (view.visibleColumns) setVisibleColumns(view.visibleColumns);
       setActiveViewId(view.id);
       setShowViewsMenu(false);
+      setToast(`Vue "${view.name}" chargée`);
   };
 
   const handleDeleteView = (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
+      const viewName = savedViews.find(v => v.id === id)?.name;
       if (activeViewId === id) setActiveViewId(null);
       setSavedViews(prev => prev.filter(v => v.id !== id));
+      setToast(`Vue "${viewName}" supprimée`);
   };
 
   const handleStartEdit = (view: SavedViewConfig, e: React.MouseEvent) => {
@@ -190,7 +203,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       setEditName('');
   };
 
-  const handleSaveEdit = (e: React.MouseEvent) => {
+  const handleSaveEdit = (e: React.SyntheticEvent) => {
       e.stopPropagation();
       if (editingViewId && editName.trim()) {
           setSavedViews(prev => prev.map(v => 
@@ -198,6 +211,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
           ));
           setEditingViewId(null);
           setEditName('');
+          setToast("Vue renommée avec succès");
       }
   };
 
@@ -215,6 +229,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       setSearchQuery('');
       setSortBy('name');
       setActiveViewId(null);
+      setToast("Filtres réinitialisés");
   };
 
   const startTransferSimulation = (node: DeviceNode) => {
@@ -293,6 +308,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
           case 'mobile': return <Smartphone className="w-4 h-4" />;
           case 'server': return <Server className="w-4 h-4" />;
           case 'iot': return <Cpu className="w-4 h-4" />;
+          case 'desktop': return <Monitor className="w-4 h-4" />;
           default: return <Monitor className="w-4 h-4" />;
       }
   };
@@ -315,6 +331,14 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
 
   return (
     <div className="h-full flex flex-col space-y-4 relative">
+        {/* Toast Notification */}
+        {toast && (
+            <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg shadow-slate-900/20 border border-slate-700 animate-in fade-in slide-in-from-top-4 flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                {toast}
+            </div>
+        )}
+
         {/* Toolbar */}
         <div className="flex flex-col xl:flex-row gap-4 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             
@@ -339,6 +363,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                     >
                         <option value="all">Tous types</option>
                         <option value="server">Serveurs</option>
+                        <option value="desktop">Ordinateurs</option>
                         <option value="mobile">Mobiles</option>
                         <option value="iot">IoT</option>
                     </select>
@@ -404,6 +429,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                                                         value={editName}
                                                         onChange={(e) => setEditName(e.target.value)}
                                                         onClick={(e) => e.stopPropagation()}
+                                                        onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(e)}
                                                         className="flex-1 min-w-0 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 outline-none focus:border-brand-500 dark:text-white"
                                                         autoFocus
                                                     />
@@ -451,6 +477,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                                     placeholder="Nom de la vue..." 
                                     value={newViewName}
                                     onChange={(e) => setNewViewName(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSaveView()}
                                     className="flex-1 px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-brand-500 dark:text-white"
                                 />
                                 <button 
