@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer } from 'lucide-react';
-import { AppSettings, PlanTier } from '../types';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer, CreditCard, Receipt, Plus, Trash2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { AppSettings, PlanTier, PaymentMethod } from '../types';
 
 interface Props {
   settings: AppSettings;
@@ -8,12 +8,31 @@ interface Props {
   onClose: () => void;
   userPlan: PlanTier;
   onShowPricing: () => void;
-  initialTab?: 'general' | 'connection' | 'privacy' | 'advanced';
+  initialTab?: 'general' | 'connection' | 'privacy' | 'advanced' | 'billing';
+  isVerified?: boolean;
+  onStartVerification?: () => void;
+  paymentMethods?: PaymentMethod[];
+  onAddPaymentMethod?: () => void;
+  onRemovePaymentMethod?: (id: string) => void;
+  onViewHistory?: () => void;
 }
 
-type TabId = 'general' | 'connection' | 'privacy' | 'advanced';
+type TabId = 'general' | 'connection' | 'privacy' | 'advanced' | 'billing';
 
-export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose, userPlan, onShowPricing, initialTab }) => {
+export const SettingsPanel: React.FC<Props> = ({ 
+    settings, 
+    updateSettings, 
+    onClose, 
+    userPlan, 
+    onShowPricing, 
+    initialTab,
+    isVerified,
+    onStartVerification,
+    paymentMethods,
+    onAddPaymentMethod,
+    onRemovePaymentMethod,
+    onViewHistory
+}) => {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'general');
   
   const isFeatureLocked = (featureLevel: 'pro' | 'elite') => {
@@ -93,6 +112,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
     { id: 'connection', label: 'Connexion', icon: Activity },
     { id: 'privacy', label: 'Sécurité', icon: Shield },
     { id: 'advanced', label: 'Avancé', icon: Cpu },
+    { id: 'billing', label: 'Facturation', icon: CreditCard },
   ];
 
   return (
@@ -456,6 +476,129 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                 {settings.adBlocker ? <ToggleRight className="w-10 h-10 text-emerald-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {/* BILLING TAB */}
+                {activeTab === 'billing' && (
+                    <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                         <div className="mb-6">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Facturation & Compte</h3>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">Gérez vos moyens de paiement et votre identité.</p>
+                        </div>
+
+                        {/* Plan Card */}
+                        <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <Crown className="w-32 h-32 rotate-12" />
+                            </div>
+                            <div className="relative z-10">
+                                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Plan Actuel</span>
+                                <div className="text-3xl font-bold mt-1 mb-4 flex items-center gap-2">
+                                    {userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}
+                                    {userPlan !== 'free' && <span className="text-xs bg-amber-500 text-slate-900 px-2 py-0.5 rounded font-bold">PRO</span>}
+                                </div>
+                                <div className="flex gap-3">
+                                    <button 
+                                        onClick={onShowPricing}
+                                        className="bg-white text-slate-900 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-100 transition-colors"
+                                    >
+                                        Changer de plan
+                                    </button>
+                                    <button 
+                                        onClick={onViewHistory}
+                                        className="bg-slate-700/50 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                    >
+                                        <Receipt className="w-4 h-4" />
+                                        Historique
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Identity Verification */}
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                        Vérification d'Identité (KYC)
+                                        {isVerified ? (
+                                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                <CheckCircle className="w-3 h-3" /> VÉRIFIÉ
+                                            </span>
+                                        ) : (
+                                            <span className="text-[10px] bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                <AlertTriangle className="w-3 h-3" /> NON VÉRIFIÉ
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-1">Requis pour les retraits élevés et certaines fonctionnalités avancées.</p>
+                                </div>
+                                {isVerified ? (
+                                    <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-full text-emerald-500">
+                                        <Shield className="w-5 h-5" />
+                                    </div>
+                                ) : (
+                                    <button 
+                                        onClick={onStartVerification}
+                                        className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                        Vérifier maintenant
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Payment Methods */}
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                             <div className="p-4 border-b border-slate-100 dark:border-slate-800/50 flex items-center justify-between">
+                                 <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                     <CreditCard className="w-4 h-4 text-slate-500" />
+                                     Moyens de Paiement
+                                 </h4>
+                                 <button 
+                                    onClick={onAddPaymentMethod}
+                                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-brand-500 transition-colors"
+                                    title="Ajouter une carte"
+                                >
+                                     <Plus className="w-4 h-4" />
+                                 </button>
+                             </div>
+                             
+                             <div className="p-4 space-y-3">
+                                 {paymentMethods && paymentMethods.length > 0 ? (
+                                     paymentMethods.map(method => (
+                                         <div key={method.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-colors group">
+                                             <div className="flex items-center gap-3">
+                                                 <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400">
+                                                     <CreditCard className="w-5 h-5" />
+                                                 </div>
+                                                 <div>
+                                                     <div className="text-sm font-bold text-slate-900 dark:text-white">
+                                                         {method.name}
+                                                     </div>
+                                                     <div className="text-xs text-slate-500">
+                                                         {method.type === 'card' ? `Expire ${method.expiry}` : 'Compte lié'}
+                                                         {method.isDefault && <span className="ml-2 text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300">Défaut</span>}
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                             <button 
+                                                onClick={() => onRemovePaymentMethod?.(method.id)}
+                                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            >
+                                                 <Trash2 className="w-4 h-4" />
+                                             </button>
+                                         </div>
+                                     ))
+                                 ) : (
+                                     <div className="text-center py-6 text-slate-400 text-sm">
+                                         Aucun moyen de paiement enregistré.
+                                     </div>
+                                 )}
+                             </div>
+                        </div>
+
                     </div>
                 )}
 

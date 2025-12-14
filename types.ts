@@ -85,3 +85,12 @@ export interface DeviceNode {
   tags: string[];
   ip: string;
 }
+
+export interface PaymentMethod {
+  id: string;
+  type: 'card' | 'paypal';
+  name: string;
+  last4?: string;
+  expiry?: string;
+  isDefault: boolean;
+}

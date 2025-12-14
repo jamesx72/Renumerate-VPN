@@ -11,9 +11,10 @@ import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
-import { NetworkView } from './components/NetworkView'; // Import NetworkView
+import { NetworkView } from './components/NetworkView';
+import { VerificationModal } from './components/VerificationModal';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
-import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode } from './types'; // Import DeviceNode
+import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode, PaymentMethod } from './types';
 import { analyzeSecurity } from './services/geminiService';
 import { supabase } from './services/supabaseClient';
 
@@ -21,16 +22,21 @@ function App() {
   const [isDark, setIsDark] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [isEmergency, setIsEmergency] = useState(false); // New Emergency State
-  const [emergencyStep, setEmergencyStep] = useState<string>(''); // For granular UI feedback
-  const [notification, setNotification] = useState<string | null>(null); // Notification state
-  const [currentView, setCurrentView] = useState<'dashboard' | 'network'>('dashboard'); // New View State
+  const [isEmergency, setIsEmergency] = useState(false);
+  const [emergencyStep, setEmergencyStep] = useState<string>('');
+  const [notification, setNotification] = useState<string | null>(null);
+  const [currentView, setCurrentView] = useState<'dashboard' | 'network'>('dashboard');
   
   // Auth State
   const [user, setUser] = useState<{email: string} | null>(() => {
     const saved = localStorage.getItem('user');
     return saved ? JSON.parse(saved) : null;
   });
+
+  // Verification & Payment State
+  const [isVerified, setIsVerified] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
 
   // Persistent State: Mode
   const [mode, setMode] = useState<ConnectionMode>(() => {
@@ -44,9 +50,9 @@ function App() {
     return saved ? JSON.parse(saved) : MOCK_IDENTITIES[0];
   });
 
-  const [entryIdentity, setEntryIdentity] = useState<VirtualIdentity | null>(null); // Entry node for Double Hop
+  const [entryIdentity, setEntryIdentity] = useState<VirtualIdentity | null>(null);
   const [isRenumbering, setIsRenumbering] = useState(false);
-  const [isMasking, setIsMasking] = useState(false); // New Masking State
+  const [isMasking, setIsMasking] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -67,9 +73,9 @@ function App() {
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'connection' | 'privacy' | 'advanced'>('general');
+  const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'connection' | 'privacy' | 'advanced' | 'billing'>('general');
   const [showWithdrawal, setShowWithdrawal] = useState(false);
-  const [showHistory, setShowHistory] = useState(false); // History Modal State
+  const [showHistory, setShowHistory] = useState(false);
   const [balance, setBalance] = useState(0.0000);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
@@ -91,7 +97,7 @@ function App() {
       mtuSize: 1420,
       ipv6LeakProtection: true,
       localNetworkSharing: false,
-      logRetentionHours: 168 // Default 7 days
+      logRetentionHours: 168
     };
   });
 
@@ -103,7 +109,6 @@ function App() {
     }
   }, [isDark]);
 
-  // Initial Mock Data Generation
   useEffect(() => {
       const mockNodes: DeviceNode[] = Array.from({ length: 12 }, (_, i) => ({
           id: `node-${i}`,
@@ -120,7 +125,6 @@ function App() {
       setDeviceNodes(mockNodes);
   }, []);
 
-  // Notification Timer Effect
   useEffect(() => {
     if (notification) {
       const timer = setTimeout(() => {
@@ -130,7 +134,6 @@ function App() {
     }
   }, [notification]);
 
-  // Persistence Effects
   useEffect(() => {
     localStorage.setItem('appSettings', JSON.stringify(appSettings));
   }, [appSettings]);
@@ -147,22 +150,16 @@ function App() {
     localStorage.setItem('connectionHistory', JSON.stringify(connectionHistory));
   }, [connectionHistory]);
 
-  // Auto-cleanup logs based on retention setting
   useEffect(() => {
     const cleanupLogs = () => {
-        if (appSettings.logRetentionHours <= 0) return; // 0 = Keep forever
-        
+        if (appSettings.logRetentionHours <= 0) return;
         const cutoffTime = Date.now() - (appSettings.logRetentionHours * 60 * 60 * 1000);
         setLogs(prevLogs => {
             const newLogs = prevLogs.filter(log => log.timestampRaw > cutoffTime);
             return newLogs.length !== prevLogs.length ? newLogs : prevLogs;
         });
     };
-
-    // Run cleanup on mount and when retention setting changes
     cleanupLogs();
-    
-    // Also run periodically (every hour)
     const interval = setInterval(cleanupLogs, 3600000);
     return () => clearInterval(interval);
   }, [appSettings.logRetentionHours]);
@@ -175,7 +172,6 @@ function App() {
       event,
       type
     };
-    // Increase limit to 500 to allow retention time to be the primary factor
     setLogs(prev => [...prev, newLog].slice(-500));
   }, []);
 
@@ -186,11 +182,9 @@ function App() {
     }, 100);
   }, [addLog]);
 
-  // Load Transactions from Supabase with LocalStorage Fallback
   useEffect(() => {
     const fetchTransactions = async () => {
         if (!user) return;
-        
         try {
             const { data, error } = await supabase
                 .from('transactions')
@@ -199,15 +193,11 @@ function App() {
                 .order('created_at', { ascending: false });
 
             if (error) {
-                // Gestion d'erreur améliorée pour éviter [object Object]
                 const errorMsg = typeof error === 'object' && error !== null && 'message' in error 
                     ? (error as any).message 
                     : JSON.stringify(error);
-                
                 console.warn(`Supabase fetch warning: ${errorMsg}`);
                 addLog('Synchro cloud impossible : Mode hors ligne', 'warning');
-                
-                // Fallback to local storage
                 const saved = localStorage.getItem(`transactions_${user.email}`);
                 if (saved) {
                     setTransactions(JSON.parse(saved));
@@ -222,7 +212,6 @@ function App() {
                     address: t.address
                 }));
                 setTransactions(mappedTransactions);
-                // Update local storage backup
                 localStorage.setItem(`transactions_${user.email}`, JSON.stringify(mappedTransactions));
             }
         } catch (e: any) {
@@ -234,23 +223,17 @@ function App() {
             }
         }
     };
-
     fetchTransactions();
   }, [user, addLog]);
 
-  // Earning Logic
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    
     if (isConnected && userPlan !== 'free' && !isEmergency) {
-      // Rates: Pro = 0.004/sec, Elite = 0.012/sec
       const rate = userPlan === 'elite' ? 0.012 : 0.004;
-      
       interval = setInterval(() => {
         setBalance(prev => prev + rate);
       }, 1000);
     }
-
     return () => {
       if (interval) clearInterval(interval);
     };
@@ -258,10 +241,8 @@ function App() {
 
   const connectVPN = useCallback(() => {
     setIsDisconnecting(false);
-    connectionStartRef.current = Date.now(); // Start timer
+    connectionStartRef.current = Date.now();
     addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
-    
-    // Obfuscation & Behavior Logic
     let connectionDelay = 1500;
     const obsLevel = appSettings.obfuscationLevel;
 
@@ -276,9 +257,8 @@ function App() {
         setTimeout(() => addLog('Génération de trafic de couverture...', 'info'), 3800);
     }
 
-    // Logic specifically for STEALTH Mode connection
     if (mode === ConnectionMode.STEALTH) {
-        connectionDelay = 3500; // Force a longer delay for realism
+        connectionDelay = 3500;
         setTimeout(() => addLog('Mode Furtif : Initialisation du moteur d\'obfuscation...', 'info'), 600);
         setTimeout(() => addLog('Analyse des signatures DPI (Deep Packet Inspection)...', 'info'), 1500);
         setTimeout(() => addLog('Suppression des métadonnées du protocole VPN...', 'info'), 2200);
@@ -286,19 +266,15 @@ function App() {
     }
 
     if (mode === ConnectionMode.DOUBLE_HOP) {
-       // Select a random entry node different from current identity
        const potentialEntryNodes = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
        const selectedEntry = potentialEntryNodes[Math.floor(Math.random() * potentialEntryNodes.length)];
        setEntryIdentity(selectedEntry);
-
        setTimeout(() => {
            addLog(`Tunnel établi vers le nœud d'entrée ${selectedEntry.ip} (${selectedEntry.country})...`, 'info');
        }, 500);
        setTimeout(() => {
            addLog('Relais confirmé. Routage vers le nœud de sortie...', 'success');
        }, 1000);
-
-       // Increase delay for Double Hop if not already long enough
        if (connectionDelay < 2500) connectionDelay = 2500;
        else connectionDelay += 1000;
     } else {
@@ -318,7 +294,6 @@ function App() {
            addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
       }
       
-      // Apply Obfuscation Side Effects (Latency penalty simulation)
       if (obsLevel !== 'standard') {
           addLog(`Mode Obfusqué ${obsLevel.toUpperCase()} actif : Anonymat renforcé`, 'success');
           setCurrentIdentity(prev => ({
@@ -327,7 +302,6 @@ function App() {
           }));
       }
       
-      // DNS Log
       const dnsLabels: Record<string, string> = {
         cloudflare: 'Cloudflare DNS',
         google: 'Google DNS',
@@ -350,13 +324,10 @@ function App() {
     setIsDisconnecting(true);
     addLog('Déconnexion initiée...', 'warning');
 
-    // Record Session Logic
     if (connectionStartRef.current) {
         const endTime = Date.now();
         const startTime = connectionStartRef.current;
         const durationMs = endTime - startTime;
-        
-        // Calculate readable duration
         const seconds = Math.floor((durationMs / 1000) % 60);
         const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
         const hours = Math.floor((durationMs / (1000 * 60 * 60)));
@@ -372,8 +343,7 @@ function App() {
             protocol: appSettings.protocol,
             mode: mode
         };
-
-        setConnectionHistory(prev => [newSession, ...prev].slice(0, 50)); // Keep last 50
+        setConnectionHistory(prev => [newSession, ...prev].slice(0, 50));
         connectionStartRef.current = null;
     }
 
@@ -398,9 +368,7 @@ function App() {
   const handleAnalyze = useCallback(async (identity: VirtualIdentity = currentIdentity) => {
     if (!isConnected && !isEmergency) return;
     setAnalyzing(true);
-    // Only log if not in emergency loop to avoid clutter
     if (!isEmergency) addLog('Analyse de sécurité par IA en cours...', 'info');
-    
     try {
       const report = await analyzeSecurity(mode, identity.country, identity.ip);
       setSecurityReport(report);
@@ -412,14 +380,12 @@ function App() {
     }
   }, [isConnected, isEmergency, mode, currentIdentity, addLog]);
 
-  // Trigger analysis when connected
   useEffect(() => {
     if (isConnected && !isDisconnecting && !isEmergency) {
       handleAnalyze();
     }
   }, [isConnected, isDisconnecting, isEmergency, handleAnalyze]);
 
-  // Auto Connect Effect
   const hasAutoConnected = useRef(false);
   useEffect(() => {
     if (!hasAutoConnected.current && appSettings.autoConnect && !isConnected && !isEmergency && user) {
@@ -430,42 +396,28 @@ function App() {
   }, [user, appSettings.autoConnect, isConnected, isEmergency, connectVPN, addLog]);
 
   const handleEmergencyProtocol = useCallback(() => {
-    // If Kill Switch is OFF, just standard drop
     if (!appSettings.killSwitch) {
         addLog('⚠️ Connexion interrompue. Kill Switch inactif : IP exposée.', 'error');
         disconnectVPN();
         return;
     }
-
-    // Step 0: Trigger
     addLog('🚨 DÉCONNEXION ACCIDENTELLE DÉTECTÉE', 'error');
     setIsEmergency(true);
     setIsConnected(false);
     setEmergencyStep('BLOCAGE TRAFIC');
-    
-    // Step 1: Engage Kill Switch (Immediate)
     addLog('🛡️ KILL SWITCH ENGAGÉ : Trafic Internet totalement bloqué', 'warning');
-    
-    // Step 2: Purge
     setTimeout(() => {
         setEmergencyStep('PURGE SESSION');
         addLog('♻️ Purge des clés de session compromises...', 'info');
-
-        // Step 3: Forced Renumbering (Find NEW identity)
         setTimeout(() => {
             setEmergencyStep('RENUMÉROTATION');
             addLog('🔄 Renumérotation forcée : Acquisition nouvelle identité...', 'warning');
-            
             const availableIds = MOCK_IDENTITIES.filter(id => id.ip !== currentIdentity.ip);
             const newIdentity = availableIds[Math.floor(Math.random() * availableIds.length)];
-            
-            // Step 4: Apply New ID
             setTimeout(() => {
                 setCurrentIdentity(newIdentity);
                 addLog(`✅ Nouvelle IP sécurisée acquise : ${newIdentity.ip}`, 'success');
                 setEmergencyStep(`ATTENTE (${appSettings.reconnectDelay}s)`);
-                
-                // Step 5: Re-establish with configured delay
                 setTimeout(() => {
                     if (appSettings.autoReconnect) {
                         setIsConnected(true);
@@ -474,27 +426,23 @@ function App() {
                         addLog('🚀 TUNNEL RÉTABLI AVEC SUCCÈS', 'success');
                         handleAnalyze(newIdentity);
                     } else {
-                         // End of emergency sequence without reconnection
                          setIsEmergency(false);
                          setEmergencyStep('');
                          addLog('Connexion coupée. Reconnexion automatique désactivée.', 'warning');
                          disconnectVPN();
                     }
                 }, appSettings.reconnectDelay * 1000);
-                
-            }, 2000); // Time to find new IP
-        }, 1500); // Time to purge
-    }, 1000); // Time to block
+            }, 2000);
+        }, 1500);
+    }, 1000);
   }, [isConnected, appSettings.killSwitch, appSettings.autoReconnect, appSettings.reconnectDelay, currentIdentity, disconnectVPN, addLog, handleAnalyze]);
 
-  // Listen for offline events
   useEffect(() => {
     const onOffline = () => {
         if (isConnected && appSettings.killSwitch && !isEmergency) {
             handleEmergencyProtocol();
         }
     };
-    
     window.addEventListener('offline', onOffline);
     return () => window.removeEventListener('offline', onOffline);
   }, [isConnected, appSettings.killSwitch, isEmergency, handleEmergencyProtocol]);
@@ -509,8 +457,6 @@ function App() {
         setMode(newMode);
         setNotification(`Mode de connexion changé : ${newMode}`);
         addLog(`Mode de connexion réglé sur : ${newMode}`, 'info');
-        
-        // Specific log for Stealth mode selection
         if (newMode === ConnectionMode.STEALTH) {
             addLog('Mode Furtif : Le trafic sera camouflé en HTTPS pour contourner les pare-feux.', 'warning');
         }
@@ -521,14 +467,11 @@ function App() {
     if (!isConnected || isRenumbering || isEmergency || isMasking) return;
     setIsRenumbering(true);
     addLog('Rotation d\'identité en cours...', 'warning');
-    
     setTimeout(() => {
-      // Filter out current identity AND entry identity (if in Double Hop) to avoid collision
       const availableIds = MOCK_IDENTITIES.filter(id => 
         id.ip !== currentIdentity.ip && 
         (!entryIdentity || id.ip !== entryIdentity.ip)
       );
-      
       const newIdentity = availableIds[Math.floor(Math.random() * availableIds.length)];
       setCurrentIdentity(newIdentity);
       setIsRenumbering(false);
@@ -541,11 +484,9 @@ function App() {
     if (!isConnected || isMasking || isEmergency || isRenumbering) return;
     setIsMasking(true);
     addLog('Masquage des empreintes numériques (MAC/UA) en cours...', 'info');
-
     setTimeout(() => {
         const userAgents = ['Chrome / Win10', 'Firefox / MacOS', 'Safari / iOS', 'Edge / Win11', 'Brave / Linux', 'Opera / Android'];
         const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
-        
         const generateMAC = () => {
             const hex = "0123456789ABCDEF";
             let mac = "";
@@ -557,17 +498,13 @@ function App() {
             return mac;
         };
         const newMAC = generateMAC();
-        
-        // Enhance: Randomize latency slightly to simulate stack changes
-        const latencyJitter = Math.floor(Math.random() * 20) - 10; // +/- 10ms
-
+        const latencyJitter = Math.floor(Math.random() * 20) - 10;
         setCurrentIdentity(prev => ({
             ...prev,
             mac: newMAC,
             userAgentShort: randomUA,
             latency: Math.max(5, prev.latency + latencyJitter)
         }));
-
         setIsMasking(false);
         addLog(`Empreinte masquée : ${randomUA} | ${newMAC}`, 'success');
     }, 2000);
@@ -575,19 +512,15 @@ function App() {
 
   const handleSimulateDrop = () => {
     if (!isConnected || isDisconnecting || isEmergency) return;
-    
     if (!appSettings.killSwitch) {
         addLog('⚠️ Simulation : Perte réseau (Kill Switch Inactif)', 'error');
         disconnectVPN();
         return;
     }
-
     setIsDisconnecting(true);
     addLog('⚠️ Simulation : Perturbation réseau détectée...', 'warning');
-
     setTimeout(() => {
         setIsDisconnecting(false);
-        // This triggers the emergency state which will now show "NON PROTÉGÉ"
         handleEmergencyProtocol();
     }, 1000);
   };
@@ -599,7 +532,6 @@ function App() {
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    
     if (isConnected && appSettings.autoRotation && !isEmergency) {
       const ms = Math.max(1, appSettings.rotationInterval) * 60 * 1000;
       interval = setInterval(() => {
@@ -608,32 +540,26 @@ function App() {
         }
       }, ms);
     }
-    
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, isEmergency]);
 
-  // Keyboard Shortcuts Handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+S: Toggle Connection
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         toggleConnection();
       }
-      // Ctrl+R: Renumber Identity
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
         e.preventDefault();
         handleRenumber();
       }
-      // Ctrl+M: Masking
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'm') {
         e.preventDefault();
         handleMasking();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleConnection, handleRenumber, handleMasking]);
@@ -654,51 +580,21 @@ function App() {
     }, 1500);
   };
 
-  const openSettings = (tab: 'general' | 'connection' | 'privacy' | 'advanced' = 'general') => {
+  const openSettings = (tab: 'general' | 'connection' | 'privacy' | 'advanced' | 'billing' = 'general') => {
       setInitialSettingsTab(tab);
       setShowSettings(true);
   };
 
   const handleUpdateSettings = (key: keyof AppSettings, value: any) => {
-    // Feature Locking Logic - DNS Custom still locked
     if (key === 'dns' && value === 'custom' && userPlan === 'free') {
         addLog('DNS Sécurisé nécessite le plan PRO', 'warning');
         setShowPricing(true);
         return;
     }
-
     setAppSettings(prev => ({ ...prev, [key]: value }));
-    
-    // Updated logging for new settings
-    if (key === 'autoRotation') {
-        addLog(`Rotation automatique ${value ? 'activée' : 'désactivée'}`, 'info');
-    } else if (key === 'adBlocker') {
-        addLog(`AdBlocker AI ${value ? 'activé' : 'désactivé'}`, 'info');
-    } else if (key === 'autoConnect') {
-        addLog(`Connexion automatique au démarrage ${value ? 'activée' : 'désactivée'}`, 'info');
-    } else if (key === 'rotationInterval') {
-        addLog(`Intervalle de rotation : ${value} min`, 'info');
-    } else if (key === 'mtuSize') {
-        addLog(`Taille MTU ajustée : ${value} bytes`, 'info');
-    } else if (key === 'ipv6LeakProtection') {
-        addLog(`Protection fuite IPv6 ${value ? 'activée' : 'désactivée'}`, 'info');
-    } else if (key === 'localNetworkSharing') {
-        addLog(`Partage réseau local ${value ? 'activé' : 'désactivé'}`, value ? 'warning' : 'info');
-    } else if (key === 'obfuscationLevel') {
-        const labels: Record<string, string> = { standard: 'Standard', high: 'Élevé', ultra: 'Ultra' };
-        addLog(`Niveau d'obfuscation réglé sur : ${labels[value as string] || value}`, 'info');
-        if (value !== 'standard') addLog('Note : Une obfuscation plus élevée peut augmenter la latence.', 'warning');
-    } else if (key === 'logRetentionHours') {
-        const val = value as number;
-        const label = val === 0 ? 'Infini' : val === 24 ? '24 Heures' : val === 168 ? '7 Jours' : val === 720 ? '30 Jours' : `${val}h`;
-        addLog(`Rétention des logs réglée sur : ${label}`, 'info');
-    } else if (key === 'autoReconnect') {
-        addLog(`Reconnexion automatique ${value ? 'activée' : 'désactivée'}`, 'info');
-    } else if (key === 'reconnectDelay') {
-        addLog(`Délai de reconnexion défini sur ${value}s`, 'info');
-    } else {
-        addLog(`Configuration mise à jour: ${key} -> ${value}`, 'info');
-    }
+    if (key === 'autoRotation') addLog(`Rotation automatique ${value ? 'activée' : 'désactivée'}`, 'info');
+    else if (key === 'adBlocker') addLog(`AdBlocker AI ${value ? 'activé' : 'désactivé'}`, 'info');
+    else addLog(`Configuration mise à jour: ${key}`, 'info');
   };
 
   const handleOpenWithdrawal = () => {
@@ -711,13 +607,8 @@ function App() {
 
   const handleConfirmWithdrawal = async (method: string, address: string) => {
     const amount = parseFloat(balance.toFixed(4));
-    
     const methodLabel = method === 'crypto' ? 'Wallet' : method === 'paypal' ? 'PayPal' : 'Virement Bancaire';
-    
-    // Log initiation
     addLog(`Initialisation du retrait de ${amount} RNC vers ${methodLabel}...`, 'info');
-    
-    // Create new transaction object
     const newTransaction: Transaction = {
         id: `TX-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
         date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
@@ -726,12 +617,8 @@ function App() {
         status: 'completed',
         address: address
     };
-
-    // Simulate blockchain/bank process steps in logs
     setTimeout(async () => {
         addLog(`Vérification de l'adresse ${address.substring(0,6)}...${address.substring(address.length-4)}`, 'info');
-        
-        // Save to Supabase (Best Effort)
         try {
             const { error } = await supabase.from('transactions').insert([{
                 id: newTransaction.id,
@@ -742,12 +629,8 @@ function App() {
                 address: newTransaction.address,
                 user_email: user?.email
             }]);
-
             if (error) {
-                const errorMsg = typeof error === 'object' && error !== null && 'message' in error 
-                    ? (error as any).message 
-                    : JSON.stringify(error);
-                console.warn('Supabase Insert Warning:', errorMsg);
+                console.warn('Supabase Insert Warning:', error);
                 addLog('Mode hors ligne : Transaction sauvegardée localement', 'warning');
             } else {
                 addLog('Transaction synchronisée sur le cloud', 'success');
@@ -756,9 +639,7 @@ function App() {
             console.warn('Network error during insert:', e);
             addLog('Mode hors ligne : Transaction sauvegardée localement', 'warning');
         }
-
         setTimeout(() => {
-            // Update transactions list locally (Optimistic UI) and persist to LocalStorage
             setTransactions(prev => {
                 const updated = [newTransaction, ...prev];
                 if (user) {
@@ -766,17 +647,13 @@ function App() {
                 }
                 return updated;
             });
-            
-            // Reset balance
             setBalance(0);
             setShowWithdrawal(false);
-            
             addLog(`Transaction confirmée [${newTransaction.id}] : ${amount} RNC envoyés.`, 'success');
         }, 1000);
     }, 800);
   };
 
-  // Auth Handlers
   const handleLogin = (email: string) => {
     const newUser = { email };
     setUser(newUser);
@@ -793,7 +670,6 @@ function App() {
       setTransactions([]);
   };
 
-  // Connect node from Network View
   const handleConnectNode = (nodeId: string) => {
       const target = deviceNodes.find(n => n.id === nodeId);
       if (target) {
@@ -802,7 +678,6 @@ function App() {
           if (!isConnected) {
               connectVPN();
           } else {
-              // Simulate switch
               setIsRenumbering(true);
               setTimeout(() => {
                   setCurrentIdentity(prev => ({ ...prev, ip: target.ip, latency: target.latency }));
@@ -816,12 +691,10 @@ function App() {
   const handleAutonomyUpdate = (nodeId: string, profile: 'provider' | 'balanced' | 'consumer') => {
       setDeviceNodes(prev => prev.map(node => {
           if (node.id === nodeId) {
-              // Simulate immediate impact on rate/latency
               let newRate = node.transferRate;
               if (profile === 'provider') newRate = Math.floor(Math.random() * 50) + 50;
               if (profile === 'balanced') newRate = Math.floor(Math.random() * 30) + 10;
               if (profile === 'consumer') newRate = Math.floor(Math.random() * 5);
-
               addLog(`Profil ${node.name} mis à jour : ${profile.toUpperCase()}`, 'info');
               return { ...node, autonomyProfile: profile, transferRate: newRate };
           }
@@ -829,14 +702,33 @@ function App() {
       }));
   };
 
-  // Recommendation Logic
+  const handleAddPaymentMethod = () => {
+      const newMethod: PaymentMethod = {
+          id: Math.random().toString(36).substr(2, 9),
+          type: 'card',
+          name: `Carte Visa terminant par ${Math.floor(Math.random() * 9000) + 1000}`,
+          expiry: '12/26',
+          isDefault: paymentMethods.length === 0
+      };
+      setPaymentMethods(prev => [...prev, newMethod]);
+      addLog(`Moyen de paiement ajouté : ${newMethod.name}`, 'success');
+  };
+
+  const handleRemovePaymentMethod = (id: string) => {
+      setPaymentMethods(prev => prev.filter(m => m.id !== id));
+      addLog('Moyen de paiement supprimé', 'info');
+  };
+
+  const handleVerificationSuccess = () => {
+      setIsVerified(true);
+      setShowVerification(false);
+      addLog('Identité vérifiée avec succès. Compte débridé.', 'success');
+  };
+
   const recommendedActions = useMemo(() => {
     if (!securityReport || !isConnected) return [];
-    
     const recs = [];
     const { threatLevel } = securityReport;
-
-    // 1. Obfuscation Recommendation
     if ((threatLevel === 'Critique' || threatLevel === 'Élevé') && appSettings.obfuscationLevel !== 'ultra') {
         recs.push({
             id: 'set_ultra',
@@ -851,23 +743,7 @@ function App() {
                 addLog('Action recommandée appliquée : Obfuscation Ultra', 'success');
             }
         });
-    } else if (threatLevel === 'Moyen' && appSettings.obfuscationLevel === 'standard') {
-        recs.push({
-            id: 'set_high',
-            label: "Obfuscation Élevée",
-            subLabel: "Recommandé pour menace moyenne",
-            icon: Shield,
-            color: 'text-amber-500',
-            borderColor: 'border-amber-200 dark:border-amber-500/30',
-            bgColor: 'bg-amber-50 dark:bg-amber-500/10',
-            handler: () => {
-                handleUpdateSettings('obfuscationLevel', 'high');
-                addLog('Action recommandée appliquée : Obfuscation Élevée', 'success');
-            }
-        });
     }
-
-    // 2. Kill Switch Recommendation
     if (threatLevel !== 'Faible' && !appSettings.killSwitch) {
         recs.push({
             id: 'enable_killswitch',
@@ -883,45 +759,9 @@ function App() {
             }
         });
     }
-
-    // 3. AdBlocker Recommendation
-    if (threatLevel !== 'Faible' && !appSettings.adBlocker) {
-         recs.push({
-            id: 'enable_adblock',
-            label: "Activer AdBlocker",
-            subLabel: "Filtrer les trackers malveillants",
-            icon: Zap,
-            color: 'text-brand-500',
-            borderColor: 'border-brand-200 dark:border-brand-500/30',
-            bgColor: 'bg-brand-50 dark:bg-brand-500/10',
-            handler: () => {
-                handleUpdateSettings('adBlocker', true);
-                addLog('Action recommandée appliquée : AdBlocker activé', 'success');
-            }
-        });
-    }
-    
-    // 4. Auto Rotation Recommendation for High Threats
-    if ((threatLevel === 'Critique' || threatLevel === 'Élevé') && !appSettings.autoRotation) {
-        recs.push({
-           id: 'enable_rotation',
-           label: "Rotation Auto",
-           subLabel: "Changer d'IP périodiquement",
-           icon: RefreshCw,
-           color: 'text-emerald-500',
-           borderColor: 'border-emerald-200 dark:border-emerald-500/30',
-           bgColor: 'bg-emerald-50 dark:bg-emerald-500/10',
-           handler: () => {
-               handleUpdateSettings('autoRotation', true);
-               addLog('Action recommandée appliquée : Rotation automatique activée', 'success');
-           }
-       });
-   }
-
     return recs;
   }, [securityReport, isConnected, appSettings, addLog]);
 
-  // Dynamic Styles for Emergency Mode
   const mainButtonColor = isEmergency 
     ? 'bg-red-500 shadow-red-500/50 animate-pulse-fast'
     : isConnected 
@@ -934,23 +774,8 @@ function App() {
                     : 'bg-emerald-500 shadow-emerald-500/50 hover:shadow-emerald-500/70' 
         : 'bg-slate-700 shadow-slate-900/50 hover:bg-slate-600';
 
-  const statusTextColor = isEmergency 
-    ? 'text-red-500' 
-    : isDisconnecting 
-        ? 'text-amber-500' 
-        : isConnected 
-            ? 'text-emerald-500' 
-            : 'text-slate-500';
-            
-  const statusBgColor = isEmergency 
-    ? 'bg-red-500/10' 
-    : isDisconnecting 
-        ? 'bg-amber-500/10' 
-        : isConnected 
-            ? 'bg-emerald-500/10' 
-            : 'bg-slate-500/10';
-
-  // Calculate dynamic border color based on mode for the card
+  const statusTextColor = isEmergency ? 'text-red-500' : isDisconnecting ? 'text-amber-500' : isConnected ? 'text-emerald-500' : 'text-slate-500';
+  const statusBgColor = isEmergency ? 'bg-red-500/10' : isDisconnecting ? 'bg-amber-500/10' : isConnected ? 'bg-emerald-500/10' : 'bg-slate-500/10';
   const cardBorderClass = isEmergency 
     ? 'border-red-500/30 shadow-red-900/10' 
     : isConnected && mode === ConnectionMode.STEALTH
@@ -961,7 +786,6 @@ function App() {
                 ? 'border-orange-500/30 shadow-orange-500/10'
                 : 'border-slate-200 dark:border-slate-800';
 
-  // Auth Guard
   if (!user) {
       return (
           <>
@@ -973,7 +797,6 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} ${isEmergency ? 'border-4 border-red-500/50' : ''}`}>
       
-      {/* Toast Notification */}
       {notification && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-2 bg-slate-900/90 text-white rounded-full shadow-2xl border border-slate-700/50 backdrop-blur-md flex items-center gap-3 animate-in slide-in-from-top-full fade-in duration-300">
              <div className="w-2 h-2 rounded-full bg-brand-500"></div>
@@ -981,7 +804,6 @@ function App() {
         </div>
       )}
 
-      {/* Modals */}
       {showPricing && (
         <PricingModal 
           currentPlan={userPlan} 
@@ -998,6 +820,19 @@ function App() {
           userPlan={userPlan}
           onShowPricing={() => setShowPricing(true)}
           initialTab={initialSettingsTab}
+          isVerified={isVerified}
+          onStartVerification={() => setShowVerification(true)}
+          paymentMethods={paymentMethods}
+          onAddPaymentMethod={handleAddPaymentMethod}
+          onRemovePaymentMethod={handleRemovePaymentMethod}
+          onViewHistory={() => setShowHistory(true)}
+        />
+      )}
+
+      {showVerification && (
+        <VerificationModal 
+            onClose={() => setShowVerification(false)}
+            onSuccess={handleVerificationSuccess}
         />
       )}
 
@@ -1038,7 +873,6 @@ function App() {
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium tracking-wide hidden md:block pl-10 -mt-1">Redéfinissez votre identité numérique.</span>
           </div>
           
-          {/* Main Navigation */}
           <div className="hidden md:flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg mx-4">
               <button 
                 onClick={() => setCurrentView('dashboard')}
@@ -1056,7 +890,6 @@ function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Wallet Display & Withdrawal */}
             {userPlan !== 'free' && !isEmergency && (
               <div className="flex items-center gap-2 mr-2">
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
@@ -1147,357 +980,103 @@ function App() {
       </header>
       
       {isEmergency && (
-        <div className="w-full bg-red-600 text-white text-center py-1.5 text-xs font-bold uppercase tracking-wider animate-pulse flex items-center justify-center gap-2 shadow-lg relative z-40">
-           <Siren className="w-4 h-4" />
-           Protocole de Renumérotation d'Urgence Actif
-           <Siren className="w-4 h-4" />
+        <div className="w-full bg-red-600 text-white text-center py-1.5 text-xs font-bold uppercase tracking-wider animate-pulse flex items-center justify-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span>{emergencyStep || 'PROTOCOLE D\'URGENCE ACTIF'}</span>
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+      <main className={`max-w-7xl mx-auto p-4 md:p-6 pb-24 space-y-6 ${isEmergency ? 'opacity-50 pointer-events-none blur-sm' : ''}`}>
         
-        {currentView === 'network' ? (
-            <div className="h-[calc(100vh-140px)]">
-                <NetworkView nodes={deviceNodes} onConnectNode={handleConnectNode} onAutonomyUpdate={handleAutonomyUpdate} />
-            </div>
-        ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-                <div className={`bg-white dark:bg-slate-900 rounded-2xl p-8 border ${cardBorderClass} shadow-xl relative overflow-hidden transition-all duration-500`}>
-                
-                {/* Stealth Mode Indicator Banner */}
-                {mode === ConnectionMode.STEALTH && isConnected && !isEmergency && (
-                    <div className="absolute top-0 left-0 w-full bg-indigo-950/90 border-b border-indigo-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
-                        <Ghost className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-200">
-                        Mode Furtif Activé - Trafic Obfusqué
-                        </span>
-                    </div>
-                )}
-
-                {/* Double Hop Indicator Banner */}
-                {mode === ConnectionMode.DOUBLE_HOP && isConnected && !isEmergency && (
-                    <div className="absolute top-0 left-0 w-full bg-violet-950/90 border-b border-violet-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
-                    <Layers className="w-3.5 h-3.5 text-violet-400 animate-pulse" />
-                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200">
-                        Double Hop Actif - Relais Chiffré
-                    </span>
-                    </div>
-                )}
-
-                {/* Smart DNS Indicator Banner */}
-                {mode === ConnectionMode.SMART_DNS && isConnected && !isEmergency && (
-                    <div className="absolute top-0 left-0 w-full bg-orange-950/90 border-b border-orange-500/30 py-1.5 flex items-center justify-center gap-2 z-20 shadow-sm backdrop-blur-sm animate-in slide-in-from-top duration-500 ease-out">
-                    <Globe className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
-                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-200">
-                        Smart DNS Actif - IP D'origine Conservée
-                    </span>
-                    </div>
-                )}
-
-                {/* Kill Switch Toggle - Top Right */}
-                <button
-                    onClick={(e) => {
-                    e.stopPropagation();
-                    handleUpdateSettings('killSwitch', !appSettings.killSwitch);
-                    }}
-                    className={`absolute top-6 right-6 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 backdrop-blur-md ${
-                    appSettings.killSwitch 
-                        ? 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)]' 
-                        : 'bg-slate-100/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                    title={appSettings.killSwitch ? "Désactiver Kill Switch" : "Activer Kill Switch"}
-                >
-                    <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block">Kill Switch</span>
-                    {appSettings.killSwitch ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-                </button>
-
-                <div className="absolute top-0 right-0 p-4 opacity-10">
-                    {isEmergency ? <Siren className="w-64 h-64 text-red-500 animate-pulse" /> : <Wifi className="w-64 h-64" />}
-                </div>
-                
-                <div className="relative z-10 flex flex-col items-center justify-center py-8">
-                    <button
-                    onClick={toggleConnection}
-                    disabled={isDisconnecting || isEmergency}
-                    className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-700 ease-in-out shadow-2xl ${mainButtonColor}`}
-                    >
-                    {isEmergency ? (
-                        <WifiOff className="w-12 h-12 text-white animate-shake" />
-                    ) : (
-                        <Power className="w-12 h-12 text-white" />
-                    )}
-                    </button>
-                    
-                    <h2 className={`mt-6 text-2xl font-bold ${isEmergency ? 'text-red-500' : ''}`}>
-                    {isEmergency 
-                        ? 'COUPURE DÉTECTÉE' 
-                        : isDisconnecting 
-                            ? 'Déconnexion...' 
-                            : isConnected 
-                                ? 'Connexion Active' 
-                                : 'Prêt à connecter'}
-                    </h2>
-                    
-                    {!isEmergency && !isDisconnecting && (
-                    <div key={mode} className="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-1 duration-300">
-                        {mode === ConnectionMode.STANDARD && <Zap className="w-3.5 h-3.5 text-brand-500" />}
-                        {mode === ConnectionMode.STEALTH && <Ghost className="w-3.5 h-3.5 text-indigo-500" />}
-                        {mode === ConnectionMode.DOUBLE_HOP && <Layers className="w-3.5 h-3.5 text-violet-500" />}
-                        {mode === ConnectionMode.SMART_DNS && <Globe className="w-3.5 h-3.5 text-orange-500" />}
-                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">{mode}</span>
-                    </div>
-                    )}
-                    
-                    {isEmergency && (
-                        <div className="mt-3 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-                            <div className="text-sm font-bold text-red-400 animate-pulse flex items-center gap-2 bg-red-950/30 px-4 py-2 rounded-full border border-red-500/30 shadow-lg shadow-red-500/10">
-                                <AlertTriangle className="w-4 h-4" />
-                                KILL SWITCH ACTIF : RENUMÉROTATION
-                            </div>
-                            {emergencyStep && (
-                                <div className="text-xs font-mono text-red-300 flex items-center gap-2 mt-1">
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                    {emergencyStep}...
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    
-                    {isConnected && !isDisconnecting && !isEmergency && (
-                    <div className={`mt-6 flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-700 ${isRenumbering ? 'opacity-50 scale-95 blur-[1px]' : 'opacity-100 scale-100'}`}>
-                        
-                        <div className="flex flex-col items-center gap-2 p-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800 backdrop-blur-sm">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
-                                {mode === ConnectionMode.SMART_DNS ? 'Serveur DNS Actif' : 'Serveur Connecté'}
-                            </span>
-                            
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-mono text-xl font-bold text-slate-700 dark:text-white tracking-tight">{currentIdentity.ip}</span>
-                                </div>
-                                <div className="h-4 w-px bg-slate-300 dark:bg-slate-700"></div>
-                                <div className="flex items-center gap-2">
-                                    <Globe className="w-4 h-4 text-brand-500" />
-                                    <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{currentIdentity.country}</span>
-                                </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs text-slate-400">{currentIdentity.city}</span>
-                                <button 
-                                    onClick={shareIdentity}
-                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-400 hover:text-brand-500"
-                                    title="Copier l'IP"
-                                >
-                                    <Share2 className="w-3 h-3" />
-                                </button>
-                            </div>
-                        </div>
-
-                    </div>
-                    )}
-
-                    <div className="mt-4 flex flex-wrap gap-3 justify-center w-full">
-                    {Object.values(ConnectionMode).map((m) => {
-                        const isSelected = mode === m;
-                        // Icon selection
-                        const Icon = m === ConnectionMode.STEALTH ? Ghost : m === ConnectionMode.DOUBLE_HOP ? Layers : m === ConnectionMode.SMART_DNS ? Globe : Zap;
-                        
-                        return (
-                            <button
-                            key={m}
-                            onClick={() => handleModeChange(m)}
-                            disabled={isConnected || isEmergency}
-                            className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transform transition-all duration-300 hover:scale-105 active:scale-95 ${
-                                isSelected
-                                ? m === ConnectionMode.STEALTH
-                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                                    : m === ConnectionMode.DOUBLE_HOP
-                                        ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
-                                        : m === ConnectionMode.SMART_DNS
-                                            ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
-                                            : 'bg-brand-500 text-white shadow-lg shadow-brand-500/25'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
-                            }`}
-                            >
-                            <Icon className={`w-4 h-4 ${isSelected ? 'animate-pulse' : ''}`} />
-                            <span>{m}</span>
-                            
-                            {/* Lock icon for premium modes */}
-                            {m !== ConnectionMode.STANDARD && userPlan === 'free' && (
-                                <div className="absolute -top-1.5 -right-1.5 bg-slate-900 text-amber-500 rounded-full p-0.5 border border-slate-700 shadow-sm z-10">
-                                    <Lock className="w-2.5 h-2.5" />
-                                </div>
-                            )}
-                            </button>
-                        )
-                    })}
-                    </div>
-
-                    <div className="flex flex-wrap gap-3 mt-6 justify-center">
-                        <button
-                        onClick={handleRenumber}
-                        disabled={!isConnected || isRenumbering || isEmergency || isMasking}
-                        title={!isConnected ? "Connectez-vous pour renuméroter" : isRenumbering ? "En cours..." : "Changer d'identité"}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
-                            !isConnected || isEmergency 
-                            ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
-                            : isRenumbering
-                                ? 'bg-brand-500/10 text-brand-500 border-brand-500/20 cursor-wait'
-                                : 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-brand-200 dark:border-brand-500/30 hover:border-brand-500 dark:hover:border-brand-500 hover:text-brand-700 dark:hover:text-brand-300 hover:shadow-lg hover:shadow-brand-500/10 hover:scale-105'
-                        }`}
-                        >
-                        <RefreshCw className={`w-4 h-4 ${isRenumbering ? 'animate-spin' : ''}`} />
-                        <span>{isRenumbering ? 'Renumérotation...' : 'Renuméroter'}</span>
-                        </button>
-
-                        <button
-                        onClick={handleMasking}
-                        disabled={!isConnected || isMasking || isEmergency || isRenumbering}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border shadow-sm ${
-                            !isConnected || isEmergency 
-                            ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
-                            : isMasking
-                                ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20 cursor-wait'
-                                : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-500 dark:hover:border-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 hover:shadow-lg hover:shadow-indigo-500/10 hover:scale-105'
-                        }`}
-                        title={!isConnected ? "Connectez-vous pour masquer" : isMasking ? "Masquage..." : "Masquer les empreintes (MAC/UA)"}
-                        >
-                        <Fingerprint className={`w-4 h-4 ${isMasking ? 'animate-pulse' : ''}`} />
-                        <span>{isMasking ? 'Masquage...' : 'Masquer'}</span>
-                        </button>
-
-                        <button
-                        onClick={handleSimulateDrop}
-                        disabled={!isConnected || isDisconnecting || isEmergency}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border ${
-                            !isConnected || isDisconnecting || isEmergency
-                            ? 'bg-slate-100 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-50'
-                            : 'border-amber-500/20 text-amber-600 dark:text-amber-500 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10'
-                        }`}
-                        title={!appSettings.killSwitch ? "Activez Kill Switch d'abord" : "Simuler une coupure réseau"}
-                        >
-                        <WifiOff className="w-4 h-4" />
-                        <span className="hidden sm:inline">Simuler Drop</span>
-                        </button>
-
-                        {isConnected && !isEmergency && appSettings.killSwitch && (
-                            <button
-                            onClick={handleEmergencyProtocol}
-                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 border border-red-500/20 text-red-500 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/10"
-                            title="Simuler une coupure réseau pour tester le Kill Switch"
-                        >
-                            <AlertTriangle className="w-4 h-4" />
-                            <span className="hidden sm:inline">Test Kill Switch</span>
-                        </button>
-                        )}
-                    </div>
-                </div>
-                </div>
-
-                <Dashboard
-                isDark={isDark}
-                protocol={appSettings.protocol}
-                isEmergency={isEmergency}
-                securityReport={securityReport}
-                isConnected={isConnected}
-                userPlan={userPlan}
+        {currentView === 'dashboard' ? (
+          <>
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Dashboard 
+                    isDark={isDark} 
+                    protocol={appSettings.protocol} 
+                    isEmergency={isEmergency} 
+                    securityReport={securityReport}
+                    isConnected={isConnected}
+                    userPlan={userPlan}
                 />
-                
-                <SecureFileTransfer isConnected={isConnected} addLog={addLog} />
+                <IdentityMatrix 
+                    identity={currentIdentity} 
+                    entryIdentity={entryIdentity} 
+                    isRotating={isRenumbering}
+                    isMasking={isMasking}
+                    mode={mode}
+                    securityReport={securityReport}
+                    protocol={appSettings.protocol}
+                    obfuscationLevel={appSettings.obfuscationLevel}
+                    onOpenObfuscationSettings={() => openSettings('advanced')}
+                />
+             </div>
 
-            </div>
-
-            <div className="space-y-6">
-                {/* Earnings Card */}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <SecureFileTransfer 
+                    isConnected={isConnected && !isEmergency} 
+                    addLog={addLog}
+                />
                 <EarningsCard 
-                    isConnected={isConnected} 
-                    plan={userPlan} 
-                    balance={balance} 
-                    onUpgrade={() => setShowPricing(true)} 
+                    isConnected={isConnected}
+                    plan={userPlan}
+                    balance={balance}
+                    onUpgrade={() => setShowPricing(true)}
                     onWithdraw={handleOpenWithdrawal}
                     transactions={transactions}
                     onViewHistory={() => setShowHistory(true)}
                 />
+             </div>
 
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 min-h-[300px]">
-                    <div className="flex items-center justify-between mb-6">
-                    <h3 className="font-bold text-lg flex items-center gap-2">
-                        <Globe className="w-5 h-5 text-brand-500" />
-                        {isConnected ? 'Identité Virtuelle' : 'Identité Réelle'}
-                    </h3>
-                    {isConnected && (
-                        <div className="flex gap-1">
-                        {appSettings.killSwitch && <div className={`w-2 h-2 rounded-full ${isEmergency ? 'bg-red-500 animate-pulse' : 'bg-red-500'}`} title="Kill Switch ON"></div>}
-                        {appSettings.adBlocker && <div className="w-2 h-2 rounded-full bg-brand-500" title="AdBlocker ON"></div>}
-                        {appSettings.autoRotation && <div className="w-2 h-2 rounded-full bg-brand-300 animate-pulse" title="Auto Rotation ON"></div>}
-                        </div>
-                    )}
-                    </div>
-                    
-                    {isConnected || isEmergency ? (
-                    <>
-                        <IdentityMatrix 
-                            identity={currentIdentity} 
-                            entryIdentity={entryIdentity} 
-                            isRotating={isRenumbering || isEmergency} 
-                            isMasking={isMasking} 
-                            mode={mode} 
-                            securityReport={securityReport}
-                            protocol={appSettings.protocol}
-                            obfuscationLevel={appSettings.obfuscationLevel}
-                            onOpenObfuscationSettings={() => openSettings('advanced')}
-                        />
-                        
-                        {recommendedActions.length > 0 && (
-                            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
-                                <h4 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                    <Zap className="w-3.5 h-3.5 text-amber-500" /> Actions Recommandées
-                                </h4>
-                                <div className="grid grid-cols-1 gap-2">
-                                {recommendedActions.map(action => {
-                                    const Icon = action.icon;
-                                    return (
-                                        <button 
-                                            key={action.id}
-                                            onClick={action.handler}
-                                            className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${action.bgColor} ${action.borderColor} group`}
-                                        >
-                                            <div className={`p-1.5 rounded-md bg-white dark:bg-slate-900/50 shadow-sm ${action.color}`}>
-                                                <Icon className="w-4 h-4" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className={`text-xs font-bold ${action.color}`}>{action.label}</div>
-                                                <div className="text-[10px] text-slate-500 dark:text-slate-400">{action.subLabel}</div>
-                                            </div>
-                                            <ArrowRight className={`w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0 ${action.color}`} />
-                                        </button>
-                                    );
-                                })}
-                                </div>
-                            </div>
-                        )}
-                    </>
-                    ) : (
-                    <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                        <Shield className="w-12 h-12 mb-2 opacity-20" />
-                        <p>Connectez-vous pour masquer votre identité</p>
-                    </div>
-                    )}
-                </div>
-
-                {/* Styled Terminal / Logs System */}
-                <SystemLogs 
-                    logs={logs} 
-                    onClear={clearLogs} 
-                    retentionHours={appSettings.logRetentionHours} 
-                    onRetentionChange={(h) => handleUpdateSettings('logRetentionHours', h)}
-                />
-            </div>
-            </div>
+             <SystemLogs 
+                logs={logs} 
+                onClear={clearLogs}
+                retentionHours={appSettings.logRetentionHours}
+                onRetentionChange={(h) => handleUpdateSettings('logRetentionHours', h)}
+             />
+          </>
+        ) : (
+          <NetworkView 
+             nodes={deviceNodes}
+             onConnectNode={handleConnectNode}
+             onAutonomyUpdate={handleAutonomyUpdate}
+          />
         )}
+
       </main>
+
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm px-4">
+        <button
+          onClick={isConnected ? toggleConnection : connectVPN}
+          disabled={isEmergency || isDisconnecting}
+          className={`w-full h-16 rounded-2xl font-bold text-lg text-white shadow-2xl transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${mainButtonColor}`}
+        >
+          <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+          
+          {isDisconnecting ? (
+             <>
+                 <Loader2 className="w-6 h-6 animate-spin" />
+                 <span>DÉCONNEXION...</span>
+             </>
+          ) : isEmergency ? (
+             <>
+                 <Siren className="w-6 h-6 animate-ping" />
+                 <span>{emergencyStep || 'URGENCE'}</span>
+             </>
+          ) : isConnected ? (
+             <>
+                 <Power className="w-6 h-6" />
+                 <span>DÉCONNECTER</span>
+             </>
+          ) : (
+             <>
+                 <Power className="w-6 h-6" />
+                 <span>CONNECTER</span>
+             </>
+          )}
+        </button>
+      </div>
+
     </div>
   );
 }
