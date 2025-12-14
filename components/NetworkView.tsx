@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Search, Grid, List, Save, Trash2, Filter, Settings2, CheckCircle2, 
   ChevronDown, Signal, Activity, Smartphone, Monitor, Server, Cpu, 
-  Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X
+  Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil
 } from 'lucide-react';
 import { DeviceNode } from '../types';
 
@@ -19,6 +19,7 @@ interface SavedViewConfig {
 interface Props {
   nodes: DeviceNode[];
   onConnectNode: (id: string) => void;
+  onAutonomyUpdate: (nodeId: string, profile: 'provider' | 'balanced' | 'consumer') => void;
 }
 
 type ColumnKey = 'name' | 'type' | 'status' | 'signal' | 'rate' | 'latency' | 'autonomy' | 'ip';
@@ -34,7 +35,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
     { key: 'autonomy', label: 'Profil' },
 ];
 
-export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode }) => {
+export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyUpdate }) => {
   // --- State ---
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,6 +48,10 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode }) => {
   const [showViewsMenu, setShowViewsMenu] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
+
+  // Edit State
+  const [editingViewId, setEditingViewId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
 
   // --- Saved Views Persistence ---
   const [savedViews, setSavedViews] = useState<SavedViewConfig[]>(() => {
@@ -97,6 +102,29 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode }) => {
       setSavedViews(prev => prev.filter(v => v.id !== id));
   };
 
+  const handleStartEdit = (view: SavedViewConfig, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditingViewId(view.id);
+      setEditName(view.name);
+  };
+
+  const handleCancelEdit = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditingViewId(null);
+      setEditName('');
+  };
+
+  const handleSaveEdit = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (editingViewId && editName.trim()) {
+          setSavedViews(prev => prev.map(v => 
+              v.id === editingViewId ? { ...v, name: editName.trim() } : v
+          ));
+          setEditingViewId(null);
+          setEditName('');
+      }
+  };
+
   const toggleColumn = (key: string) => {
       setActiveViewId(null); // Mark as modified
       setVisibleColumns(prev => 
@@ -135,9 +163,9 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode }) => {
 
   const getAutonomyIcon = (profile: string) => {
       switch(profile) {
-          case 'provider': return <Zap className="w-3 h-3 text-amber-500" />;
-          case 'consumer': return <Battery className="w-3 h-3 text-slate-400" />;
-          default: return <Activity className="w-3 h-3 text-brand-500" />;
+          case 'provider': return <Zap className="w-3.5 h-3.5" />;
+          case 'consumer': return <Battery className="w-3.5 h-3.5" />;
+          default: return <Activity className="w-3.5 h-3.5" />;
       }
   };
 
@@ -216,20 +244,51 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode }) => {
                                     <p className="text-xs text-slate-400 px-2 py-2 italic text-center">Aucune vue sauvegardée</p>
                                 ) : (
                                     savedViews.map(view => (
-                                        <div key={view.id} className={`flex items-center justify-between group rounded-lg pr-1 ${activeViewId === view.id ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                                            <button 
-                                                onClick={() => handleLoadView(view)}
-                                                className="flex-1 text-left px-2 py-2 text-sm text-slate-700 dark:text-slate-200 truncate flex items-center gap-2"
-                                            >
-                                                <span className="truncate">{view.name}</span>
-                                                {activeViewId === view.id && <Check className="w-3 h-3 text-brand-500 shrink-0" />}
-                                            </button>
-                                            <button 
-                                                onClick={(e) => handleDeleteView(view.id, e)}
-                                                className="p-1.5 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
+                                        <div key={view.id} className={`flex items-center justify-between group rounded-lg ${activeViewId === view.id && editingViewId !== view.id ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                                            {editingViewId === view.id ? (
+                                                <div className="flex items-center gap-1 flex-1 px-2 py-1">
+                                                    <input 
+                                                        type="text"
+                                                        value={editName}
+                                                        onChange={(e) => setEditName(e.target.value)}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="flex-1 min-w-0 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 outline-none focus:border-brand-500 dark:text-white"
+                                                        autoFocus
+                                                    />
+                                                    <button onClick={handleSaveEdit} className="p-1 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded">
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={handleCancelEdit} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded">
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <button 
+                                                        onClick={() => handleLoadView(view)}
+                                                        className="flex-1 text-left px-2 py-2 text-sm text-slate-700 dark:text-slate-200 truncate flex items-center gap-2"
+                                                    >
+                                                        <span className="truncate">{view.name}</span>
+                                                        {activeViewId === view.id && <Check className="w-3 h-3 text-brand-500 shrink-0" />}
+                                                    </button>
+                                                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity px-1">
+                                                        <button 
+                                                            onClick={(e) => handleStartEdit(view, e)}
+                                                            className="p-1.5 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded transition-colors"
+                                                            title="Renommer"
+                                                        >
+                                                            <Pencil className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={(e) => handleDeleteView(view.id, e)}
+                                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                                            title="Supprimer"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     ))
                                 )}
@@ -335,9 +394,23 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode }) => {
                                         <div className="text-[10px] text-slate-500 font-mono">{node.ip}</div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500">
-                                    {getAutonomyIcon(node.autonomyProfile)}
-                                    <span className="capitalize">{node.autonomyProfile}</span>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex bg-slate-50 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-100 dark:border-slate-700">
+                                        {(['consumer', 'balanced', 'provider'] as const).map((mode) => (
+                                            <button
+                                                key={mode}
+                                                onClick={(e) => { e.stopPropagation(); onAutonomyUpdate(node.id, mode); }}
+                                                className={`p-1 rounded-md transition-all ${
+                                                    node.autonomyProfile === mode 
+                                                    ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400 ring-1 ring-black/5 dark:ring-white/5' 
+                                                    : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'
+                                                }`}
+                                                title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                            >
+                                                {getAutonomyIcon(mode)}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 
@@ -431,10 +504,22 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode }) => {
                                     {visibleColumns.includes('latency') && <td className="px-4 py-3 text-slate-500 font-mono">{node.latency}ms</td>}
                                     {visibleColumns.includes('autonomy') && (
                                         <td className="px-4 py-3">
-                                            <span className="flex items-center gap-1.5 text-xs text-slate-500 capitalize">
-                                                {getAutonomyIcon(node.autonomyProfile)}
-                                                {node.autonomyProfile}
-                                            </span>
+                                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 w-fit rounded-lg p-0.5 border border-slate-100 dark:border-slate-700">
+                                                {(['consumer', 'balanced', 'provider'] as const).map((mode) => (
+                                                    <button
+                                                        key={mode}
+                                                        onClick={(e) => { e.stopPropagation(); onAutonomyUpdate(node.id, mode); }}
+                                                        className={`p-1 rounded-md transition-all ${
+                                                            node.autonomyProfile === mode 
+                                                            ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400 ring-1 ring-black/5 dark:ring-white/5' 
+                                                            : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'
+                                                        }`}
+                                                        title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                                    >
+                                                        {getAutonomyIcon(mode)}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </td>
                                     )}
                                     <td className="px-4 py-3 text-right">

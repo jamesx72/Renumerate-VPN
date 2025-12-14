@@ -813,6 +813,22 @@ function App() {
       }
   };
 
+  const handleAutonomyUpdate = (nodeId: string, profile: 'provider' | 'balanced' | 'consumer') => {
+      setDeviceNodes(prev => prev.map(node => {
+          if (node.id === nodeId) {
+              // Simulate immediate impact on rate/latency
+              let newRate = node.transferRate;
+              if (profile === 'provider') newRate = Math.floor(Math.random() * 50) + 50;
+              if (profile === 'balanced') newRate = Math.floor(Math.random() * 30) + 10;
+              if (profile === 'consumer') newRate = Math.floor(Math.random() * 5);
+
+              addLog(`Profil ${node.name} mis à jour : ${profile.toUpperCase()}`, 'info');
+              return { ...node, autonomyProfile: profile, transferRate: newRate };
+          }
+          return node;
+      }));
+  };
+
   // Recommendation Logic
   const recommendedActions = useMemo(() => {
     if (!securityReport || !isConnected) return [];
@@ -1142,7 +1158,7 @@ function App() {
         
         {currentView === 'network' ? (
             <div className="h-[calc(100vh-140px)]">
-                <NetworkView nodes={deviceNodes} onConnectNode={handleConnectNode} />
+                <NetworkView nodes={deviceNodes} onConnectNode={handleConnectNode} onAutonomyUpdate={handleAutonomyUpdate} />
             </div>
         ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
