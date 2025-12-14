@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Search, Grid, List, Save, Trash2, Filter, Settings2, CheckCircle2, 
   ChevronDown, Signal, Activity, Smartphone, Monitor, Server, Cpu, 
-  Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil
+  Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil, RotateCcw
 } from 'lucide-react';
 import { DeviceNode } from '../types';
 
@@ -14,6 +14,13 @@ interface SavedViewConfig {
     searchQuery: string;
     sortBy: 'name' | 'signal' | 'rate' | 'latency';
     visibleColumns?: string[];
+}
+
+interface NetworkViewState {
+    viewMode: 'grid' | 'list';
+    filterType: string;
+    sortBy: 'name' | 'signal' | 'rate' | 'latency';
+    visibleColumns: string[];
 }
 
 interface Props {
@@ -35,13 +42,35 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
     { key: 'autonomy', label: 'Profil' },
 ];
 
+const DEFAULT_COLUMNS = ALL_COLUMNS.map(c => c.key);
+
 export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyUpdate }) => {
-  // --- State ---
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  // --- State Initialization with Persistence ---
+  
+  const getInitialState = (): NetworkViewState => {
+      try {
+          const saved = localStorage.getItem('renumerate_network_state');
+          if (saved) {
+              return JSON.parse(saved);
+          }
+      } catch (e) {
+          console.error("Failed to load network state", e);
+      }
+      return {
+          viewMode: 'grid',
+          filterType: 'all',
+          sortBy: 'name',
+          visibleColumns: DEFAULT_COLUMNS
+      };
+  };
+
+  const initialState = getInitialState();
+
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(initialState.viewMode);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'signal' | 'rate' | 'latency'>('name');
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(ALL_COLUMNS.map(c => c.key));
+  const [filterType, setFilterType] = useState<string>(initialState.filterType);
+  const [sortBy, setSortBy] = useState<'name' | 'signal' | 'rate' | 'latency'>(initialState.sortBy);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(initialState.visibleColumns);
   
   // UI State
   const [showColumnMenu, setShowColumnMenu] = useState(false);
@@ -52,6 +81,19 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
   // Edit State
   const [editingViewId, setEditingViewId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+
+  // --- Persistence Effects ---
+
+  // Persist Current State
+  useEffect(() => {
+      const state: NetworkViewState = {
+          viewMode,
+          filterType,
+          sortBy,
+          visibleColumns
+      };
+      localStorage.setItem('renumerate_network_state', JSON.stringify(state));
+  }, [viewMode, filterType, sortBy, visibleColumns]);
 
   // --- Saved Views Persistence ---
   const [savedViews, setSavedViews] = useState<SavedViewConfig[]>(() => {
@@ -132,6 +174,13 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
               ? prev.filter(k => k !== key)
               : [...prev, key]
       );
+  };
+
+  const handleResetFilters = () => {
+      setFilterType('all');
+      setSearchQuery('');
+      setSortBy('name');
+      setActiveViewId(null);
   };
 
   // --- Filtering & Sorting ---
@@ -215,6 +264,14 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                     <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                 </div>
+
+                <button 
+                    onClick={handleResetFilters}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition-colors"
+                    title="Réinitialiser les filtres"
+                >
+                    <RotateCcw className="w-5 h-5" />
+                </button>
             </div>
 
             {/* View Controls */}
