@@ -1,7 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Info, Copy, Check, Shield, Activity, Settings, Ghost, Laptop, X, Users, MapPin, Coins, CloudSun, Zap, BarChart3, Database } from 'lucide-react';
+import { 
+  Globe, Monitor, Network, ShieldCheck, Pin, Building2, 
+  Copy, Check, Activity, X, Users, MapPin, Coins, 
+  CloudSun, Zap, Database, ShieldOff, RefreshCw, Ghost, AlertCircle, Fingerprint, Info, BarChart3
+} from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -14,35 +17,25 @@ interface Props {
   obfuscationLevel?: 'standard' | 'high' | 'ultra';
   dnsProvider?: string;
   onOpenObfuscationSettings?: () => void;
+  onMask?: () => void;
+  isConnected?: boolean;
 }
 
 export const IdentityMatrix: React.FC<Props> = ({ 
   identity, 
-  entryIdentity, 
   isRotating, 
   isMasking = false, 
   mode, 
   securityReport, 
-  protocol = 'wireguard', 
-  obfuscationLevel, 
-  dnsProvider = 'cloudflare',
-  onOpenObfuscationSettings 
+  onMask,
+  isConnected = false
 }) => {
   const [copiedIp, setCopiedIp] = useState(false);
   const [localLatency, setLocalLatency] = useState(identity.latency);
   const [isMeasuring, setIsMeasuring] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [showCityDetails, setShowCityDetails] = useState(false);
 
-  // Mise à jour de l'heure chaque seconde
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Synchronise la latence locale si l'identité change (ex: rotation)
+  // Synchronise la latence locale si l'identité change
   useEffect(() => {
     setLocalLatency(identity.latency);
   }, [identity.latency]);
@@ -78,22 +71,24 @@ export const IdentityMatrix: React.FC<Props> = ({
   };
 
   const cityInfo = getCityDetails(identity.city);
-  const protocolName = protocol === 'ikev2' ? 'IKEv2/IPsec' : protocol.charAt(0).toUpperCase() + protocol.slice(1);
-
+  
   const getLatencyColor = (ms: number) => {
       if (ms < 50) return 'text-emerald-500';
       if (ms < 120) return 'text-amber-500';
       return 'text-red-500';
   };
 
+  // Logique d'activation du bouton de masquage
+  const isMaskingDisabled = !isConnected || mode === ConnectionMode.SMART_DNS || isRotating || isMasking;
+
   return (
     <div className="space-y-4 relative">
-      {/* Modal Détails Ville */}
+      {/* Modal Détails Ville - Geo-Context Popup */}
       {showCityDetails && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowCityDetails(false)}></div>
             <div className="relative bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
-                {/* Header Modal */}
+                {/* Header de la modal */}
                 <div className="p-6 bg-gradient-to-br from-brand-500 to-indigo-600 text-white relative">
                     <button 
                         onClick={() => setShowCityDetails(false)}
@@ -106,15 +101,15 @@ export const IdentityMatrix: React.FC<Props> = ({
                             <Building2 className="w-6 h-6" />
                         </div>
                         <div>
-                            <h4 className="text-xl font-black">{identity.city}</h4>
-                            <p className="text-white/70 text-xs font-medium flex items-center gap-1">
+                            <h4 className="text-xl font-black leading-none">{identity.city}</h4>
+                            <p className="text-white/70 text-xs font-medium flex items-center gap-1 mt-1">
                                 <Globe className="w-3 h-3" /> {identity.country}
                             </p>
                         </div>
                     </div>
                 </div>
                 
-                {/* Info Grid */}
+                {/* Grille d'infos de la ville */}
                 <div className="p-6 space-y-5">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -158,13 +153,13 @@ export const IdentityMatrix: React.FC<Props> = ({
                         <div className="flex items-center justify-between text-sm">
                             <div className="flex items-center gap-2 text-slate-500">
                                 <BarChart3 className="w-4 h-4 text-emerald-500" />
-                                <span className="font-medium">Charge Nœud</span>
+                                <span className="font-medium">Charge Serveur</span>
                             </div>
                             <div className="flex items-center gap-2">
-                                <div className="w-16 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                <div className="w-16 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                                     <div className="h-full bg-emerald-500" style={{ width: cityInfo.load }}></div>
                                 </div>
-                                <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-200">{cityInfo.load}</span>
+                                <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400">{cityInfo.load}</span>
                             </div>
                         </div>
                     </div>
@@ -177,77 +172,151 @@ export const IdentityMatrix: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Identity Visual Blocks */}
+      {/* Grille Principale IdentityMatrix */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-lg hover:scale-[1.02] transition-transform duration-300">
+        <div className="bg-white dark:bg-brand-800/50 p-4 rounded-xl border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
-              <Network className="w-5 h-5 text-brand-600 dark:text-brand-400" />
-              <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Adresse IP Publique</span>
+              <Network className="w-4 h-4 text-brand-500" />
+              <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Adresse IP</span>
             </div>
-            {copiedIp && <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">Copié !</span>}
+            {copiedIp && <span className="text-[9px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded uppercase">Copié</span>}
           </div>
           <div className="flex items-center justify-between">
-            <div className={`font-mono text-xl tracking-wider ${isRotating ? 'text-brand-600 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
-               {isRotating ? 'RENUMBERING...' : (mode === ConnectionMode.SMART_DNS ? 'ORIGINAL IP' : identity.ip)}
+            <div className={`font-mono text-lg font-bold tracking-wider ${isRotating ? 'text-brand-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+               {isRotating ? 'RENUM...' : (mode === ConnectionMode.SMART_DNS ? 'LOCAL IP' : identity.ip)}
             </div>
             {!isRotating && (
-              <button onClick={handleCopyIp} className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 transition-all">
-                {copiedIp ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              <button onClick={handleCopyIp} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-brand-500 transition-all">
+                <Copy className="w-4 h-4" />
               </button>
             )}
           </div>
         </div>
 
-        {/* Bloc Ville Cliquable */}
+        {/* Bloc Localisation - Cliquable pour détails */}
         <div 
           onClick={() => !isRotating && setShowCityDetails(true)}
-          className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-lg hover:border-brand-500/40 cursor-pointer group transition-all"
+          className="bg-white dark:bg-brand-800/50 p-4 rounded-xl border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-sm cursor-pointer group hover:border-brand-500 transition-all active:scale-[0.98]"
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
-              <Globe className="w-5 h-5 text-brand-600 dark:text-brand-400" />
-              <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Localisation Virtuelle</span>
+              <Globe className="w-4 h-4 text-brand-500" />
+              <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Localisation</span>
             </div>
             <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter">Live</span>
+                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span className="text-[8px] font-black text-emerald-600 uppercase">Live</span>
             </div>
           </div>
-          <div className={`font-mono text-lg ${isRotating ? 'text-brand-600 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
-            {isRotating ? '---' : (
-              <div className="flex items-center gap-2">
-                <Pin className="w-4 h-4 text-brand-500 shrink-0" />
-                <span className="font-bold border-b border-dotted border-slate-400 group-hover:border-brand-500 transition-colors">
+          <div className={`font-bold truncate text-sm flex items-center justify-between ${isRotating ? 'text-brand-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+            <div className="flex items-center gap-2 truncate">
+                <Pin className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+                <span className="border-b border-dotted border-slate-300 dark:border-slate-700 group-hover:border-brand-500 transition-colors">
                     {identity.city}, {identity.country}
                 </span>
-                <Info className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <Info className="w-3.5 h-3.5 text-slate-300 group-hover:text-brand-500 transition-colors" />
+          </div>
+        </div>
+
+        {/* Masquage de l'empreinte numérique */}
+        <div className={`bg-white dark:bg-brand-800/50 p-4 rounded-xl border border-slate-200 dark:border-brand-500/20 transition-all relative overflow-hidden ${isMasking ? 'ring-2 ring-indigo-500/40 shadow-lg shadow-indigo-500/10' : 'shadow-sm'}`}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-1.5 rounded-lg ${isMasking ? 'bg-indigo-500/20 text-indigo-500' : 'bg-brand-500/10 text-brand-500'}`}>
+                <Monitor className={`w-4 h-4 ${isMasking ? 'animate-pulse' : ''}`} />
               </div>
+              <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Protection Empreinte</span>
+            </div>
+            
+            {onMask && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onMask(); }}
+                  disabled={isMaskingDisabled}
+                  className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-tight transition-all flex items-center gap-2 group/mask shadow-sm ${
+                    isMasking 
+                        ? 'bg-indigo-500 border-indigo-500 text-white shadow-indigo-500/20' 
+                        : isMaskingDisabled
+                            ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-800 text-slate-300 cursor-not-allowed opacity-50'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-500 hover:text-indigo-500 hover:shadow-md'
+                  }`}
+                  title={!isConnected ? "Activez le VPN pour masquer" : mode === ConnectionMode.SMART_DNS ? "Indisponible en Smart DNS" : "Masquer l'empreinte numérique"}
+                >
+                    {isMasking ? (
+                        <Zap className="w-3.5 h-3.5 animate-pulse" />
+                    ) : mode === ConnectionMode.SMART_DNS ? (
+                        <ShieldOff className="w-3.5 h-3.5" />
+                    ) : (
+                        <Ghost className="w-3.5 h-3.5 group-hover/mask:animate-bounce" />
+                    )}
+                    <span>
+                        {isMasking ? 'MASQUAGE...' : "Masquer l'empreinte"}
+                    </span>
+                </button>
             )}
           </div>
+          
+          <div className="grid grid-cols-1 gap-3">
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800/50">
+              <div className="text-[9px] font-mono text-slate-400 flex items-center justify-between mb-1">
+                  <span>USER AGENT</span>
+                  {isMasking && <span className="text-indigo-500 animate-pulse text-[8px] font-bold">ACTIF</span>}
+              </div>
+              <div className={`text-[11px] font-bold truncate transition-colors ${isMasking ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                  {isRotating ? '---' : identity.userAgentShort}
+              </div>
+            </div>
+            
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800/50 group/mac relative">
+              <div className="text-[9px] font-mono text-slate-400 flex items-center justify-between mb-1">
+                  <span>ADRESSE MAC (LAA SPOOFED)</span>
+                  {isMasking && (
+                      <div className="flex items-center gap-1">
+                          <span className="text-indigo-500 animate-pulse text-[8px] font-bold">MODIFIÉ</span>
+                          <button 
+                              onClick={(e) => { e.stopPropagation(); onMask?.(); }}
+                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-slate-400 hover:text-indigo-500"
+                              title="Générer un autre format/adresse"
+                          >
+                              <RefreshCw className="w-2.5 h-2.5" />
+                          </button>
+                      </div>
+                  )}
+              </div>
+              <div className={`text-[11px] font-mono font-bold transition-colors ${isMasking ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                  {isRotating ? '---' : identity.mac}
+              </div>
+            </div>
+          </div>
+          
+          {isMasking && (
+              <div className="absolute top-0 right-0 p-1">
+                  <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></div>
+              </div>
+          )}
         </div>
 
-        {/* Détails Techniques Secondaires */}
-        <div className={`bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 transition-all ${isMasking ? 'ring-1 ring-indigo-500/50' : ''}`}>
-          <div className="flex items-center gap-3 mb-2">
-            <Monitor className={`w-5 h-5 ${isMasking ? 'text-indigo-500' : 'text-brand-600 dark:text-brand-400'}`} />
-            <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">User Agent Spoof</span>
+        {/* Bloc Performances */}
+        <div className="bg-white dark:bg-brand-800/50 p-4 rounded-xl border border-slate-200 dark:border-brand-500/20 shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <Activity className="w-4 h-4 text-brand-500" />
+            <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Performances</span>
           </div>
-          <div className="text-xs font-bold text-slate-600 dark:text-slate-300 truncate">
-             {isRotating ? '...' : identity.userAgentShort}
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20">
-          <div className="flex items-center gap-3 mb-2">
-            <Activity className="w-5 h-5 text-brand-600 dark:text-brand-400" />
-            <span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Latence Réseau</span>
-          </div>
-          <div className="flex items-center gap-2">
-             <div onClick={handleLatencyClick} className={`font-mono text-lg font-bold cursor-pointer ${getLatencyColor(localLatency)} ${isMeasuring ? 'animate-pulse' : ''}`}>
-                {isMeasuring ? '--' : `${localLatency}ms`}
+          <div className="flex items-center justify-between">
+             <div onClick={handleLatencyClick} className={`flex flex-col cursor-pointer transition-transform active:scale-95 ${isMeasuring ? 'opacity-50' : ''}`}>
+                <span className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Ping Réseau</span>
+                <div className={`font-mono text-lg font-black flex items-center gap-2 ${getLatencyColor(localLatency)}`}>
+                    {isMeasuring ? '--' : `${localLatency}ms`}
+                    {isMeasuring && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                </div>
              </div>
-             {isMeasuring && <Zap className="w-3.5 h-3.5 text-brand-500 animate-bounce" />}
+             <div className="text-right">
+                <span className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Stabilité</span>
+                <div className="text-sm font-bold text-emerald-500 flex items-center gap-1 justify-end">
+                  <Check className="w-3 h-3" /> OPTIMAL
+                </div>
+             </div>
           </div>
         </div>
       </div>
@@ -258,10 +327,10 @@ export const IdentityMatrix: React.FC<Props> = ({
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500">Rapport IA</h4>
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500">Analyse IA</h4>
                 </div>
-                <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${securityReport.score > 80 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                    SCORE {securityReport.score}/100
+                <div className={`px-2 py-0.5 rounded text-[10px] font-black ${securityReport.score > 80 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                    {securityReport.score}/100
                 </div>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400 italic mb-2 leading-relaxed">
