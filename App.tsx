@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Shield, Power, RefreshCw, Moon, Sun, Lock, Globe, Terminal, Activity, Share2, Wifi, Zap, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, WifiOff, Siren, Route, Loader2, ToggleLeft, ToggleRight, Fingerprint, LogOut, CheckCircle, ArrowRight, ArrowUpRight, History, Info, Network } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
@@ -36,13 +37,31 @@ function App() {
   // Verification & Payment State
   const [isVerified, setIsVerified] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  
+  // Persistent Payment Methods State
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(() => {
+    const saved = localStorage.getItem('paymentMethods');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  // Persistent State: Mode
+  useEffect(() => {
+    localStorage.setItem('paymentMethods', JSON.stringify(paymentMethods));
+  }, [paymentMethods]);
+
+  // Persistent State: Mode (with validation for stale/incorrect values)
   const [mode, setMode] = useState<ConnectionMode>(() => {
     const saved = localStorage.getItem('vpnMode');
-    return saved ? (saved as ConnectionMode) : ConnectionMode.STANDARD;
+    // Ensure the saved value is a valid member of the enum
+    if (saved && Object.values(ConnectionMode).includes(saved as ConnectionMode)) {
+      return saved as ConnectionMode;
+    }
+    return ConnectionMode.STANDARD;
   });
+
+  // Persistence effect for Mode
+  useEffect(() => {
+    localStorage.setItem('vpnMode', mode);
+  }, [mode]);
 
   // Persistent State: Current Identity (Last Server)
   const [currentIdentity, setCurrentIdentity] = useState<VirtualIdentity>(() => {
@@ -56,12 +75,11 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Network Nodes State
   const [deviceNodes, setDeviceNodes] = useState<DeviceNode[]>([]);
 
-  // Connection History Logic
+  // Connection History Logic - Persisted in LocalStorage
   const connectionStartRef = useRef<number | null>(null);
   const [connectionHistory, setConnectionHistory] = useState<ConnectionSession[]>(() => {
     const saved = localStorage.getItem('connectionHistory');
@@ -69,7 +87,12 @@ function App() {
   });
   const [showConnectionHistory, setShowConnectionHistory] = useState(false);
 
-  // New State for Monetization, Settings, and Earnings
+  // Persist history whenever it changes
+  useEffect(() => {
+    localStorage.setItem('connectionHistory', JSON.stringify(connectionHistory));
+  }, [connectionHistory]);
+
+  // Financial State
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -77,8 +100,20 @@ function App() {
   const [showWithdrawal, setShowWithdrawal] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [balance, setBalance] = useState(0.0000);
+  const [totalEarned, setTotalEarned] = useState(() => {
+      const saved = localStorage.getItem('totalEarned');
+      return saved ? parseFloat(saved) : 0;
+  });
+  const [totalWithdrawn, setTotalWithdrawn] = useState(() => {
+      const saved = localStorage.getItem('totalWithdrawn');
+      return saved ? parseFloat(saved) : 0;
+  });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
+  // Persistence for financial stats
+  useEffect(() => localStorage.setItem('totalEarned', totalEarned.toString()), [totalEarned]);
+  useEffect(() => localStorage.setItem('totalWithdrawn', totalWithdrawn.toString()), [totalWithdrawn]);
+
   // Persistent State: App Settings
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('appSettings');
@@ -86,11 +121,13 @@ function App() {
       protocol: 'wireguard',
       dns: 'cloudflare',
       killSwitch: true,
+      dnsLeakProtection: true,
       autoReconnect: true,
       reconnectDelay: 3,
       splitTunneling: false,
       adBlocker: false, 
       autoConnect: false,
+      autoConnectOnBoot: false,
       autoRotation: false,
       rotationInterval: 10,
       obfuscationLevel: 'standard',
@@ -139,16 +176,8 @@ function App() {
   }, [appSettings]);
 
   useEffect(() => {
-    localStorage.setItem('vpnMode', mode);
-  }, [mode]);
-
-  useEffect(() => {
     localStorage.setItem('currentIdentity', JSON.stringify(currentIdentity));
   }, [currentIdentity]);
-
-  useEffect(() => {
-    localStorage.setItem('connectionHistory', JSON.stringify(connectionHistory));
-  }, [connectionHistory]);
 
   useEffect(() => {
     const cleanupLogs = () => {
@@ -232,6 +261,7 @@ function App() {
       const rate = userPlan === 'elite' ? 0.012 : 0.004;
       interval = setInterval(() => {
         setBalance(prev => prev + rate);
+        setTotalEarned(prev => prev + rate);
       }, 1000);
     }
     return () => {
@@ -277,6 +307,10 @@ function App() {
        }, 1000);
        if (connectionDelay < 2500) connectionDelay = 2500;
        else connectionDelay += 1000;
+    } else if (mode === ConnectionMode.SMART_DNS) {
+        connectionDelay = 1000;
+        setTimeout(() => addLog(`Smart DNS : Configuration du serveur récursif (${appSettings.dns})...`, 'info'), 300);
+        setTimeout(() => addLog('Validation des zones DNS régionales...', 'info'), 600);
     } else {
        setEntryIdentity(null);
     }
@@ -286,7 +320,7 @@ function App() {
       if (mode === ConnectionMode.DOUBLE_HOP) {
            addLog(`Double Hop Actif: Trafic routé via 2 serveurs sécurisés`, 'success');
       } else if (mode === ConnectionMode.SMART_DNS) {
-           addLog(`Smart DNS Activé: Routage intelligent via ${appSettings.dns}`, 'success');
+           addLog(`Smart DNS Activé: Routage intelligent via ${appSettings.dns.toUpperCase()}`, 'success');
            addLog(`Note: Votre IP d'origine est conservée pour les connexions directes.`, 'warning');
       } else if (mode === ConnectionMode.STEALTH) {
            addLog(`Connexion Furtive établie : Trafic indiscernable du HTTPS standard`, 'success');
@@ -294,7 +328,7 @@ function App() {
            addLog(`Connexion établie (${appSettings.protocol.toUpperCase()}) - Canal chiffré actif`, 'success');
       }
       
-      if (obsLevel !== 'standard') {
+      if (obsLevel !== 'standard' && mode !== ConnectionMode.SMART_DNS) {
           addLog(`Mode Obfusqué ${obsLevel.toUpperCase()} actif : Anonymat renforcé`, 'success');
           setCurrentIdentity(prev => ({
               ...prev,
@@ -312,9 +346,10 @@ function App() {
       const dnsLabel = dnsLabels[appSettings.dns] || 'DNS';
       addLog(`Résolution DNS: ${dnsLabel} actif`, 'info');
       
-      if (appSettings.killSwitch) addLog('Kill Switch activé : Protection active', 'success');
+      if (appSettings.dnsLeakProtection) addLog('Protection contre les fuites DNS : Active', 'success');
+      if (appSettings.killSwitch && mode !== ConnectionMode.SMART_DNS) addLog('Kill Switch activé : Protection active', 'success');
       if (appSettings.adBlocker) addLog('AdBlocker AI : Filtrage publicitaire activé', 'info');
-      if (appSettings.autoRotation) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
+      if (appSettings.autoRotation && mode !== ConnectionMode.SMART_DNS) addLog(`Rotation auto active (toutes les ${appSettings.rotationInterval} min)`, 'info');
       if (appSettings.ipv6LeakProtection) addLog('Protection fuite IPv6 : Active', 'info');
       
     }, connectionDelay);
@@ -324,6 +359,7 @@ function App() {
     setIsDisconnecting(true);
     addLog('Déconnexion initiée...', 'warning');
 
+    // Handle History Logging on disconnection
     if (connectionStartRef.current) {
         const endTime = Date.now();
         const startTime = connectionStartRef.current;
@@ -343,6 +379,8 @@ function App() {
             protocol: appSettings.protocol,
             mode: mode
         };
+        
+        // Add to history state (limit to last 50 sessions)
         setConnectionHistory(prev => [newSession, ...prev].slice(0, 50));
         connectionStartRef.current = null;
     }
@@ -459,12 +497,14 @@ function App() {
         addLog(`Mode de connexion réglé sur : ${newMode}`, 'info');
         if (newMode === ConnectionMode.STEALTH) {
             addLog('Mode Furtif : Le trafic sera camouflé en HTTPS pour contourner les pare-feux.', 'warning');
+        } else if (newMode === ConnectionMode.SMART_DNS) {
+            addLog(`Smart DNS : Optimise l'accès aux contenus géo-bloqués via ${appSettings.dns.toUpperCase()}.`, 'info');
         }
     }
   };
 
   const handleRenumber = useCallback(() => {
-    if (!isConnected || isRenumbering || isEmergency || isMasking) return;
+    if (!isConnected || isRenumbering || isEmergency || isMasking || mode === ConnectionMode.SMART_DNS) return;
     setIsRenumbering(true);
     addLog('Rotation d\'identité en cours...', 'warning');
     setTimeout(() => {
@@ -478,7 +518,7 @@ function App() {
       addLog(`Nouvelle identité assignée : ${newIdentity.country}`, 'success');
       handleAnalyze(newIdentity);
     }, 2000);
-  }, [isConnected, isRenumbering, isEmergency, isMasking, currentIdentity, entryIdentity, addLog, handleAnalyze]);
+  }, [isConnected, isRenumbering, isEmergency, isMasking, currentIdentity, entryIdentity, addLog, handleAnalyze, mode]);
 
   const handleMasking = useCallback(() => {
     if (!isConnected || isMasking || isEmergency || isRenumbering) return;
@@ -532,7 +572,7 @@ function App() {
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    if (isConnected && appSettings.autoRotation && !isEmergency) {
+    if (isConnected && appSettings.autoRotation && !isEmergency && mode !== ConnectionMode.SMART_DNS) {
       const ms = Math.max(1, appSettings.rotationInterval) * 60 * 1000;
       interval = setInterval(() => {
         if (handleRenumberRef.current) {
@@ -543,7 +583,7 @@ function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, isEmergency]);
+  }, [isConnected, appSettings.autoRotation, appSettings.rotationInterval, isEmergency, mode]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -594,6 +634,7 @@ function App() {
     setAppSettings(prev => ({ ...prev, [key]: value }));
     if (key === 'autoRotation') addLog(`Rotation automatique ${value ? 'activée' : 'désactivée'}`, 'info');
     else if (key === 'adBlocker') addLog(`AdBlocker AI ${value ? 'activé' : 'désactivé'}`, 'info');
+    else if (key === 'dnsLeakProtection') addLog(`Protection fuites DNS ${value ? 'activée' : 'désactivée'}`, 'info');
     else addLog(`Configuration mise à jour: ${key}`, 'info');
   };
 
@@ -647,6 +688,7 @@ function App() {
                 }
                 return updated;
             });
+            setTotalWithdrawn(prev => prev + amount);
             setBalance(0);
             setShowWithdrawal(false);
             addLog(`Transaction confirmée [${newTransaction.id}] : ${amount} RNC envoyés.`, 'success');
@@ -702,21 +744,28 @@ function App() {
       }));
   };
 
-  const handleAddPaymentMethod = () => {
-      const newMethod: PaymentMethod = {
-          id: Math.random().toString(36).substr(2, 9),
+  const handleAddPaymentMethod = (type: 'card' | 'paypal') => {
+      const id = Math.random().toString(36).substr(2, 9);
+      const newMethod: PaymentMethod = type === 'card' ? {
+          id,
           type: 'card',
-          name: `Carte Visa terminant par ${Math.floor(Math.random() * 9000) + 1000}`,
-          expiry: '12/26',
+          name: `Visa •••• ${Math.floor(Math.random() * 9000) + 1000}`,
+          expiry: '08/29',
+          isDefault: paymentMethods.length === 0
+      } : {
+          id,
+          type: 'paypal',
+          name: `PayPal (${user?.email || 'compte@email.com'})`,
           isDefault: paymentMethods.length === 0
       };
+      
       setPaymentMethods(prev => [...prev, newMethod]);
-      addLog(`Moyen de paiement ajouté : ${newMethod.name}`, 'success');
+      addLog(`${type === 'card' ? 'Carte bancaire' : 'Compte PayPal'} enregistré avec succès.`, 'success');
   };
 
   const handleRemovePaymentMethod = (id: string) => {
       setPaymentMethods(prev => prev.filter(m => m.id !== id));
-      addLog('Moyen de paiement supprimé', 'info');
+      addLog('Moyen de paiement supprimé du profil.', 'info');
   };
 
   const handleVerificationSuccess = () => {
@@ -724,43 +773,6 @@ function App() {
       setShowVerification(false);
       addLog('Identité vérifiée avec succès. Compte débridé.', 'success');
   };
-
-  const recommendedActions = useMemo(() => {
-    if (!securityReport || !isConnected) return [];
-    const recs = [];
-    const { threatLevel } = securityReport;
-    if ((threatLevel === 'Critique' || threatLevel === 'Élevé') && appSettings.obfuscationLevel !== 'ultra') {
-        recs.push({
-            id: 'set_ultra',
-            label: "Activer Obfuscation Ultra",
-            subLabel: "Recommandé pour menace critique",
-            icon: Ghost,
-            color: 'text-indigo-500',
-            borderColor: 'border-indigo-200 dark:border-indigo-500/30',
-            bgColor: 'bg-indigo-50 dark:bg-indigo-500/10',
-            handler: () => {
-                handleUpdateSettings('obfuscationLevel', 'ultra');
-                addLog('Action recommandée appliquée : Obfuscation Ultra', 'success');
-            }
-        });
-    }
-    if (threatLevel !== 'Faible' && !appSettings.killSwitch) {
-        recs.push({
-            id: 'enable_killswitch',
-            label: "Activer Kill Switch",
-            subLabel: "Protection coupure indispensable",
-            icon: ToggleRight,
-            color: 'text-red-500',
-            borderColor: 'border-red-200 dark:border-red-500/30',
-            bgColor: 'bg-red-50 dark:bg-red-500/10',
-            handler: () => {
-                handleUpdateSettings('killSwitch', true);
-                addLog('Action recommandée appliquée : Kill Switch activé', 'success');
-            }
-        });
-    }
-    return recs;
-  }, [securityReport, isConnected, appSettings, addLog]);
 
   const mainButtonColor = isEmergency 
     ? 'bg-red-500 shadow-red-500/50 animate-pulse-fast'
@@ -776,15 +788,6 @@ function App() {
 
   const statusTextColor = isEmergency ? 'text-red-500' : isDisconnecting ? 'text-amber-500' : isConnected ? 'text-emerald-500' : 'text-slate-500';
   const statusBgColor = isEmergency ? 'bg-red-500/10' : isDisconnecting ? 'bg-amber-500/10' : isConnected ? 'bg-emerald-500/10' : 'bg-slate-500/10';
-  const cardBorderClass = isEmergency 
-    ? 'border-red-500/30 shadow-red-900/10' 
-    : isConnected && mode === ConnectionMode.STEALTH
-        ? 'border-indigo-500/30 shadow-indigo-500/10'
-        : isConnected && mode === ConnectionMode.DOUBLE_HOP
-            ? 'border-violet-500/30 shadow-violet-500/10'
-            : isConnected && mode === ConnectionMode.SMART_DNS
-                ? 'border-orange-500/30 shadow-orange-500/10'
-                : 'border-slate-200 dark:border-slate-800';
 
   if (!user) {
       return (
@@ -826,6 +829,10 @@ function App() {
           onAddPaymentMethod={handleAddPaymentMethod}
           onRemovePaymentMethod={handleRemovePaymentMethod}
           onViewHistory={() => setShowHistory(true)}
+          balance={balance}
+          totalEarned={totalEarned}
+          totalWithdrawn={totalWithdrawn}
+          onWithdraw={handleOpenWithdrawal}
         />
       )}
 
@@ -851,6 +858,7 @@ function App() {
         />
       )}
 
+      {/* Persistent History Modal Integration */}
       {showConnectionHistory && (
         <ConnectionHistoryModal
             history={connectionHistory}
@@ -858,6 +866,7 @@ function App() {
             onClear={() => {
                 setConnectionHistory([]);
                 localStorage.removeItem('connectionHistory');
+                addLog('Historique de connexion effacé', 'info');
             }}
         />
       )}
@@ -922,12 +931,18 @@ function App() {
               <span className="hidden sm:inline">{userPlan === 'free' ? 'Go Premium' : userPlan.toUpperCase()}</span>
             </button>
             
+            {/* Connection History Button with Badge */}
             <button
               onClick={() => setShowConnectionHistory(true)}
-              className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors relative"
               title="Historique de connexion"
             >
               <History className="w-5 h-5" />
+              {connectionHistory.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-brand-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
+                      {connectionHistory.length > 9 ? '9+' : connectionHistory.length}
+                  </span>
+              )}
             </button>
 
             <button
@@ -998,6 +1013,8 @@ function App() {
                     securityReport={securityReport}
                     isConnected={isConnected}
                     userPlan={userPlan}
+                    mode={mode}
+                    onModeChange={handleModeChange}
                 />
                 <IdentityMatrix 
                     identity={currentIdentity} 
@@ -1008,6 +1025,7 @@ function App() {
                     securityReport={securityReport}
                     protocol={appSettings.protocol}
                     obfuscationLevel={appSettings.obfuscationLevel}
+                    dnsProvider={appSettings.dns}
                     onOpenObfuscationSettings={() => openSettings('advanced')}
                 />
              </div>
@@ -1024,7 +1042,7 @@ function App() {
                     onUpgrade={() => setShowPricing(true)}
                     onWithdraw={handleOpenWithdrawal}
                     transactions={transactions}
-                    onViewHistory={() => setShowHistory(true)}
+                    onViewHistory={() => setShowHistory(false)}
                 />
              </div>
 
@@ -1045,7 +1063,7 @@ function App() {
 
       </main>
 
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm px-4">
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-sm px-4">
         <button
           onClick={isConnected ? toggleConnection : connectVPN}
           disabled={isEmergency || isDisconnecting}

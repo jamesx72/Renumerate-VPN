@@ -18,7 +18,7 @@ export interface SecurityReport {
 
 export enum ConnectionMode {
   STANDARD = 'Standard',
-  STEALTH = 'Furtif',
+  STEALTH = 'Stealth',
   DOUBLE_HOP = 'Double Hop',
   SMART_DNS = 'Smart DNS'
 }
@@ -58,6 +58,7 @@ export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
   dns: 'cloudflare' | 'google' | 'quad9' | 'opendns' | 'custom';
   killSwitch: boolean;
+  dnsLeakProtection: boolean;
   autoReconnect: boolean;
   reconnectDelay: number;
   splitTunneling: boolean;

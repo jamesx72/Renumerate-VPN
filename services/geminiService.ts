@@ -1,19 +1,21 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { ConnectionMode, SecurityReport } from '../types';
 
-let ai: GoogleGenAI | null = null;
-
-if (process.env.API_KEY) {
-  ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-}
-
+/**
+ * Analyzes security and anonymity level using the Gemini API.
+ * This function follows the recommended practice of initializing the GenAI client
+ * right before the API call to ensure the latest API key is used.
+ */
 export const analyzeSecurity = async (
   mode: ConnectionMode,
   location: string,
   ip: string
 ): Promise<SecurityReport> => {
+  const apiKey = process.env.API_KEY;
+
   // If no API key, return a mock response to prevent crash
-  if (!ai) {
+  if (!apiKey) {
     return {
       score: 85,
       threatLevel: 'Faible',
@@ -25,6 +27,9 @@ export const analyzeSecurity = async (
       analysis: "Le système fonctionne en mode hors ligne. Veuillez configurer une clé API pour une analyse en temps réel."
     };
   }
+
+  // Initialize the GoogleGenAI client with the latest API key
+  const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `
     Agis comme un expert en cybersécurité pour l'application "Renumerate VPN".
@@ -45,18 +50,20 @@ export const analyzeSecurity = async (
   `;
 
   try {
+    // Using 'gemini-3-flash-preview' for basic text-to-JSON reasoning tasks
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: 'application/json'
       }
     });
 
+    // Accessing the .text property directly from the GenerateContentResponse object
     const text = response.text;
     if (!text) throw new Error("No response from AI");
     
-    return JSON.parse(text) as SecurityReport;
+    return JSON.parse(text.trim()) as SecurityReport;
   } catch (error) {
     console.error("Gemini Error:", error);
     return {

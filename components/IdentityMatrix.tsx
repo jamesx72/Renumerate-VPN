@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
-import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Info, Share2, Check, Shield, Activity, Settings, Ghost, Laptop, X, Users, MapPin, Coins, CloudSun } from 'lucide-react';
+import { Fingerprint, Globe, Monitor, Network, ArrowRight, ShieldCheck, Server, Pin, Building2, AlertTriangle, CheckCircle, Clock, Info, Share2, Check, Shield, Activity, Settings, Ghost, Laptop, X, Users, MapPin, Coins, CloudSun, Zap } from 'lucide-react';
 
 interface Props {
   identity: VirtualIdentity;
@@ -11,10 +12,22 @@ interface Props {
   securityReport?: SecurityReport | null;
   protocol?: string;
   obfuscationLevel?: 'standard' | 'high' | 'ultra';
+  dnsProvider?: string;
   onOpenObfuscationSettings?: () => void;
 }
 
-export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRotating, isMasking = false, mode, securityReport, protocol = 'wireguard', obfuscationLevel, onOpenObfuscationSettings }) => {
+export const IdentityMatrix: React.FC<Props> = ({ 
+  identity, 
+  entryIdentity, 
+  isRotating, 
+  isMasking = false, 
+  mode, 
+  securityReport, 
+  protocol = 'wireguard', 
+  obfuscationLevel, 
+  dnsProvider = 'cloudflare',
+  onOpenObfuscationSettings 
+}) => {
   const [copiedIp, setCopiedIp] = useState(false);
   const [localLatency, setLocalLatency] = useState(identity.latency);
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -87,6 +100,19 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
       return 'text-red-500';
   };
 
+  const getDnsInfo = (id: string) => {
+    const providers: Record<string, any> = {
+      cloudflare: { name: 'Cloudflare', ip: '1.1.1.1', desc: 'Performance Max' },
+      google: { name: 'Google DNS', ip: '8.8.8.8', desc: 'Global Coverage' },
+      quad9: { name: 'Quad9', ip: '9.9.9.9', desc: 'Secure & Private' },
+      opendns: { name: 'OpenDNS', ip: '208.67.222.222', desc: 'Family Safe' },
+      custom: { name: 'Renumerate DNS', ip: '10.8.0.1', desc: 'Internal stealth' }
+    };
+    return providers[id] || providers.cloudflare;
+  };
+
+  const activeDns = getDnsInfo(dnsProvider);
+
   return (
     <div className="space-y-4 relative">
       {/* Modal Détails Ville */}
@@ -144,6 +170,7 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
         </div>
       )}
 
+      {/* Connection Mode Visual Feedback */}
       {mode === ConnectionMode.DOUBLE_HOP && entryIdentity && (
         <div className="bg-brand-50 dark:bg-brand-900/20 p-3 rounded-lg border border-brand-200 dark:border-brand-500/30 flex items-center justify-between text-xs sm:text-sm animate-pulse-fast">
           <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
@@ -171,6 +198,24 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
         </div>
       )}
 
+      {mode === ConnectionMode.SMART_DNS && (
+        <div className="bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg border border-orange-200 dark:border-orange-500/30 flex items-center justify-between animate-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-3">
+             <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-500/20 flex items-center justify-center text-orange-500">
+                <Globe className="w-5 h-5" />
+             </div>
+             <div>
+                <div className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Routage Smart DNS</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Fournisseur : {activeDns.name} ({activeDns.ip})</div>
+             </div>
+          </div>
+          <div className="flex flex-col items-end">
+             <span className="text-[10px] font-mono text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">DNS OPTIMISÉ</span>
+             <span className="text-[9px] text-slate-400 mt-1 italic">Vitesse DNS: {localLatency / 2}ms</span>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white dark:bg-brand-800/50 p-4 rounded-lg border border-slate-200 dark:border-brand-500/20 backdrop-blur-sm shadow-lg shadow-brand-600/10 transition-all duration-500 ease-out hover:scale-[1.03] hover:shadow-2xl hover:shadow-brand-500/20">
           <div className="flex items-center justify-between mb-2">
@@ -187,7 +232,9 @@ export const IdentityMatrix: React.FC<Props> = ({ identity, entryIdentity, isRot
           <div className="flex items-center justify-between">
             <div className={`font-mono text-xl tracking-wider ${isRotating ? 'text-brand-600 dark:text-brand-400 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
                {isRotating ? 'RENUMBERING...' : (
-                   <span key={identity.ip} className="animate-in fade-in duration-500">{identity.ip}</span>
+                   <span key={identity.ip} className="animate-in fade-in duration-500">
+                     {mode === ConnectionMode.SMART_DNS ? 'ORIGINAL IP' : identity.ip}
+                   </span>
                )}
             </div>
             {!isRotating && (
