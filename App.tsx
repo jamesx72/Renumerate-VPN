@@ -147,7 +147,8 @@ function App() {
   }, [isDark]);
 
   useEffect(() => {
-      const mockNodes: DeviceNode[] = Array.from({ length: 12 }, (_, i) => ({
+      const countries = ['France', 'Suisse', 'Singapour', 'Islande', 'Panama', 'Estonie'];
+      const mockNodes: DeviceNode[] = Array.from({ length: 18 }, (_, i) => ({
           id: `node-${i}`,
           name: `Renumerate Node ${i+1}`,
           type: i % 4 === 0 ? 'server' : i % 3 === 0 ? 'iot' : 'mobile',
@@ -157,7 +158,8 @@ function App() {
           latency: Math.floor(Math.random() * 120) + 10,
           autonomyProfile: i % 3 === 0 ? 'provider' : i % 2 === 0 ? 'balanced' : 'consumer',
           tags: ['Secure'],
-          ip: `10.8.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`
+          ip: `10.8.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+          country: countries[i % countries.length]
       }));
       setDeviceNodes(mockNodes);
   }, []);
@@ -587,22 +589,32 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ne pas déclencher si l'utilisateur écrit dans un input ou textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         toggleConnection();
+        setNotification(isConnected ? "Déconnexion (Raccourci)" : "Connexion (Raccourci)");
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
         e.preventDefault();
-        handleRenumber();
+        if (isConnected) {
+            handleRenumber();
+            setNotification("Rotation d'identité (Raccourci)");
+        }
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'm') {
         e.preventDefault();
-        handleMasking();
+        if (isConnected) {
+            handleMasking();
+            setNotification("Masquage d'empreinte (Raccourci)");
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleConnection, handleRenumber, handleMasking]);
+  }, [toggleConnection, handleRenumber, handleMasking, isConnected]);
 
   const shareIdentity = () => {
     if (!currentIdentity) return;
@@ -722,7 +734,7 @@ function App() {
           } else {
               setIsRenumbering(true);
               setTimeout(() => {
-                  setCurrentIdentity(prev => ({ ...prev, ip: target.ip, latency: target.latency }));
+                  setCurrentIdentity(prev => ({ ...prev, ip: target.ip, latency: target.latency, country: target.country }));
                   setIsRenumbering(false);
                   addLog(`Basculement réussi vers ${target.name}`, 'success');
               }, 1500);
@@ -1015,6 +1027,9 @@ function App() {
                     userPlan={userPlan}
                     mode={mode}
                     onModeChange={handleModeChange}
+                    nodes={deviceNodes}
+                    onConnectNode={handleConnectNode}
+                    currentIp={currentIdentity.ip}
                 />
                 <IdentityMatrix 
                     identity={currentIdentity} 
@@ -1068,6 +1083,7 @@ function App() {
           onClick={isConnected ? toggleConnection : connectVPN}
           disabled={isEmergency || isDisconnecting}
           className={`w-full h-16 rounded-2xl font-bold text-lg text-white shadow-2xl transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group ${mainButtonColor}`}
+          title={isConnected ? "Déconnecter (Ctrl+S)" : "Connecter (Ctrl+S)"}
         >
           <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
           

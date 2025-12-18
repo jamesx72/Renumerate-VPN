@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 // Added ShieldCheck to the imports below
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer, CreditCard, Receipt, Plus, Trash2, CheckCircle, AlertTriangle, ShieldAlert, ShieldCheck, Wallet, TrendingUp, Landmark, ArrowRight } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, EyeOff, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer, CreditCard, Receipt, Plus, Trash2, CheckCircle, AlertTriangle, ShieldAlert, ShieldCheck, Wallet, TrendingUp, Landmark, ArrowRight, Sparkles } from 'lucide-react';
 import { AppSettings, PlanTier, PaymentMethod } from '../types';
 
 interface Props {
@@ -223,6 +223,34 @@ export const SettingsPanel: React.FC<Props> = ({
                             <p className="text-sm text-slate-500 dark:text-slate-400">Gérez vos protections et filtrages pour un anonymat maximal.</p>
                         </div>
                         <div className="grid grid-cols-1 gap-4">
+                             {/* AdBlocker AI */}
+                             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden group/item">
+                                <div className="p-5">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl group-hover/item:scale-110 transition-transform">
+                                                <EyeOff className="w-5 h-5 text-indigo-500" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="font-bold text-slate-900 dark:text-white">AdBlocker AI</div>
+                                                    <span className="text-[9px] bg-gradient-to-r from-brand-500 to-indigo-500 text-white px-1.5 py-0.5 rounded font-black tracking-widest flex items-center gap-1 shadow-sm">
+                                                        <Sparkles className="w-2 h-2" /> AI
+                                                    </span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Filtre Réseau VPN</div>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => updateSettings('adBlocker', !settings.adBlocker)} className="transition-transform active:scale-95">
+                                            {settings.adBlocker ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed border-l-2 border-indigo-200 dark:border-indigo-500/30 pl-3 italic">
+                                        Utilise l'intelligence artificielle pour bloquer les publicités, les traqueurs et les domaines malveillants directement au niveau du serveur VPN, accélérant votre navigation tout en protégeant votre vie privée.
+                                    </p>
+                                </div>
+                             </div>
+
                              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                                 <div className="p-5">
                                     <div className="flex items-center justify-between mb-3">
@@ -472,14 +500,36 @@ export const SettingsPanel: React.FC<Props> = ({
 
                 {activeTab === 'advanced' && (
                     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                            <div className="p-5">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-brand-50 dark:bg-brand-500/10 rounded-xl">
+                                            <Network className="w-5 h-5 text-brand-500" />
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-slate-900 dark:text-white">Protection IPv6</div>
+                                            <div className="text-[10px] text-brand-500 font-bold uppercase tracking-widest">Avancé</div>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => updateSettings('ipv6LeakProtection', !settings.ipv6LeakProtection)} className="transition-transform active:scale-95">
+                                        {settings.ipv6LeakProtection ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Désactive tout trafic IPv6 pour prévenir les fuites de données en dehors du tunnel VPN chiffré. Recommandé pour un anonymat total.
+                                </p>
+                            </div>
+                        </div>
+
                         <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                            <span className="font-bold">Niveau d'Obfuscation</span>
+                            <span className="font-bold text-slate-900 dark:text-white">Niveau d'Obfuscation</span>
                             <div className="flex gap-2 mt-4">
                                 {(['standard', 'high', 'ultra'] as const).map(level => (
                                     <button
                                         key={level}
                                         onClick={() => updateSettings('obfuscationLevel', level)}
-                                        className={`flex-1 py-3 text-xs font-bold rounded-xl border ${settings.obfuscationLevel === level ? 'bg-brand-500 text-white' : 'bg-slate-50 dark:bg-slate-800'}`}
+                                        className={`flex-1 py-3 text-xs font-bold rounded-xl border ${settings.obfuscationLevel === level ? 'bg-brand-500 text-white' : 'bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'}`}
                                     >
                                         {getObfuscationLabel(level)}
                                     </button>

@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Grid, List, Save, Trash2, Filter, Settings2, CheckCircle2, 
   ChevronDown, Signal, Activity, Smartphone, Monitor, Server, Cpu, 
   Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil, RotateCcw,
-  ArrowRightLeft, ChevronUp, AlertTriangle, Info, Terminal
+  ArrowRightLeft, ChevronUp, AlertTriangle, Info, Terminal, Download, ClipboardList
 } from 'lucide-react';
 import { DeviceNode } from '../types';
 
@@ -26,6 +27,7 @@ interface NetworkViewState {
 
 interface TransferLog {
     id: string;
+    step: number;
     time: string;
     message: string;
     type: 'info' | 'success' | 'warning' | 'error';
@@ -94,6 +96,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
   // Transfer Simulation State
   const [transferState, setTransferState] = useState<{
       isActive: boolean;
+      targetNodeName: string;
       targetNodeId: string | null;
       progress: number;
       logs: TransferLog[];
@@ -101,6 +104,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       status: 'idle' | 'running' | 'completed';
   }>({
       isActive: false,
+      targetNodeName: '',
       targetNodeId: null,
       progress: 0,
       logs: [],
@@ -125,9 +129,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
     }
   }, [toast]);
 
-  // --- Persistence Effects ---
-
-  // Persist Current State
+  // Current State Persistence
   useEffect(() => {
       const state: NetworkViewState = {
           viewMode,
@@ -138,7 +140,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
       localStorage.setItem('renumerate_network_state', JSON.stringify(state));
   }, [viewMode, filterType, sortBy, visibleColumns]);
 
-  // --- Saved Views Persistence ---
+  // Saved Views Persistence
   const [savedViews, setSavedViews] = useState<SavedViewConfig[]>(() => {
       try {
           const saved = localStorage.getItem('renumerate_saved_views');
@@ -216,7 +218,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
   };
 
   const toggleColumn = (key: string) => {
-      setActiveViewId(null); // Mark as modified
+      setActiveViewId(null); 
       setVisibleColumns(prev => 
           prev.includes(key) 
               ? prev.filter(k => k !== key)
@@ -233,10 +235,14 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
   };
 
   const startTransferSimulation = (node: DeviceNode) => {
-    if (transferState.status === 'running') return;
+    if (transferState.status === 'running') {
+        setToast("Simulation déjà en cours");
+        return;
+    }
 
     setTransferState({
         isActive: true,
+        targetNodeName: node.name,
         targetNodeId: node.id,
         progress: 0,
         logs: [],
@@ -246,29 +252,28 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
 
     const steps = [
         { msg: `Initialisation de la connexion sécurisée vers ${node.name} (${node.ip})...`, type: 'info', progress: 5, delay: 500 },
-        { msg: "Résolution DNS et routage optimisé...", type: 'info', progress: 15, delay: 1200 },
-        { msg: "Handshake cryptographique (ECDH) réussi.", type: 'success', progress: 25, delay: 1800 },
+        { msg: "Résolution DNS et routage optimisé (Smart Path)...", type: 'info', progress: 15, delay: 1200 },
+        { msg: "Handshake cryptographique (ECDH) réussi avec le nœud.", type: 'success', progress: 25, delay: 1800 },
         { msg: "Canal sécurisé établi. Chiffrement AES-256-GCM actif.", type: 'success', progress: 40, delay: 2500 },
-        { msg: "Début du transfert de paquets...", type: 'info', progress: 50, delay: 3200 },
-        { msg: `Analyse des paquets en temps réel : Aucune anomalie détectée.`, type: 'info', progress: 65, delay: 4500 },
-        { msg: `Fluctuation mineure de la latence (${node.latency + Math.floor(Math.random()*20)}ms) - Compensation active.`, type: 'warning', progress: 80, delay: 5500 },
-        { msg: "Vérification de l'intégrité des données (Hash SHA-256)...", type: 'info', progress: 90, delay: 6500 },
-        { msg: "Transfert finalisé avec succès. Session close.", type: 'success', progress: 100, delay: 7200 }
+        { msg: "Début du transfert de paquets de données segmentés.", type: 'info', progress: 50, delay: 3200 },
+        { msg: `Analyse heuristique des paquets : Flux d'intégrité validé.`, type: 'info', progress: 65, delay: 4500 },
+        { msg: `Fluctuation mineure de la latence (${node.latency + 15}ms) - Correction d'erreur active.`, type: 'warning', progress: 80, delay: 5500 },
+        { msg: "Vérification finale (Hash SHA-256) - Signature valide.", type: 'info', progress: 90, delay: 6500 },
+        { msg: "Synchronisation terminée. Session de transfert close.", type: 'success', progress: 100, delay: 7200 }
     ];
 
     steps.forEach((step, index) => {
         setTimeout(() => {
             const newLog: TransferLog = {
                 id: Date.now().toString() + index,
+                step: index + 1,
                 time: new Date().toLocaleTimeString('fr-FR'),
                 message: step.msg,
                 type: step.type as any
             };
 
             setTransferState(prev => {
-                // If user closed panel, don't update logs but keep checking status
                 if (!prev.isActive) return prev;
-                
                 const isComplete = index === steps.length - 1;
                 return {
                     ...prev,
@@ -283,6 +288,10 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
 
   const closeTransferPanel = () => {
       setTransferState(prev => ({ ...prev, isActive: false, status: 'idle' }));
+  };
+
+  const clearTransferLogs = () => {
+      setTransferState(prev => ({ ...prev, logs: [], progress: 0, status: 'idle' }));
   };
 
   // --- Filtering & Sorting ---
@@ -331,14 +340,6 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
 
   return (
     <div className="h-full flex flex-col space-y-4 relative">
-        {/* Toast Notification */}
-        {toast && (
-            <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[60] bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg shadow-slate-900/20 border border-slate-700 animate-in fade-in slide-in-from-top-4 flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                {toast}
-            </div>
-        )}
-
         {/* Toolbar */}
         <div className="flex flex-col xl:flex-row gap-4 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             
@@ -348,7 +349,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input 
                         type="text" 
-                        placeholder="Rechercher un nœud..." 
+                        placeholder="Rechercher un nœud (nom ou IP)..." 
                         value={searchQuery}
                         onChange={(e) => { setSearchQuery(e.target.value); setActiveViewId(null); }}
                         className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:border-brand-500 outline-none transition-colors dark:text-white"
@@ -376,10 +377,10 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                         onChange={(e) => { setSortBy(e.target.value as any); setActiveViewId(null); }}
                         className="w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-9 pr-8 text-sm focus:border-brand-500 outline-none cursor-pointer dark:text-white"
                     >
-                        <option value="name">Nom</option>
-                        <option value="signal">Signal</option>
-                        <option value="rate">Débit</option>
-                        <option value="latency">Latence</option>
+                        <option value="name">Trier par Nom</option>
+                        <option value="signal">Trier par Signal</option>
+                        <option value="rate">Trier par Débit</option>
+                        <option value="latency">Trier par Latence</option>
                     </select>
                     <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
@@ -388,7 +389,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                 <button 
                     onClick={handleResetFilters}
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition-colors"
-                    title="Réinitialiser les filtres"
+                    title="Réinitialiser"
                 >
                     <RotateCcw className="w-5 h-5" />
                 </button>
@@ -396,7 +397,6 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
 
             {/* View Controls */}
             <div className="flex gap-3">
-                {/* Saved Views Dropdown */}
                 <div className="relative z-20">
                     <button 
                         onClick={() => setShowViewsMenu(!showViewsMenu)}
@@ -493,7 +493,6 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                     )}
                 </div>
 
-                {/* Column Config (List Mode Only) */}
                 {viewMode === 'list' && (
                     <div className="relative z-20">
                         <button
@@ -735,70 +734,120 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
 
         {/* Transfer Log Panel */}
         {transferState.isActive && (
-            <div className={`fixed bottom-4 right-4 z-50 w-full max-w-sm bg-slate-900 rounded-xl shadow-2xl border border-slate-700 overflow-hidden flex flex-col transition-all duration-300 ${transferState.isCollapsed ? 'h-14' : 'h-80'}`}>
-                {/* Header */}
-                <div className="p-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between cursor-pointer" onClick={() => setTransferState(prev => ({...prev, isCollapsed: !prev.isCollapsed}))}>
+            <div className={`fixed bottom-6 right-6 z-50 w-full max-w-md bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700 overflow-hidden flex flex-col transition-all duration-500 ease-in-out ${transferState.isCollapsed ? 'h-16' : 'h-[420px]'}`}>
+                {/* Panel Header */}
+                <div 
+                    className="p-4 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between cursor-pointer group" 
+                    onClick={() => setTransferState(prev => ({...prev, isCollapsed: !prev.isCollapsed}))}
+                >
                      <div className="flex items-center gap-3">
-                         <div className={`p-1.5 rounded-lg ${transferState.status === 'completed' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-brand-500/20 text-brand-500'}`}>
-                             {transferState.status === 'completed' ? <CheckCircle2 className="w-4 h-4" /> : <Activity className="w-4 h-4 animate-pulse" />}
+                         <div className={`p-2 rounded-xl transition-all ${transferState.status === 'completed' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-brand-500/20 text-brand-500 group-hover:scale-110'}`}>
+                             {transferState.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> : <Activity className="w-5 h-5 animate-pulse" />}
                          </div>
-                         <div>
-                             <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                                 {transferState.status === 'completed' ? 'Transfert Terminé' : 'Transfert en cours...'}
+                         <div className="flex flex-col">
+                             <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                 {transferState.status === 'completed' ? 'Historique : Flux Clôturé' : `Flux vers ${transferState.targetNodeName}`}
+                                 {transferState.isCollapsed && <span className="text-[10px] font-mono opacity-50 px-1.5 bg-slate-700 rounded ml-1">{transferState.progress}%</span>}
                              </h4>
-                             <div className="flex items-center gap-2 mt-0.5">
-                                 <div className="w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                     <div className={`h-full rounded-full transition-all duration-300 ${transferState.status === 'completed' ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{width: `${transferState.progress}%`}}></div>
-                                 </div>
-                                 <span className="text-[10px] text-slate-400 font-mono">{transferState.progress}%</span>
-                             </div>
+                             {!transferState.isCollapsed && (
+                                <div className="flex items-center gap-2 mt-1.5">
+                                    <div className="w-48 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all duration-500 ${transferState.status === 'completed' ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{width: `${transferState.progress}%`}}></div>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 font-mono font-bold">{transferState.progress}%</span>
+                                </div>
+                             )}
                          </div>
                      </div>
-                     <div className="flex items-center gap-1">
-                         <button className="p-1 text-slate-400 hover:text-white transition-colors">
-                             <ChevronUp className={`w-4 h-4 transition-transform ${transferState.isCollapsed ? '' : 'rotate-180'}`} />
+                     <div className="flex items-center gap-2">
+                         <button 
+                             onClick={(e) => { e.stopPropagation(); clearTransferLogs(); }}
+                             className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                             title="Effacer l'historique local"
+                         >
+                             <Trash2 className="w-4 h-4" />
+                         </button>
+                         <button className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-all">
+                             <ChevronUp className={`w-4 h-4 transition-transform duration-300 ${transferState.isCollapsed ? '' : 'rotate-180'}`} />
                          </button>
                          <button 
                              onClick={(e) => { e.stopPropagation(); closeTransferPanel(); }}
-                             className="p-1 text-slate-400 hover:text-red-400 transition-colors"
+                             className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                          >
                              <X className="w-4 h-4" />
                          </button>
                      </div>
                 </div>
 
-                {/* Logs List */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-950 p-2 space-y-1">
-                    {transferState.logs.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2">
-                             <Terminal className="w-6 h-6" />
-                             <span className="text-xs">Initialisation...</span>
+                {/* Logs List Container */}
+                <div className="flex-1 flex flex-col bg-slate-950/50">
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800/50 bg-slate-900/30">
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                            <ClipboardList className="w-3 h-3" /> Journal de Paquets
                         </div>
-                    ) : (
-                        <>
-                        {transferState.logs.map(log => (
-                            <div key={log.id} className="flex gap-2 p-1.5 rounded hover:bg-white/5 transition-colors text-[10px] group">
-                                <span className="text-slate-500 font-mono shrink-0 pt-0.5">{log.time}</span>
-                                <div className="flex-1 min-w-0">
-                                     <div className="flex items-center gap-1.5 mb-0.5">
-                                         {log.type === 'info' && <Info className="w-3 h-3 text-blue-500 shrink-0" />}
-                                         {log.type === 'success' && <Check className="w-3 h-3 text-emerald-500 shrink-0" />}
-                                         {log.type === 'warning' && <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />}
-                                         {log.type === 'error' && <X className="w-3 h-3 text-red-500 shrink-0" />}
-                                         <span className={`font-bold uppercase tracking-wider ${
-                                             log.type === 'info' ? 'text-blue-500' :
-                                             log.type === 'success' ? 'text-emerald-500' :
-                                             log.type === 'warning' ? 'text-amber-500' : 'text-red-500'
-                                         }`}>
-                                             {log.type}
-                                         </span>
-                                     </div>
-                                     <p className="text-slate-300 leading-relaxed">{log.message}</p>
-                                </div>
+                        <span className="text-[9px] font-mono text-slate-600">ID: {Math.random().toString(16).slice(2, 10).toUpperCase()}</span>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                        {transferState.logs.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-700 gap-3 opacity-50">
+                                <Terminal className="w-8 h-8" />
+                                <p className="text-xs italic">En attente d'initialisation du flux...</p>
                             </div>
-                        ))}
-                        <div ref={logsEndRef} />
-                        </>
+                        ) : (
+                            <>
+                            {transferState.logs.map(log => (
+                                <div key={log.id} className="flex gap-3 p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.03] hover:bg-white/[0.05] transition-all text-[11px] group relative overflow-hidden animate-in fade-in slide-in-from-right-2">
+                                    <div className="flex flex-col items-center shrink-0 pt-1">
+                                        <div className={`w-5 h-5 rounded-lg flex items-center justify-center font-black text-[9px] border ${
+                                            log.type === 'info' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                                            log.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                                            log.type === 'warning' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                                            'bg-red-500/10 text-red-500 border-red-500/20'
+                                        }`}>
+                                            {log.step}
+                                        </div>
+                                        <div className="w-px h-full bg-slate-800 mt-1 opacity-50"></div>
+                                    </div>
+                                    
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-1">
+                                             <div className="flex items-center gap-1.5">
+                                                 {log.type === 'info' && <Info className="w-3 h-3 text-blue-500" />}
+                                                 {log.type === 'success' && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                 {log.type === 'warning' && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                                                 {log.type === 'error' && <X className="w-3 h-3 text-red-500" />}
+                                                 <span className={`font-black uppercase tracking-tighter text-[9px] ${
+                                                     log.type === 'info' ? 'text-blue-500' :
+                                                     log.type === 'success' ? 'text-emerald-500' :
+                                                     log.type === 'warning' ? 'text-amber-500' : 'text-red-500'
+                                                 }`}>
+                                                     {log.type === 'info' ? 'SYSTÈME' : log.type === 'success' ? 'VALIDÉ' : log.type === 'warning' ? 'ALERT' : 'ERREUR'}
+                                                 </span>
+                                             </div>
+                                             <span className="text-[9px] text-slate-600 font-mono group-hover:text-slate-400 transition-colors">{log.time}</span>
+                                        </div>
+                                        <p className="text-slate-300 leading-relaxed font-medium font-sans">{log.message}</p>
+                                    </div>
+                                </div>
+                            ))}
+                            <div ref={logsEndRef} />
+                            </>
+                        )}
+                    </div>
+                    
+                    {transferState.status === 'completed' && (
+                        <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex gap-2">
+                             <button className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold transition-all flex items-center justify-center gap-2">
+                                <Download className="w-3 h-3" /> Exporter LOGS
+                             </button>
+                             <button 
+                                onClick={closeTransferPanel}
+                                className="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-[10px] font-bold transition-all"
+                             >
+                                Fermer
+                             </button>
+                        </div>
                     )}
                 </div>
             </div>

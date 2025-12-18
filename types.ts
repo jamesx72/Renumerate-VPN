@@ -85,6 +85,7 @@ export interface DeviceNode {
   autonomyProfile: 'provider' | 'balanced' | 'consumer';
   tags: string[];
   ip: string;
+  country: string;
 }
 
 export interface PaymentMethod {
