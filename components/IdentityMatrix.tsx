@@ -31,6 +31,7 @@ export const IdentityMatrix: React.FC<Props> = ({
 }) => {
   const [copiedIp, setCopiedIp] = useState(false);
   const [showCityDetails, setShowCityDetails] = useState(false);
+  const [isFetchingCity, setIsFetchingCity] = useState(false);
   const [hasMaskedOnce, setHasMaskedOnce] = useState(false);
 
   useEffect(() => {
@@ -42,6 +43,16 @@ export const IdentityMatrix: React.FC<Props> = ({
     navigator.clipboard.writeText(identity.ip);
     setCopiedIp(true);
     setTimeout(() => setCopiedIp(false), 2000);
+  };
+
+  const openCityDetails = () => {
+    if (isRotating) return;
+    setIsFetchingCity(true);
+    // Simulation de récupération de données
+    setTimeout(() => {
+      setIsFetchingCity(false);
+      setShowCityDetails(true);
+    }, 600);
   };
 
   const getCityDetails = (city: string) => {
@@ -84,24 +95,30 @@ export const IdentityMatrix: React.FC<Props> = ({
     return "Modifier aléatoirement vos identifiants navigateurs et matériels.";
   };
 
+  const isLAA = (mac: string) => {
+      const clean = mac.replace(/[:.-]/g, '');
+      const secondNibble = clean[1]?.toUpperCase();
+      return ['2', '6', 'A', 'E'].includes(secondNibble);
+  };
+
   return (
     <div className="space-y-4 relative">
       {/* Modal Détails Ville (City Intelligence) */}
       {showCityDetails && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setShowCityDetails(false)}></div>
-            <div className="relative bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-6 bg-gradient-to-br from-blue-700 to-indigo-900 text-white relative">
+            <div className="relative bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2.5rem] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="p-6 bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-950 text-white relative">
                     <button onClick={() => setShowCityDetails(false)} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
                         <X className="w-4 h-4" />
                     </button>
-                    <div className="flex items-center gap-4 mb-2">
+                    <div className="flex items-center gap-4">
                         <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/10">
                             <Building2 className="w-6 h-6" />
                         </div>
                         <div>
                             <h4 className="text-xl font-black leading-none uppercase tracking-tight">{identity.city}</h4>
-                            <p className="text-white/60 text-xs font-bold flex items-center gap-1.5 mt-2 uppercase tracking-widest">
+                            <p className="text-white/60 text-[10px] font-bold flex items-center gap-1.5 mt-2 uppercase tracking-[0.2em]">
                                 <Globe className="w-3 h-3" /> {identity.country}
                             </p>
                         </div>
@@ -127,30 +144,30 @@ export const IdentityMatrix: React.FC<Props> = ({
                         <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                 <Clock className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Timezone</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest">Heure</span>
                             </div>
                             <div className="font-mono font-bold text-slate-700 dark:text-slate-200">{cityInfo.time}</div>
                         </div>
                         <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                 <ShieldEllipsis className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Trust</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest">Fiabilité</span>
                             </div>
                             <div className="font-bold text-emerald-500">{cityInfo.reputation}</div>
                         </div>
                     </div>
 
-                    <div className="pt-2 space-y-2.5">
-                        <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 dark:bg-slate-800/30">
+                    <div className="pt-2 space-y-2">
+                        <div className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2 text-slate-500">
-                                <MapPin className="w-3.5 h-3.5 text-blue-500" />
-                                <span className="font-bold uppercase tracking-wider text-[10px]">Région</span>
+                                <MapPin className="w-4 h-4 text-blue-500" />
+                                <span className="font-bold uppercase tracking-wider text-[10px]">Territoire</span>
                             </div>
                             <span className="font-bold text-slate-700 dark:text-slate-200">{cityInfo.region}</span>
                         </div>
-                        <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50 dark:bg-slate-800/30">
+                        <div className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2 text-slate-500">
-                                <Coins className="w-3.5 h-3.5 text-amber-500" />
+                                <Coins className="w-4 h-4 text-amber-500" />
                                 <span className="font-bold uppercase tracking-wider text-[10px]">Devise</span>
                             </div>
                             <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{cityInfo.currency}</span>
@@ -159,9 +176,9 @@ export const IdentityMatrix: React.FC<Props> = ({
                     
                     <button 
                         onClick={() => setShowCityDetails(false)}
-                        className="w-full py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] mt-2 transition-transform active:scale-95"
+                        className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] mt-2 transition-transform active:scale-95 shadow-xl"
                     >
-                        Fermer le rapport
+                        Clôturer le rapport
                     </button>
                 </div>
             </div>
@@ -191,18 +208,24 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Location Card */}
+        {/* Location Card (Cliquable pour les détails de la ville) */}
         <div 
-          onClick={() => !isRotating && setShowCityDetails(true)}
-          className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm cursor-pointer group hover:border-blue-500 transition-all active:scale-[0.98] relative overflow-hidden"
+          onClick={openCityDetails}
+          className={`bg-white dark:bg-slate-900 p-4 rounded-xl border transition-all active:scale-[0.98] relative overflow-hidden ${isRotating ? 'opacity-50 cursor-wait' : 'cursor-pointer group hover:border-blue-500 shadow-sm'}`}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
               <Globe className="w-4 h-4 text-brand-500" />
-              <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Localisation Gateway</span>
+              <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Passerelle de Sortie</span>
             </div>
-            <div className="flex items-center gap-1 text-[9px] font-black text-brand-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                DÉTAILS <Info className="w-3 h-3" />
+            <div className="flex items-center gap-1.5">
+                {isFetchingCity ? (
+                    <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                ) : (
+                    <div className="flex items-center gap-1 text-[9px] font-black text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-tighter">
+                        Données <Info className="w-3 h-3" />
+                    </div>
+                )}
             </div>
           </div>
           <div className={`font-bold truncate text-sm flex items-center gap-2 ${isRotating ? 'text-brand-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
@@ -288,16 +311,18 @@ export const IdentityMatrix: React.FC<Props> = ({
                   </div>
                   {isMasking && <span className="text-indigo-500 animate-pulse text-[8px] font-black">SCRAMBLING...</span>}
               </div>
-              <div className={`text-xl font-mono font-black tracking-[0.2em] h-12 flex items-center ${isMasking ? 'text-indigo-500 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
+              <div className={`text-sm sm:text-lg font-mono font-black tracking-widest h-12 flex items-center ${isMasking ? 'text-indigo-500 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
                   {isRotating ? '---' : identity.mac}
               </div>
               <div className="mt-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Intégrité Validée</span>
+                    <ShieldCheck className={`w-3.5 h-3.5 ${isLAA(identity.mac) ? 'text-blue-500' : 'text-emerald-500'}`} />
+                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
+                        {isLAA(identity.mac) ? 'IEEE 802.3 LAA' : 'Vendor Assigned'}
+                    </span>
                   </div>
                   <div className="text-[8px] font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                    IEEE 802.3 LAA
+                    INT-EMULATED
                   </div>
               </div>
             </div>

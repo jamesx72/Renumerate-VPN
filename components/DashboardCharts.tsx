@@ -14,8 +14,8 @@ interface ChartProps {
 
 export const TrafficMonitor = ({ isDark }: ChartProps) => {
   return (
-    <div className="h-48 w-full" style={{ minWidth: '0', minHeight: '192px', position: 'relative' }}>
-      <ResponsiveContainer width="100%" height="100%" debounce={50}>
+    <div className="relative w-full overflow-hidden" style={{ minWidth: '0', height: '192px', flexGrow: 1 }}>
+      <ResponsiveContainer width="99.9%" height="100%" debounce={100}>
         <AreaChart data={trafficData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="colorDown" x1="0" y1="0" x2="0" y2="1">
