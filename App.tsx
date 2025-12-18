@@ -7,11 +7,12 @@ import { PricingModal } from './components/PricingModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
 import { SystemLogs } from './components/SystemLogs';
+import { SecurityAudit } from './components/SecurityAudit';
 import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
-import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
+import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode } from './types';
 import { analyzeSecurity } from './services/geminiService';
 
@@ -123,12 +124,18 @@ function App() {
     setLogs(prev => [...prev, newLog].slice(-500));
   }, []);
 
-  const connectVPN = () => {
+  const connectVPN = async () => {
     setIsDisconnecting(false);
     addLog(`Démarrage du tunnel ${appSettings.protocol}...`, 'info');
-    setTimeout(() => {
+    setTimeout(async () => {
       setIsConnected(true);
       addLog(`Réseau Renumerate rejoint avec succès`, 'success');
+      
+      // Auto-analyze security with Gemini
+      const report = await analyzeSecurity(mode, currentIdentity.country, currentIdentity.ip);
+      setSecurityReport(report);
+      addLog(`Analyse de sécurité terminée : Score ${report.score}/100`, 'info');
+
       if (userPlan !== 'free') {
         addLog(`Génération de RNC active (Intensité: ${appSettings.miningIntensity}%)`, 'info');
       }
@@ -141,8 +148,29 @@ function App() {
     setTimeout(() => {
       setIsConnected(false);
       setIsDisconnecting(false);
+      setSecurityReport(null);
       addLog('Session VPN clôturée', 'info');
     }, 1000);
+  };
+
+  const handleMaskFootprint = () => {
+    setIsMasking(true);
+    addLog('Initialisation du masquage matériel et logiciel...', 'info');
+    
+    setTimeout(() => {
+      const randomUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
+      const randomMAC = generateRandomMac();
+      
+      setCurrentIdentity(prev => ({
+        ...prev,
+        mac: randomMAC,
+        userAgentShort: randomUA.short
+      }));
+      
+      setIsMasking(false);
+      addLog(`Nouvelle identité générée : ${randomUA.browser} sur ${randomUA.os}`, 'success');
+      addLog(`Spoofing MAC : ${randomMAC}`, 'success');
+    }, 1500);
   };
 
   if (!user) return <AuthScreen onLogin={(e) => setUser({email: e})} />;
@@ -197,7 +225,7 @@ function App() {
                     isMasking={isMasking}
                     mode={mode}
                     securityReport={securityReport}
-                    onMask={() => {}}
+                    onMask={handleMaskFootprint}
                     isConnected={isConnected}
                 />
             </div>
@@ -211,6 +239,10 @@ function App() {
                     onUpgrade={() => setShowPricing(true)}
                     onWithdraw={() => {}}
                     settings={appSettings}
+                />
+                <SecurityAudit 
+                  currentIp={currentIdentity.ip} 
+                  location={currentIdentity.country} 
                 />
                 <SystemLogs logs={logs} onClear={() => setLogs([])} />
             </div>
