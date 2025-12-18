@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Shield, Power, Moon, Sun, Globe, Activity, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, Siren, Loader2, LogOut, CheckCircle, ArrowUpRight, History, Network, Zap } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
-import { SecureFileTransfer } from './components/SecureFileTransfer';
 import { PricingModal } from './components/PricingModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
@@ -11,61 +11,34 @@ import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
-import { NetworkView } from './components/NetworkView';
-import { VerificationModal } from './components/VerificationModal';
 import { MOCK_IDENTITIES, INITIAL_LOGS } from './constants';
-import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode, PaymentMethod } from './types';
+import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode } from './types';
 import { analyzeSecurity } from './services/geminiService';
-import { supabase } from './services/supabaseClient';
 
 function App() {
   const [isDark, setIsDark] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isEmergency, setIsEmergency] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
   
-  // Auth State
   const [user, setUser] = useState<{email: string} | null>(() => {
     const saved = localStorage.getItem('user');
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [mode, setMode] = useState<ConnectionMode>(() => {
-    const saved = localStorage.getItem('vpnMode');
-    if (saved && Object.values(ConnectionMode).includes(saved as ConnectionMode)) {
-      return saved as ConnectionMode;
-    }
-    return ConnectionMode.STANDARD;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('vpnMode', mode);
-  }, [mode]);
-
-  const [currentIdentity, setCurrentIdentity] = useState<VirtualIdentity>(() => {
-    const saved = localStorage.getItem('currentIdentity');
-    return saved ? JSON.parse(saved) : MOCK_IDENTITIES[0];
-  });
-
+  const [mode, setMode] = useState<ConnectionMode>(ConnectionMode.STANDARD);
+  const [currentIdentity, setCurrentIdentity] = useState<VirtualIdentity>(MOCK_IDENTITIES[0]);
   const [isRenumbering, setIsRenumbering] = useState(false);
   const [isMasking, setIsMasking] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
 
   const [deviceNodes, setDeviceNodes] = useState<DeviceNode[]>([]);
-  const connectionStartRef = useRef<number | null>(null);
-  const [connectionHistory, setConnectionHistory] = useState<ConnectionSession[]>(() => {
-    const saved = localStorage.getItem('connectionHistory');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('connectionHistory', JSON.stringify(connectionHistory));
-  }, [connectionHistory]);
-
-  const [userPlan, setUserPlan] = useState<PlanTier>('free');
+  const [balance, setBalance] = useState(0.4215);
+  const [reputationScore, setReputationScore] = useState(85);
+  const [userPlan, setUserPlan] = useState<PlanTier>(() => (localStorage.getItem('userPlan') as PlanTier) || 'free');
   const [showPricing, setShowPricing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('appSettings');
@@ -79,10 +52,13 @@ function App() {
       splitTunneling: false,
       adBlocker: false, 
       autoConnect: false,
-      autoConnectOnBoot: false,
       autoRotation: false,
       rotationInterval: 10,
       obfuscationLevel: 'standard',
+      miningIntensity: 50,
+      yieldOptimizationIA: true,
+      contributionType: 'passive',
+      autoWithdraw: false,
       mtuSize: 1420,
       ipv6LeakProtection: true,
       localNetworkSharing: false,
@@ -91,27 +67,50 @@ function App() {
   });
 
   useEffect(() => {
-    if (isDark) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [isDark]);
+    localStorage.setItem('appSettings', JSON.stringify(appSettings));
+  }, [appSettings]);
 
   useEffect(() => {
-      const countries = ['France', 'Suisse', 'Singapour', 'Islande', 'Panama', 'Estonie'];
-      const mockNodes: DeviceNode[] = Array.from({ length: 18 }, (_, i) => ({
-          id: `node-${i}`,
-          name: `Renumerate Node ${i+1}`,
-          type: i % 4 === 0 ? 'server' : i % 3 === 0 ? 'iot' : 'mobile',
-          status: Math.random() > 0.3 ? 'active' : 'idle',
-          signalStrength: Math.floor(Math.random() * 60) + 40,
-          transferRate: Math.floor(Math.random() * 100),
-          latency: Math.floor(Math.random() * 120) + 10,
-          autonomyProfile: i % 3 === 0 ? 'provider' : i % 2 === 0 ? 'balanced' : 'consumer',
-          tags: ['Secure'],
-          ip: `10.8.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-          country: countries[i % countries.length]
-      }));
-      setDeviceNodes(mockNodes);
-  }, []);
+    localStorage.setItem('userPlan', userPlan);
+  }, [userPlan]);
+
+  // Simulated Reputation Growth when connected
+  useEffect(() => {
+    if (!isConnected) {
+        const interval = setInterval(() => {
+            setReputationScore(prev => Math.max(prev - 0.1, 0));
+        }, 10000);
+        return () => clearInterval(interval);
+    } else {
+        const interval = setInterval(() => {
+            setReputationScore(prev => Math.min(prev + 0.1, 100));
+        }, 5000);
+        return () => clearInterval(interval);
+    }
+  }, [isConnected]);
+
+  // Earning Accumulation Engine
+  useEffect(() => {
+    if (!isConnected || userPlan === 'free') return;
+
+    const interval = setInterval(() => {
+      const baseRate = userPlan === 'elite' ? 0.00012 : 0.00004;
+      const intensityFactor = 0.5 + (appSettings.miningIntensity / 100);
+      const iaBonus = appSettings.yieldOptimizationIA ? 1.2 : 1.0;
+      const typeBonus = appSettings.contributionType === 'exit' ? 1.3 : appSettings.contributionType === 'relay' ? 1.15 : 1.0;
+      const reputationBonus = 0.8 + (reputationScore / 100) * 0.4; // Up to 1.2x at 100% rep
+      
+      const totalIncrement = baseRate * intensityFactor * iaBonus * typeBonus * reputationBonus;
+      
+      setBalance(prev => prev + (totalIncrement / 5)); // Dividé par 5 car intervalle de 200ms
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [isConnected, userPlan, appSettings.miningIntensity, appSettings.yieldOptimizationIA, appSettings.contributionType, reputationScore]);
+
+  const updateSetting = (key: keyof AppSettings, value: any) => {
+    setAppSettings(prev => ({ ...prev, [key]: value }));
+  };
 
   const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
     const newLog: LogEntry = {
@@ -124,151 +123,29 @@ function App() {
     setLogs(prev => [...prev, newLog].slice(-500));
   }, []);
 
-  const connectVPN = useCallback(() => {
+  const connectVPN = () => {
     setIsDisconnecting(false);
-    connectionStartRef.current = Date.now();
-    addLog(`Initialisation protocole ${appSettings.protocol}...`, 'info');
-    
+    addLog(`Démarrage du tunnel ${appSettings.protocol}...`, 'info');
     setTimeout(() => {
       setIsConnected(true);
-      addLog(`Connexion établie (${appSettings.protocol.toUpperCase()})`, 'success');
+      addLog(`Réseau Renumerate rejoint avec succès`, 'success');
+      if (userPlan !== 'free') {
+        addLog(`Génération de RNC active (Intensité: ${appSettings.miningIntensity}%)`, 'info');
+      }
     }, 1500);
-  }, [appSettings.protocol, addLog]);
+  };
 
-  const disconnectVPN = useCallback(() => {
+  const disconnectVPN = () => {
     setIsDisconnecting(true);
-    addLog('Déconnexion initiée...', 'warning');
-
-    if (connectionStartRef.current) {
-        const endTime = Date.now();
-        const durationMs = endTime - connectionStartRef.current;
-        const seconds = Math.floor((durationMs / 1000) % 60);
-        const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
-        const durationString = `${minutes}m ${seconds}s`;
-
-        const newSession: ConnectionSession = {
-            id: Math.random().toString(36).substr(2, 9),
-            startTime: connectionStartRef.current,
-            endTime,
-            durationString,
-            serverCountry: currentIdentity.country,
-            serverIp: currentIdentity.ip,
-            protocol: appSettings.protocol,
-            mode: mode
-        };
-        setConnectionHistory(prev => [newSession, ...prev]);
-        connectionStartRef.current = null;
-    }
-
+    addLog('Fermeture sécurisée du tunnel...', 'warning');
     setTimeout(() => {
       setIsConnected(false);
       setIsDisconnecting(false);
-      setSecurityReport(null);
-      addLog('Déconnecté', 'info');
+      addLog('Session VPN clôturée', 'info');
     }, 1000);
-  }, [addLog, currentIdentity, appSettings.protocol, mode]);
-
-  const handleAnalyze = useCallback(async (identity: VirtualIdentity = currentIdentity) => {
-    if (!isConnected) return;
-    try {
-      const report = await analyzeSecurity(mode, identity.country, identity.ip);
-      setSecurityReport(report);
-    } catch (error) {
-      addLog('Échec de l\'analyse de sécurité', 'error');
-    }
-  }, [isConnected, mode, currentIdentity, addLog]);
-
-  useEffect(() => {
-    if (isConnected && !isDisconnecting) handleAnalyze();
-  }, [isConnected, isDisconnecting, handleAnalyze]);
-
-  const generateRealisticMAC = useCallback(() => {
-      const hex = "0123456789ABCDEF";
-      const formats = ['colon', 'hyphen', 'dot'];
-      const format = formats[Math.floor(Math.random() * formats.length)];
-      
-      let parts = [];
-      for (let i = 0; i < 6; i++) {
-          let byte = "";
-          if (i === 0) {
-              const firstNibble = hex.charAt(Math.floor(Math.random() * 16));
-              const secondNibble = ["2", "6", "A", "E"][Math.floor(Math.random() * 4)];
-              byte = firstNibble + secondNibble;
-          } else {
-              byte = hex.charAt(Math.floor(Math.random() * 16)) + hex.charAt(Math.floor(Math.random() * 16));
-          }
-          parts.push(byte);
-      }
-
-      switch(format) {
-          case 'hyphen': return parts.join('-');
-          case 'dot': 
-              const flat = parts.join('');
-              return `${flat.slice(0,4)}.${flat.slice(4,8)}.${flat.slice(8,12)}`;
-          default: return parts.join(':');
-      }
-  }, []);
-
-  const handleMasking = useCallback(() => {
-    if (!isConnected || mode === ConnectionMode.SMART_DNS || isMasking) return;
-    
-    setIsMasking(true);
-    addLog('Calcul de l\'obfuscation de l\'empreinte matérielle...', 'info');
-    
-    setTimeout(() => {
-        const fullUserAgents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
-            'Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0',
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-            'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0'
-        ];
-
-        const displayNames = [
-            'Chrome 126 / Windows 11',
-            'Safari 17.5 / macOS',
-            'Firefox 127 / Ubuntu',
-            'iOS 17.5 / iPhone 15 Pro',
-            'Android 14 / Pixel 8 Pro',
-            'Edge 126 / Windows 10'
-        ];
-
-        const idx = Math.floor(Math.random() * fullUserAgents.length);
-        const randomUA = fullUserAgents[idx];
-        const displayUA = displayNames[idx];
-        const newMAC = generateRealisticMAC();
-        
-        setCurrentIdentity(prev => ({
-            ...prev,
-            mac: newMAC,
-            userAgentShort: displayUA
-        }));
-        
-        setIsMasking(false);
-        addLog(`Empreinte mise à jour : ${displayUA}`, 'success');
-        handleAnalyze();
-    }, 2000);
-  }, [isConnected, mode, isMasking, addLog, handleAnalyze, generateRealisticMAC]);
-
-  const toggleConnection = async () => {
-    if (isConnected) disconnectVPN();
-    else connectVPN();
   };
 
-  const handleLogin = (email: string) => {
-    const newUser = { email };
-    setUser(newUser);
-    localStorage.setItem('user', JSON.stringify(newUser));
-  };
-
-  const handleLogout = () => {
-      if (isConnected) disconnectVPN();
-      setUser(null);
-      localStorage.removeItem('user');
-  };
-
-  if (!user) return <AuthScreen onLogin={handleLogin} />;
+  if (!user) return <AuthScreen onLogin={(e) => setUser({email: e})} />;
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
@@ -280,60 +157,88 @@ function App() {
           </div>
           
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowPricing(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold bg-slate-800 text-amber-400 border border-amber-500/30">
-              <Crown className="w-4 h-4" />
-              <span className="hidden sm:inline">{userPlan.toUpperCase()}</span>
+            <button onClick={() => setShowPricing(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:border-brand-500 transition-all uppercase">
+              <Crown className="w-3.5 h-3.5 text-amber-500" />
+              {userPlan}
+            </button>
+            <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+              <Settings className="w-5 h-5" />
             </button>
             <button onClick={() => setIsDark(!isDark)} className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <button onClick={handleLogout} className="p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10 transition-colors">
+            <button onClick={() => setUser(null)} className="p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-500/10 transition-colors">
               <LogOut className="w-5 h-5" />
             </button>
           </div>
         </div>
       </header>
       
-      <main className="max-w-7xl mx-auto p-4 md:p-6 pb-24 space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Dashboard 
-                isDark={isDark} 
-                protocol={appSettings.protocol} 
-                isEmergency={isEmergency} 
-                securityReport={securityReport}
-                isConnected={isConnected}
-                userPlan={userPlan}
-                mode={mode}
-                onModeChange={(m) => setMode(m)}
-                nodes={deviceNodes}
-                onConnectNode={(id) => { const n = deviceNodes.find(x => x.id === id); if(n) setCurrentIdentity(prev => ({...prev, ...n})); }}
-                currentIp={currentIdentity.ip}
-            />
-            <IdentityMatrix 
-                identity={currentIdentity} 
-                entryIdentity={null} 
-                isRotating={isRenumbering}
-                isMasking={isMasking}
-                mode={mode}
-                securityReport={securityReport}
-                onMask={handleMasking}
-                isConnected={isConnected}
-            />
+      <main className="max-w-7xl mx-auto p-4 md:p-6 pb-32 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+                <Dashboard 
+                    isDark={isDark} 
+                    protocol={appSettings.protocol} 
+                    isEmergency={isEmergency} 
+                    securityReport={securityReport}
+                    isConnected={isConnected}
+                    userPlan={userPlan}
+                    mode={mode}
+                    onModeChange={(m) => setMode(m)}
+                    nodes={deviceNodes}
+                    onConnectNode={(id) => {}}
+                    currentIp={currentIdentity.ip}
+                />
+                <IdentityMatrix 
+                    identity={currentIdentity} 
+                    entryIdentity={null} 
+                    isRotating={isRenumbering}
+                    isMasking={isMasking}
+                    mode={mode}
+                    securityReport={securityReport}
+                    onMask={() => {}}
+                    isConnected={isConnected}
+                />
+            </div>
+            
+            <div className="space-y-6">
+                <EarningsCard 
+                    isConnected={isConnected}
+                    plan={userPlan}
+                    balance={balance}
+                    reputation={reputationScore}
+                    onUpgrade={() => setShowPricing(true)}
+                    onWithdraw={() => {}}
+                    settings={appSettings}
+                />
+                <SystemLogs logs={logs} onClear={() => setLogs([])} />
+            </div>
         </div>
       </main>
 
       {showPricing && <PricingModal currentPlan={userPlan} onUpgrade={(p) => setUserPlan(p)} onClose={() => setShowPricing(false)} />}
+      
+      {showSettings && (
+        <SettingsPanel 
+          settings={appSettings} 
+          updateSettings={updateSetting} 
+          onClose={() => setShowSettings(false)} 
+          userPlan={userPlan}
+          onShowPricing={() => { setShowSettings(false); setShowPricing(true); }}
+        />
+      )}
 
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-sm px-4">
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm px-4">
         <button
-          onClick={toggleConnection}
+          onClick={isConnected ? disconnectVPN : connectVPN}
           disabled={isDisconnecting}
-          className={`w-full h-16 rounded-2xl font-bold text-lg text-white shadow-2xl transition-all duration-300 flex items-center justify-center gap-3 ${
-            isConnected ? 'bg-indigo-500 shadow-indigo-500/50' : 'bg-brand-500 shadow-brand-500/50 hover:bg-brand-600'
+          className={`w-full h-16 rounded-2xl font-black text-lg text-white shadow-2xl transition-all duration-300 flex items-center justify-center gap-3 active:scale-95 ${
+            isConnected ? 'bg-slate-900 shadow-slate-900/40' : 'bg-brand-500 shadow-brand-500/50 hover:bg-brand-600'
           }`}
         >
           {isDisconnecting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Power className="w-6 h-6" />}
-          <span>{isConnected ? 'DÉCONNECTER' : 'CONNECTER'}</span>
+          <span>{isConnected ? 'DÉCONNECTER' : 'SÉCURISER'}</span>
         </button>
       </div>
     </div>

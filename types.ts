@@ -51,7 +51,7 @@ export interface ConnectionSession {
   serverIp: string;
   protocol: string;
   mode: ConnectionMode;
-  dataUsed?: string; // Optionnel, pour une future implémentation
+  dataUsed?: string;
 }
 
 export interface AppSettings {
@@ -67,6 +67,11 @@ export interface AppSettings {
   autoRotation: boolean;
   rotationInterval: number;
   obfuscationLevel: 'standard' | 'high' | 'ultra';
+  // Earning Configurations
+  miningIntensity: number; 
+  yieldOptimizationIA: boolean;
+  contributionType: 'passive' | 'relay' | 'exit';
+  autoWithdraw: boolean;
   // Advanced Settings
   mtuSize: number;
   ipv6LeakProtection: boolean;
