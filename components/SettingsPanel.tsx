@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, EyeOff, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer, CreditCard, Receipt, Plus, Trash2, CheckCircle, AlertTriangle, ShieldAlert, ShieldCheck, Wallet, TrendingUp, Landmark, ArrowRight, Sparkles, Gauge, Info } from 'lucide-react';
+import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, EyeOff, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer, CreditCard, Receipt, Plus, Trash2, CheckCircle, AlertTriangle, ShieldAlert, ShieldCheck, Wallet, TrendingUp, Landmark, ArrowRight, Sparkles, Gauge, Info, Unplug } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -41,7 +41,6 @@ export const SettingsPanel: React.FC<Props> = ({
   const typeMultiplier = multipliers[settings.contributionType];
   const finalMultiplier = planMultiplier * intensityMultiplier * iaMultiplier * typeMultiplier;
 
-  // Simulate potential daily gain
   const potentialDailyGain = useMemo(() => {
     const baseDaily = userPlan === 'elite' ? 5.2 : 1.8;
     return (baseDaily * intensityMultiplier * iaMultiplier * typeMultiplier).toFixed(2);
@@ -98,7 +97,143 @@ export const SettingsPanel: React.FC<Props> = ({
                 <X className="w-5 h-5" />
             </button>
 
-            {activeTab === 'billing' ? (
+            {activeTab === 'privacy' && (
+                <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sécurité & Confidentialité</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Verrouillez votre tunnel de connexion et protégez votre identité réelle.</p>
+                    </div>
+
+                    {/* DNS Leak Protection */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-4">
+                                <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500 group-hover:scale-110 transition-transform">
+                                    <Globe className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Protection contre les fuites DNS</h4>
+                                    <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed">
+                                        Empêche votre système d'envoyer des requêtes DNS en dehors du tunnel VPN. 
+                                        Sans cette protection, votre FAI peut voir les noms de domaine que vous consultez, même si le trafic est chiffré.
+                                    </p>
+                                    <div className="mt-3 flex items-center gap-2 text-[10px] font-bold text-emerald-500 bg-emerald-500/5 px-2 py-1 rounded-lg w-fit">
+                                        <ShieldCheck className="w-3 h-3" /> CRITIQUE POUR L'ANONYMAT
+                                    </div>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => updateSettings('dnsLeakProtection', !settings.dnsLeakProtection)}
+                                className="focus:outline-none"
+                            >
+                                {settings.dnsLeakProtection ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Kill Switch */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 group hover:border-red-500/30 transition-colors">
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-4">
+                                <div className="p-3 bg-red-500/10 rounded-2xl text-red-500 group-hover:scale-110 transition-transform">
+                                    <Unplug className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Kill Switch Réseau</h4>
+                                    <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed">
+                                        Coupe instantanément tout accès à Internet si la connexion VPN est interrompue, évitant ainsi toute exposition de votre IP réelle.
+                                    </p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => updateSettings('killSwitch', !settings.killSwitch)}
+                                className="focus:outline-none"
+                            >
+                                {settings.killSwitch ? <ToggleRight className="w-10 h-10 text-red-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* IPv6 Protection */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-4">
+                                <div className="p-3 bg-purple-500/10 rounded-2xl text-purple-500 group-hover:scale-110 transition-transform">
+                                    <WifiOff className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Protection contre les fuites IPv6</h4>
+                                    <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed">
+                                        Désactive le trafic IPv6 pour s'assurer qu'aucun paquet ne transite en dehors de l'IPv4 chiffré.
+                                    </p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => updateSettings('ipv6LeakProtection', !settings.ipv6LeakProtection)}
+                                className="focus:outline-none"
+                            >
+                                {settings.ipv6LeakProtection ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'connection' && (
+                <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Paramètres de Connexion</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Optimisez les protocoles et les DNS pour la vitesse.</p>
+                    </div>
+
+                    {/* Protocol Selection */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                        <h4 className="text-xs font-bold uppercase text-slate-500 mb-4 tracking-widest flex items-center gap-2">
+                             <Zap className="w-3.5 h-3.5" /> Protocole Tunneling
+                        </h4>
+                        <div className="grid grid-cols-3 gap-3">
+                            {(['wireguard', 'openvpn', 'ikev2'] as const).map((proto) => (
+                                <button
+                                    key={proto}
+                                    onClick={() => updateSettings('protocol', proto)}
+                                    className={`p-4 rounded-xl border text-center transition-all ${
+                                        settings.protocol === proto
+                                            ? 'bg-brand-500 border-brand-500 text-white shadow-lg'
+                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-brand-500/50'
+                                    }`}
+                                >
+                                    <span className="text-xs font-black uppercase tracking-widest">{proto}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* DNS Selection */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                        <h4 className="text-xs font-bold uppercase text-slate-500 mb-4 tracking-widest flex items-center gap-2">
+                             <Globe className="w-3.5 h-3.5" /> Serveurs DNS Personnalisés
+                        </h4>
+                        <div className="grid grid-cols-2 gap-3">
+                            {(['cloudflare', 'google', 'quad9', 'opendns'] as const).map((dns) => (
+                                <button
+                                    key={dns}
+                                    onClick={() => updateSettings('dns', dns)}
+                                    className={`p-3 rounded-xl border flex items-center justify-between px-4 transition-all ${
+                                        settings.dns === dns
+                                            ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white'
+                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-brand-500/50'
+                                    }`}
+                                >
+                                    <span className="text-xs font-bold capitalize">{dns}</span>
+                                    {settings.dns === dns && <CheckCircle className="w-4 h-4" />}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'billing' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
                     <div className="flex justify-between items-start">
                         <div>
@@ -230,10 +365,12 @@ export const SettingsPanel: React.FC<Props> = ({
                         </div>
                     </div>
                 </div>
-            ) : (
+            )}
+
+            {activeTab === 'general' && (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                    <Settings className="w-12 h-12 mb-4 opacity-10" />
-                    <p className="text-sm font-medium">L'onglet {activeTab} est en cours de développement.</p>
+                    <Sliders className="w-12 h-12 mb-4 opacity-10" />
+                    <p className="text-sm font-medium">Paramètres Généraux (Langue, Thème, Notifications) à venir.</p>
                 </div>
             )}
         </div>
