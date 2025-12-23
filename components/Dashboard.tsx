@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Activity, Lock, Shield, Ghost, Layers, Globe, Check, AlertCircle, Share2, Server, Map, Zap, Info, Smartphone, Filter, Search, Gauge, Sparkles } from 'lucide-react';
+import { Activity, Lock, Shield, Ghost, Layers, Globe, Check, AlertCircle, Share2, Server, Map, Zap, Info, Smartphone, Filter, Search, Gauge, Sparkles, Navigation } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { SecurityReport, PlanTier, ConnectionMode, DeviceNode } from '../types';
 
@@ -43,9 +43,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
     { id: ConnectionMode.SMART_DNS, icon: Globe, label: 'Smart DNS', desc: 'Vitesse max' },
   ];
 
+  const countriesWithFlags: Record<string, string> = {
+    'France': '🇫🇷',
+    'Suisse': '🇨🇭',
+    'Singapour': '🇸🇬',
+    'Islande': '🇮🇸',
+    'Estonie': '🇪🇪',
+    'Panama': '🇵🇦',
+    'USA': '🇺🇸',
+    'Allemagne': '🇩🇪',
+    'Tous': '🌍'
+  };
+
   const availableCountries = useMemo(() => {
     const countries = nodes.map(n => n.country).filter(Boolean);
-    return ['Tous', ...Array.from(new Set(countries))];
+    const unique = Array.from(new Set(countries));
+    return ['Tous', ...unique];
   }, [nodes]);
 
   const filteredNodes = useMemo(() => {
@@ -57,13 +70,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     });
   }, [nodes, countryFilter, searchQuery, fastOnly]);
 
-  // Déterminer le meilleur nœud (Recommandation IA)
   const recommendedNodeId = useMemo(() => {
     if (filteredNodes.length === 0) return null;
     return [...filteredNodes].sort((a, b) => a.latency - b.latency)[0].id;
   }, [filteredNodes]);
 
-  const nodesToShow = filteredNodes.slice(0, 8);
+  const nodesToShow = filteredNodes.slice(0, 10);
 
   return (
     <div className="space-y-6">
@@ -79,7 +91,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
            
            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${isConnected ? 'bg-amber-500/10 border-amber-500/20 text-amber-600' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600'}`}>
               {isConnected ? <Lock className="w-3 h-3" /> : <Check className="w-3 h-3" />}
-              <span className="text-[9px] font-bold uppercase">{isConnected ? 'Verrouillé' : 'Disponible'}</span>
+              <span className="text-[9px] font-bold uppercase">{isConnected ? 'Tunnel Actif' : 'Disponible'}</span>
            </div>
         </div>
 
@@ -111,9 +123,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Network Map Section with Advanced Filters */}
+      {/* Network Map Section with Countries Chips Filter */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
           <div className="flex flex-col">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
               <Share2 className="w-3.5 h-3.5 text-brand-500" /> Topologie Réseau
@@ -127,7 +139,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                 <input 
                   type="text"
-                  placeholder="Rechercher..."
+                  placeholder="Rechercher IP/Nom..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] w-32 focus:w-48 transition-all outline-none focus:border-brand-500 dark:text-white"
@@ -139,28 +151,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
                onClick={() => setFastOnly(!fastOnly)}
                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-bold transition-all ${
                  fastOnly 
-                  ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20' 
+                  ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/20' 
                   : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
                }`}
              >
                <Gauge className="w-3.5 h-3.5" />
                <span className="hidden lg:inline">Basse Latence</span>
              </button>
-
-             {/* Country Filter */}
-             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-2 py-1 border border-slate-200 dark:border-slate-700">
-               <Filter className="w-3 h-3 text-slate-400" />
-               <select 
-                 value={countryFilter}
-                 onChange={(e) => setCountryFilter(e.target.value)}
-                 className="bg-transparent text-[10px] font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer"
-               >
-                 {availableCountries.map(country => (
-                   <option key={country} value={country}>{country}</option>
-                 ))}
-               </select>
-             </div>
           </div>
+        </div>
+
+        {/* Improved Country Chips Filter */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-4 custom-scrollbar scroll-smooth no-scrollbar">
+            {availableCountries.map(country => (
+                <button
+                    key={country}
+                    onClick={() => setCountryFilter(country)}
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${
+                        countryFilter === country 
+                            ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-lg scale-105 z-10' 
+                            : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-500/50'
+                    }`}
+                >
+                    <span className="text-sm leading-none">{countriesWithFlags[country] || '🚩'}</span>
+                    {country}
+                    {country !== 'Tous' && (
+                        <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[8px] font-mono ${countryFilter === country ? 'bg-white/10 dark:bg-black/10' : 'bg-slate-100 dark:bg-slate-900'}`}>
+                            {nodes.filter(n => n.country === country).length}
+                        </span>
+                    )}
+                </button>
+            ))}
         </div>
 
         <div className="relative h-72 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800/50 overflow-hidden flex items-center justify-center">
@@ -175,6 +196,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             }`}>
               <Smartphone className={`w-6 h-6 ${isConnected ? 'text-brand-500 animate-pulse' : 'text-slate-400'}`} />
             </div>
+            {isConnected && (
+                <div className="absolute -bottom-1 -right-1 p-1 bg-brand-500 rounded-full text-white shadow-lg">
+                    <Check className="w-3 h-3" />
+                </div>
+            )}
           </div>
 
           {/* Orbiting Nodes */}
@@ -198,7 +224,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {/* Connection Line */}
                 <div 
                   className={`absolute top-1/2 left-1/2 h-0.5 origin-left transition-all duration-500 ${
-                    isNodeConnected ? 'bg-brand-500/40 w-[100px]' : isHovered ? 'bg-brand-500/20 w-[100px]' : 'bg-slate-200 dark:bg-slate-800/20 w-0'
+                    isNodeConnected ? 'bg-brand-500/40 w-[100px]' : isHovered ? 'bg-brand-500/20 w-[100px]' : 'bg-slate-200 dark:bg-slate-800/10 w-0'
                   }`}
                   style={{ transform: `rotate(${angle + Math.PI}rad) translateY(-50%)` }}
                 ></div>
@@ -207,29 +233,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   onClick={() => onConnectNode(node.id)}
                   className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all border-2 relative z-20 ${
                     isNodeConnected 
-                        ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/30' 
+                        ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/30 ring-4 ring-brand-500/10' 
                         : isRecommended
                             ? 'bg-white dark:bg-slate-900 border-amber-400 text-amber-500 shadow-lg shadow-amber-500/10'
                             : isHovered
-                                ? 'bg-white dark:bg-slate-800 border-brand-500 text-brand-500 scale-110'
+                                ? 'bg-white dark:bg-slate-800 border-brand-500 text-brand-500 scale-110 shadow-lg'
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'
                   }`}
                 >
                   <Server className="w-4 h-4" />
                   
-                  {isRecommended && (
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
+                  <div className="absolute -top-1 -right-1 text-[10px] drop-shadow-sm">
+                      {countriesWithFlags[node.country] || '🚩'}
+                  </div>
+
+                  {isRecommended && !isNodeConnected && (
+                    <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-amber-400 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
                         <Sparkles className="w-1.5 h-1.5 text-white" />
                     </div>
                   )}
 
                   {/* Tooltip */}
                   {isHovered && (
-                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-3 py-1.5 rounded-lg shadow-xl text-[10px] whitespace-nowrap animate-in fade-in zoom-in-90 z-30">
+                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-3 py-1.5 rounded-lg shadow-xl text-[10px] whitespace-nowrap animate-in fade-in zoom-in-90 z-30 border border-slate-700">
                         <div className="font-bold flex items-center gap-1.5">
-                            {node.name} {isRecommended && <span className="text-[8px] text-amber-400">(RECOMMANDÉ)</span>}
+                            {node.name} {isRecommended && <span className="text-[8px] text-amber-400 font-black">OPTICAL</span>}
                         </div>
-                        <div className="opacity-70 font-mono mt-0.5">{node.country} • {node.latency}ms</div>
+                        <div className="opacity-70 font-mono mt-0.5 text-[9px] flex items-center gap-1">
+                             <Navigation className="w-2.5 h-2.5" /> {node.country} • {node.latency}ms
+                        </div>
                         <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900"></div>
                     </div>
                   )}
@@ -237,22 +269,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             );
           }) : (
-            <div className="flex flex-col items-center gap-2 text-slate-400">
-                <AlertCircle className="w-6 h-6 opacity-30" />
-                <span className="text-[10px] font-bold uppercase tracking-widest italic">Zéro nœud trouvé</span>
+            <div className="flex flex-col items-center gap-2 text-slate-400 animate-in fade-in zoom-in">
+                <AlertCircle className="w-8 h-8 opacity-30" />
+                <span className="text-[10px] font-black uppercase tracking-widest italic">Aucun nœud pour ce pays</span>
+                <button onClick={() => setCountryFilter('Tous')} className="text-[9px] font-bold text-brand-500 underline mt-2">Réinitialiser</button>
             </div>
           )}
         </div>
         
         {/* Recommended Node Quick Action */}
-        {recommendedNodeId && !isConnected && (
+        {recommendedNodeId && currentIp !== nodes.find(n => n.id === recommendedNodeId)?.ip && (
             <div className="mt-4 flex justify-center">
                 <button 
                     onClick={() => onConnectNode(recommendedNodeId)}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-bold shadow-xl hover:scale-105 transition-transform"
+                    className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all"
                 >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    CONNEXION AU NŒUD OPTIMAL
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    Bascule sur le nœud optimal ({nodes.find(n => n.id === recommendedNodeId)?.country})
                 </button>
             </div>
         )}

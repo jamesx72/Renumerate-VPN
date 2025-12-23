@@ -1,5 +1,5 @@
 
-import { VirtualIdentity } from './types';
+import { VirtualIdentity, DeviceNode } from './types';
 
 export const REALISTIC_USER_AGENTS = [
   {
@@ -46,15 +46,6 @@ export const REALISTIC_USER_AGENTS = [
     preciseVersion: '124.0.6367.82',
     build: 'UD1A.231105.004',
     engine: 'Blink/124.0.0.0'
-  },
-  {
-    short: 'Edge 124 / Windows 10',
-    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.2478.51',
-    os: 'Windows 10 22H2',
-    browser: 'Edge',
-    preciseVersion: '124.0.2478.51',
-    build: '19045.4291',
-    engine: 'Blink/Chromium'
   }
 ];
 
@@ -67,11 +58,13 @@ export const generateRandomMac = () => {
     "00:50:56", // VMware
     "00:00:0C", // Cisco
     "3C:5A:B4", // Samsung
-    "F8:D1:11"  // TP-Link
+    "00:14:22", // Dell
+    "00:10:18", // Broadcom
+    "E0:D5:5E", // Giga-Byte
+    "52:54:00"  // QEMU/KVM
   ];
 
-  // 70% chance to use a real vendor OUI, 30% for random LAA
-  const useVendor = Math.random() > 0.3;
+  const useVendor = Math.random() > 0.4;
   let macBytes: string[] = [];
 
   if (useVendor) {
@@ -81,12 +74,13 @@ export const generateRandomMac = () => {
       macBytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   } else {
+    // Generate LAA (Locally Administered Address)
     for (let i = 0; i < 6; i++) {
       let b1 = hex[Math.floor(Math.random() * 16)];
       let b2 = hex[Math.floor(Math.random() * 16)];
       if (i === 0) {
-        // Ensure LAA (Locally Administered Address) bit is set
-        // Second nibble must be 2, 6, A, or E
+        // Force Unicast (bit 0 = 0) and Local (bit 1 = 1)
+        // Values: x2, x6, xA, xE
         const laaNibbles = ['2', '6', 'A', 'E'];
         b2 = laaNibbles[Math.floor(Math.random() * 4)];
       }
@@ -94,15 +88,14 @@ export const generateRandomMac = () => {
     }
   }
 
-  // Pick a random format
-  const formatType = Math.random();
-  if (formatType < 0.6) {
-    return macBytes.join(':'); // Standard 00:11:22...
-  } else if (formatType < 0.85) {
-    return macBytes.join('-'); // Windows 00-11-22...
+  const formatRand = Math.random();
+  if (formatRand < 0.5) {
+    return macBytes.join(':').toUpperCase();
+  } else if (formatRand < 0.75) {
+    return macBytes.join('-').toUpperCase();
   } else {
-    // Cisco format 0011.2233.4455
-    const combined = macBytes.join('');
+    // Cisco Dot Format: XXXX.XXXX.XXXX
+    const combined = macBytes.join('').toLowerCase();
     return `${combined.slice(0,4)}.${combined.slice(4,8)}.${combined.slice(8,12)}`;
   }
 };
@@ -110,10 +103,18 @@ export const generateRandomMac = () => {
 export const MOCK_IDENTITIES: VirtualIdentity[] = [
   { ip: '192.168.1.105', country: 'France', city: 'Paris', mac: '00:1B:44:11:3A:B7', userAgentShort: 'Chrome 124 / Windows 11', latency: 12, timezone: 'UTC+1' },
   { ip: '45.33.22.11', country: 'Suisse', city: 'Zürich', mac: 'AC:DE:48:23:45:67', userAgentShort: 'Firefox 125 / Linux', latency: 24, timezone: 'UTC+1' },
-  { ip: '104.28.11.5', country: 'Singapour', city: 'Singapore', mac: '000a.959d.6816', userAgentShort: 'Safari 17.4 / macOS', latency: 145, timezone: 'UTC+8' },
-  { ip: '185.200.118.44', country: 'Islande', city: 'Reykjavik', mac: '52:54:00:12:34:56', userAgentShort: 'Edge 124 / Windows 10', latency: 56, timezone: 'UTC+0' },
-  { ip: '89.10.22.114', country: 'Panama', city: 'Panama City', mac: '00-50-56-C0-00-08', userAgentShort: 'Chrome 124 / Android 14', latency: 112, timezone: 'UTC-5' },
-  { ip: '5.196.33.20', country: 'Estonie', city: 'Tallinn', mac: '02:42:AC:11:00:02', userAgentShort: 'Firefox 125 / Linux', latency: 45, timezone: 'UTC+2' },
+  { ip: '104.28.11.5', country: 'Singapour', city: 'Singapore', mac: '0014.22ef.6816', userAgentShort: 'Safari 17.4 / macOS', latency: 145, timezone: 'UTC+8' },
+];
+
+export const MOCK_NODES: DeviceNode[] = [
+  { id: 'n1', name: 'FR-PAR-01', type: 'server', status: 'active', signalStrength: 98, transferRate: 120, latency: 12, autonomyProfile: 'provider', tags: ['fast'], ip: '192.168.1.105', country: 'France' },
+  { id: 'n2', name: 'FR-LYO-02', type: 'desktop', status: 'idle', signalStrength: 85, transferRate: 45, latency: 18, autonomyProfile: 'balanced', tags: ['relay'], ip: '192.168.1.201', country: 'France' },
+  { id: 'n3', name: 'CH-ZUR-01', type: 'server', status: 'active', signalStrength: 95, transferRate: 150, latency: 24, autonomyProfile: 'provider', tags: ['stealth'], ip: '45.33.22.11', country: 'Suisse' },
+  { id: 'n4', name: 'CH-GEN-01', type: 'mobile', status: 'active', signalStrength: 70, transferRate: 20, latency: 32, autonomyProfile: 'consumer', tags: ['dynamic'], ip: '45.33.22.45', country: 'Suisse' },
+  { id: 'n5', name: 'SG-CEN-01', type: 'server', status: 'active', signalStrength: 99, transferRate: 200, latency: 145, autonomyProfile: 'provider', tags: ['exit'], ip: '104.28.11.5', country: 'Singapour' },
+  { id: 'n6', name: 'IS-REY-01', type: 'server', status: 'active', signalStrength: 92, transferRate: 110, latency: 38, autonomyProfile: 'balanced', tags: ['arctic'], ip: '157.1.2.3', country: 'Islande' },
+  { id: 'n7', name: 'EE-TAL-01', type: 'desktop', status: 'active', signalStrength: 88, transferRate: 85, latency: 42, autonomyProfile: 'balanced', tags: ['secure'], ip: '193.40.5.1', country: 'Estonie' },
+  { id: 'n8', name: 'PA-PAN-01', type: 'server', status: 'active', signalStrength: 90, transferRate: 95, latency: 115, autonomyProfile: 'provider', tags: ['offshore'], ip: '190.1.2.3', country: 'Panama' },
 ];
 
 export const INITIAL_LOGS = [

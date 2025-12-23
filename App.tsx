@@ -12,7 +12,7 @@ import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
-import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac } from './constants';
+import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac, MOCK_NODES } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode } from './types';
 import { analyzeSecurity } from './services/geminiService';
 
@@ -34,7 +34,7 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
 
-  const [deviceNodes, setDeviceNodes] = useState<DeviceNode[]>([]);
+  const [deviceNodes, setDeviceNodes] = useState<DeviceNode[]>(MOCK_NODES);
   const [balance, setBalance] = useState(0.4215);
   const [reputationScore, setReputationScore] = useState(85);
   const [userPlan, setUserPlan] = useState<PlanTier>(() => (localStorage.getItem('userPlan') as PlanTier) || 'free');
@@ -53,6 +53,7 @@ function App() {
       splitTunneling: false,
       adBlocker: false, 
       autoConnect: false,
+      autoConnectAutoReconnect: true,
       autoRotation: false,
       rotationInterval: 10,
       obfuscationLevel: 'standard',
@@ -173,6 +174,25 @@ function App() {
     }, 1500);
   };
 
+  const handleConnectNode = (nodeId: string) => {
+    const node = deviceNodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
+    addLog(`Routage forcé vers le nœud : ${node.name} (${node.country})`, 'info');
+    setCurrentIdentity(prev => ({
+      ...prev,
+      ip: node.ip,
+      country: node.country,
+      city: node.name.split('-')[1] || 'Unknown'
+    }));
+    
+    if (!isConnected) {
+        connectVPN();
+    } else {
+        addLog(`Passerelle mise à jour dynamiquement`, 'success');
+    }
+  };
+
   if (!user) return <AuthScreen onLogin={(e) => setUser({email: e})} />;
 
   return (
@@ -215,7 +235,7 @@ function App() {
                     mode={mode}
                     onModeChange={(m) => setMode(m)}
                     nodes={deviceNodes}
-                    onConnectNode={(id) => {}}
+                    onConnectNode={handleConnectNode}
                     currentIp={currentIdentity.ip}
                 />
                 <IdentityMatrix 
