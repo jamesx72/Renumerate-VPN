@@ -49,7 +49,7 @@ export const REALISTIC_USER_AGENTS = [
   }
 ];
 
-export const generateRandomMac = () => {
+export const generateRandomMac = (forceLAA: boolean = false) => {
   const hex = "0123456789ABCDEF";
   const vendors = [
     "00:05:02", // Apple
@@ -64,7 +64,7 @@ export const generateRandomMac = () => {
     "52:54:00"  // QEMU/KVM
   ];
 
-  const useVendor = Math.random() > 0.4;
+  const useVendor = forceLAA ? false : Math.random() > 0.4;
   let macBytes: string[] = [];
 
   if (useVendor) {
@@ -80,7 +80,7 @@ export const generateRandomMac = () => {
       let b2 = hex[Math.floor(Math.random() * 16)];
       if (i === 0) {
         // Force Unicast (bit 0 = 0) and Local (bit 1 = 1)
-        // Values: x2, x6, xA, xE
+        // Values for second nibble: 2, 6, A, E
         const laaNibbles = ['2', '6', 'A', 'E'];
         b2 = laaNibbles[Math.floor(Math.random() * 4)];
       }
@@ -94,7 +94,6 @@ export const generateRandomMac = () => {
   } else if (formatRand < 0.75) {
     return macBytes.join('-').toUpperCase();
   } else {
-    // Cisco Dot Format: XXXX.XXXX.XXXX
     const combined = macBytes.join('').toLowerCase();
     return `${combined.slice(0,4)}.${combined.slice(4,8)}.${combined.slice(8,12)}`;
   }

@@ -7,7 +7,8 @@ import {
   Copy, Check, Activity, X, Users, MapPin, 
   CloudSun, Ghost, Fingerprint, Info, 
   Loader2, Terminal, ShieldAlert, Clock, ShieldEllipsis, Cpu, Globe2, Chrome, CloudRain, Sun, Cloud,
-  Map as MapIcon, Coins, Thermometer
+  Map as MapIcon, Coins, Thermometer, RefreshCw, Zap, Shield, ToggleLeft, ToggleRight,
+  EyeOff, Unplug
 } from 'lucide-react';
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
   mode: ConnectionMode;
   securityReport?: SecurityReport | null;
   onMask?: () => void;
+  onScrambleMac?: (forceLAA: boolean) => void;
   isConnected?: boolean;
 }
 
@@ -28,6 +30,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   mode, 
   securityReport, 
   onMask,
+  onScrambleMac,
   isConnected = false
 }) => {
   const [copiedIp, setCopiedIp] = useState(false);
@@ -35,6 +38,8 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [isFetchingCity, setIsFetchingCity] = useState(false);
   const [hasMaskedOnce, setHasMaskedOnce] = useState(false);
   const [localTime, setLocalTime] = useState<string>('');
+  const [forceLAA, setForceLAA] = useState(true);
+  const [isScramblingMac, setIsScramblingMac] = useState(false);
 
   useEffect(() => {
     if (isMasking) setHasMaskedOnce(true);
@@ -59,6 +64,15 @@ export const IdentityMatrix: React.FC<Props> = ({
     navigator.clipboard.writeText(identity.ip);
     setCopiedIp(true);
     setTimeout(() => setCopiedIp(false), 2000);
+  };
+
+  const handleScramble = () => {
+    if (!onScrambleMac || isRotating || isMasking || isScramblingMac) return;
+    setIsScramblingMac(true);
+    setTimeout(() => {
+      onScrambleMac(forceLAA);
+      setIsScramblingMac(false);
+    }, 800);
   };
 
   const openCityDetails = () => {
@@ -106,7 +120,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   };
 
   const getMacVendor = (mac: string) => {
-      if (isLAA(mac)) return "Privé (Masqué)";
+      if (isLAA(mac)) return "Local Admin (LAA)";
       const clean = mac.replace(/[:.-]/g, '').toUpperCase();
       const prefix = clean.slice(0, 6);
       const vendors: Record<string, string> = {
@@ -121,7 +135,7 @@ export const IdentityMatrix: React.FC<Props> = ({
           "E0D55E": "Giga-Byte",
           "525400": "QEMU Virtual"
       };
-      return vendors[prefix] || "Constructeur Inconnu";
+      return vendors[prefix] || "Vendor Unknow";
   };
 
   const isSmartDns = mode === ConnectionMode.SMART_DNS;
@@ -133,7 +147,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       {showCityDetails && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowCityDetails(false)}></div>
-            <div className="relative bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2.5rem] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="relative bg-white dark:bg-slate-900 w-full max-sm rounded-[2.5rem] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="p-6 bg-gradient-to-br from-brand-600 via-indigo-700 to-slate-900 text-white relative">
                     <button onClick={() => setShowCityDetails(false)} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
                         <X className="w-4 h-4" />
@@ -282,16 +296,28 @@ export const IdentityMatrix: React.FC<Props> = ({
               </div>
             </div>
             
-            <button 
-                onClick={(e) => { e.stopPropagation(); onMask?.(); }}
-                disabled={isMaskingDisabled}
-                className={`flex items-center justify-center gap-3 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl active:scale-95 ${
-                    isMasking ? 'bg-indigo-500 text-white shadow-indigo-500/40' : isMaskingDisabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed' : 'bg-brand-600 text-white hover:bg-brand-700'
-                }`}
-            >
-                {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldAlert className="w-5 h-5" />}
-                {isMasking ? 'SÉCURISATION...' : 'MASQUER L\'EMPREINTE'}
-            </button>
+            <div className="flex flex-col items-end gap-2">
+                <button 
+                    onClick={(e) => { e.stopPropagation(); onMask?.(); }}
+                    disabled={isMaskingDisabled}
+                    className={`flex items-center justify-center gap-3 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl active:scale-95 ${
+                        isMasking ? 'bg-indigo-500 text-white shadow-indigo-500/40' : isMaskingDisabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed' : 'bg-brand-600 text-white hover:bg-brand-700'
+                    }`}
+                >
+                    {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <EyeOff className="w-5 h-5" />}
+                    {isMasking ? 'SÉCURISATION...' : "Masquer l'empreinte"}
+                </button>
+                {isSmartDns && isConnected && (
+                    <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-1">
+                        <ShieldAlert className="w-3 h-3" /> Indisponible en mode Smart DNS
+                    </span>
+                )}
+                {!isConnected && (
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                        <Unplug className="w-3 h-3" /> Connexion VPN requise
+                    </span>
+                )}
+            </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -313,29 +339,45 @@ export const IdentityMatrix: React.FC<Props> = ({
               </div>
             </div>
             
-            {/* MAC Console */}
-            <div className={`bg-slate-50 dark:bg-slate-950 rounded-xl p-4 border transition-colors ${isMasking ? 'border-indigo-500/30' : 'border-slate-200/50 dark:border-slate-800/50'}`}>
+            {/* MAC Console with dedicated SCRAMBLER */}
+            <div className={`bg-slate-50 dark:bg-slate-950 rounded-xl p-4 border transition-colors ${isMasking || isScramblingMac ? 'border-indigo-500/30' : 'border-slate-200/50 dark:border-slate-800/50'}`}>
               <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between mb-3 uppercase tracking-widest">
                   <div className="flex items-center gap-2"><Fingerprint className="w-3.5 h-3.5 text-brand-500" /><span>Hardware Descriptor</span></div>
-                  {isMasking && <span className="text-indigo-500 animate-pulse text-[8px] font-black">SCRAMBLING...</span>}
+                  <div className="flex items-center gap-2">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setForceLAA(!forceLAA); }}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all text-[8px] font-black border ${forceLAA ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700'}`}
+                      >
+                         {forceLAA ? <ToggleRight className="w-3 h-3" /> : <ToggleLeft className="w-3 h-3" />}
+                         MODE LAA
+                      </button>
+                      <button 
+                        onClick={handleScramble}
+                        disabled={isMaskingDisabled || isScramblingMac}
+                        className={`p-1 rounded-lg transition-all ${isScramblingMac ? 'bg-indigo-500 text-white animate-spin' : 'bg-white dark:bg-slate-800 text-slate-500 hover:text-indigo-500 hover:shadow-lg active:scale-90 border border-slate-200 dark:border-slate-700'}`}
+                        title="Scramble MAC only"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                  </div>
               </div>
-              <div className={`text-sm sm:text-lg font-mono font-black tracking-widest h-12 flex items-center ${isMasking ? 'text-indigo-500 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
+              <div className={`text-sm sm:text-lg font-mono font-black tracking-widest h-12 flex items-center ${isMasking || isScramblingMac ? 'text-indigo-500 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
                   {isRotating ? '---' : identity.mac}
               </div>
               <div className="mt-4 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <ShieldCheck className={`w-3.5 h-3.5 ${isLAA(identity.mac) ? 'text-blue-500' : 'text-emerald-500'}`} />
+                      <ShieldCheck className={`w-3.5 h-3.5 ${isLAA(identity.mac) ? 'text-indigo-500' : 'text-emerald-500'}`} />
                       <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
-                          {isLAA(identity.mac) ? 'IEEE 802.3 LAA' : 'Vendor Assigned'}
+                          {getMacVendor(identity.mac).toUpperCase()}
                       </span>
                     </div>
-                    <div className="text-[8px] font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                      {getMacVendor(identity.mac).toUpperCase()}
+                    <div className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${isLAA(identity.mac) ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
+                      {isLAA(identity.mac) ? 'ANONYMAT MATÉRIEL' : 'SIGNATURE RÉELLE'}
                     </div>
                   </div>
                   <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[9px] text-slate-500 leading-tight">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Protection MAC :</span> {isLAA(identity.mac) ? "Masquage matériel actif. Empêche l'identification physique par les routeurs." : "Identifiant matériel standard (Cisco/IEEE). Recommandé pour la stabilité pro."}
+                    <span className="font-bold text-slate-700 dark:text-slate-300">Statut Spoofing :</span> {isLAA(identity.mac) ? "L'adresse LAA empêche les routeurs publics de lister votre identifiant matériel unique." : "Adresse de constructeur légitime. Utilisez le Scrambler pour masquer cet ID physique."}
                   </div>
               </div>
             </div>

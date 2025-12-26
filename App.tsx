@@ -160,7 +160,7 @@ function App() {
     
     setTimeout(() => {
       const randomUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
-      const randomMAC = generateRandomMac();
+      const randomMAC = generateRandomMac(true); // Default to LAA for full masking
       
       setCurrentIdentity(prev => ({
         ...prev,
@@ -170,8 +170,17 @@ function App() {
       
       setIsMasking(false);
       addLog(`Nouvelle identité générée : ${randomUA.browser} sur ${randomUA.os}`, 'success');
-      addLog(`Spoofing MAC : ${randomMAC}`, 'success');
+      addLog(`Spoofing MAC (LAA) : ${randomMAC}`, 'success');
     }, 1500);
+  };
+
+  const handleScrambleMac = (forceLAA: boolean) => {
+    const newMac = generateRandomMac(forceLAA);
+    setCurrentIdentity(prev => ({
+      ...prev,
+      mac: newMac
+    }));
+    addLog(`Scrambling MAC réussi : ${newMac} (${forceLAA ? 'LAA' : 'Vendor'})`, 'success');
   };
 
   const handleConnectNode = (nodeId: string) => {
@@ -246,6 +255,7 @@ function App() {
                     mode={mode}
                     securityReport={securityReport}
                     onMask={handleMaskFootprint}
+                    onScrambleMac={handleScrambleMac}
                     isConnected={isConnected}
                 />
             </div>

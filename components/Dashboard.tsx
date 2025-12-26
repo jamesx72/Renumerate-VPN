@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Activity, Lock, Shield, Ghost, Layers, Globe, Check, AlertCircle, Share2, Server, Map, Zap, Info, Smartphone, Filter, Search, Gauge, Sparkles, Navigation } from 'lucide-react';
+import { Activity, Lock, Shield, Ghost, Layers, Globe, Check, AlertCircle, Share2, Server, Map, Zap, Info, Smartphone, Filter, Search, Gauge, Sparkles, Navigation, MapPin, ChevronDown } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { SecurityReport, PlanTier, ConnectionMode, DeviceNode } from '../types';
 
@@ -58,7 +58,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const availableCountries = useMemo(() => {
     const countries = nodes.map(n => n.country).filter(Boolean);
     const unique = Array.from(new Set(countries));
-    return ['Tous', ...unique];
+    return ['Tous', ...unique].sort();
   }, [nodes]);
 
   const filteredNodes = useMemo(() => {
@@ -123,26 +123,43 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Network Map Section with Countries Chips Filter */}
+      {/* Network Map Section with Enhanced Filtering */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-4 gap-4">
           <div className="flex flex-col">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
               <Share2 className="w-3.5 h-3.5 text-brand-500" /> Topologie Réseau
             </h3>
-            <p className="text-[10px] text-slate-400 mt-0.5">Exploration des points de terminaison</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Exploration des points de terminaison par localisation</p>
           </div>
           
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+             {/* Country Select Filter */}
+             <div className="relative group">
+                <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 group-hover:text-brand-500 transition-colors" />
+                <select 
+                  value={countryFilter}
+                  onChange={(e) => setCountryFilter(e.target.value)}
+                  className="pl-8 pr-10 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-bold uppercase tracking-wider outline-none focus:border-brand-500 transition-all dark:text-white appearance-none cursor-pointer min-w-[140px]"
+                >
+                  {availableCountries.map(country => (
+                    <option key={country} value={country}>
+                      {country === 'Tous' ? 'Tous les pays' : country}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+             </div>
+
              {/* Search Bar */}
-             <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+             <div className="relative group">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 group-hover:text-brand-500 transition-colors" />
                 <input 
                   type="text"
-                  placeholder="Rechercher IP/Nom..."
+                  placeholder="Nom ou IP..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] w-32 focus:w-48 transition-all outline-none focus:border-brand-500 dark:text-white"
+                  className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] w-32 md:w-40 focus:w-56 transition-all outline-none focus:border-brand-500 dark:text-white"
                 />
              </div>
 
@@ -152,39 +169,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-bold transition-all ${
                  fastOnly 
                   ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/20' 
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-brand-500/50'
                }`}
              >
                <Gauge className="w-3.5 h-3.5" />
-               <span className="hidden lg:inline">Basse Latence</span>
+               <span className="hidden md:inline">Optimisé</span>
              </button>
           </div>
         </div>
 
-        {/* Improved Country Chips Filter */}
+        {/* Quick Country Chips Filter */}
         <div className="flex items-center gap-2 overflow-x-auto pb-4 custom-scrollbar scroll-smooth no-scrollbar">
-            {availableCountries.map(country => (
-                <button
-                    key={country}
-                    onClick={() => setCountryFilter(country)}
-                    className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${
-                        countryFilter === country 
-                            ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-lg scale-105 z-10' 
-                            : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-500/50'
-                    }`}
-                >
-                    <span className="text-sm leading-none">{countriesWithFlags[country] || '🚩'}</span>
-                    {country}
-                    {country !== 'Tous' && (
-                        <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[8px] font-mono ${countryFilter === country ? 'bg-white/10 dark:bg-black/10' : 'bg-slate-100 dark:bg-slate-900'}`}>
-                            {nodes.filter(n => n.country === country).length}
-                        </span>
-                    )}
-                </button>
-            ))}
+            {availableCountries.map(country => {
+                const count = nodes.filter(n => n.country === country).length;
+                return (
+                    <button
+                        key={country}
+                        onClick={() => setCountryFilter(country)}
+                        className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 group ${
+                            countryFilter === country 
+                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-lg scale-105 z-10' 
+                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-500/50'
+                        }`}
+                    >
+                        <span className="text-sm leading-none transition-transform group-hover:scale-125">{countriesWithFlags[country] || '🚩'}</span>
+                        {country}
+                        {country !== 'Tous' && (
+                            <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[8px] font-mono ${countryFilter === country ? 'bg-white/10 dark:bg-black/10' : 'bg-slate-100 dark:bg-slate-900'}`}>
+                                {count}
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
         </div>
 
-        <div className="relative h-72 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800/50 overflow-hidden flex items-center justify-center">
+        <div className="relative h-72 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800/50 overflow-hidden flex items-center justify-center transition-all duration-500">
           {/* Grid Background */}
           <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]" 
                style={{ backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
@@ -217,7 +237,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div 
                 key={node.id}
                 style={{ transform: `translate(${x}px, ${y}px)` }}
-                className="absolute transition-all duration-700"
+                className="absolute transition-all duration-700 animate-in fade-in zoom-in"
                 onMouseEnter={() => setHoveredNode(node.id)}
                 onMouseLeave={() => setHoveredNode(null)}
               >
@@ -243,7 +263,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 >
                   <Server className="w-4 h-4" />
                   
-                  <div className="absolute -top-1 -right-1 text-[10px] drop-shadow-sm">
+                  <div className="absolute -top-1 -right-1 text-[10px] drop-shadow-sm transition-transform group-hover:scale-125">
                       {countriesWithFlags[node.country] || '🚩'}
                   </div>
 
@@ -269,10 +289,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             );
           }) : (
-            <div className="flex flex-col items-center gap-2 text-slate-400 animate-in fade-in zoom-in">
-                <AlertCircle className="w-8 h-8 opacity-30" />
-                <span className="text-[10px] font-black uppercase tracking-widest italic">Aucun nœud pour ce pays</span>
-                <button onClick={() => setCountryFilter('Tous')} className="text-[9px] font-bold text-brand-500 underline mt-2">Réinitialiser</button>
+            <div className="flex flex-col items-center gap-2 text-slate-400 animate-in fade-in zoom-in duration-500">
+                <div className="p-4 bg-slate-200/50 dark:bg-slate-800/50 rounded-full mb-2">
+                    <AlertCircle className="w-8 h-8 opacity-30" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] italic">Aucun nœud actif trouvé</span>
+                <p className="text-[9px] text-slate-500 max-w-[180px] text-center leading-relaxed">Désolé, aucun point de terminaison ne correspond à vos filtres actuels ({countryFilter}).</p>
+                <button 
+                  onClick={() => { setCountryFilter('Tous'); setSearchQuery(''); setFastOnly(false); }} 
+                  className="text-[9px] font-bold text-brand-500 hover:text-brand-400 underline mt-2 uppercase tracking-widest"
+                >
+                    Réinitialiser les filtres
+                </button>
             </div>
           )}
         </div>
@@ -282,9 +310,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="mt-4 flex justify-center">
                 <button 
                     onClick={() => onConnectNode(recommendedNodeId)}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all"
+                    className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all group"
                 >
-                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <Sparkles className="w-4 h-4 text-amber-500 group-hover:animate-spin" />
                     Bascule sur le nœud optimal ({nodes.find(n => n.id === recommendedNodeId)?.country})
                 </button>
             </div>
@@ -293,20 +321,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Analytics Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm">
-              <Activity className="w-4 h-4" /> Flux Réseau
+            <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm font-bold uppercase tracking-wider">
+              <Activity className="w-4 h-4 text-brand-500" /> Flux Réseau
             </h3>
             <span className="text-[9px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md text-slate-500 font-mono font-bold">{protocol.toUpperCase()}</span>
           </div>
           <TrafficMonitor isDark={isDark} />
         </div>
         
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm">
-              <Lock className="w-4 h-4" /> Confidentialité
+            <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm font-bold uppercase tracking-wider">
+              <Lock className="w-4 h-4 text-brand-500" /> Confidentialité
             </h3>
             {isConnected && <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>}
           </div>
