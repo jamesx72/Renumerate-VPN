@@ -57,7 +57,7 @@ export const SettingsPanel: React.FC<Props> = ({
             <div className="p-6">
                 <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900 dark:text-white">
                     <Settings className="w-6 h-6 text-brand-500" />
-                    Settings
+                    Paramètres
                 </h2>
             </div>
 
@@ -237,8 +237,8 @@ export const SettingsPanel: React.FC<Props> = ({
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
                     <div className="flex justify-between items-start">
                         <div>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Configuration du Rendement</h3>
-                            <p className="text-sm text-slate-500 dark:text-slate-400">Maximisez vos gains RNC en optimisant votre participation au réseau.</p>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Configuration des Gains</h3>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">Gérez vos préférences de monétisation et optimisez votre participation au réseau Renumerate.</p>
                         </div>
                     </div>
 
@@ -278,8 +278,8 @@ export const SettingsPanel: React.FC<Props> = ({
                                     <Sparkles className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">IA Yield Optimizer</h4>
-                                    <p className="text-xs text-slate-500">Ajuste le routage en temps réel vers les zones à forte demande.</p>
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Optimisation IA des rendements</h4>
+                                    <p className="text-xs text-slate-500">Ajuste le routage en temps réel vers les zones à forte demande pour maximiser les profits.</p>
                                 </div>
                             </div>
                             <button 
@@ -299,8 +299,8 @@ export const SettingsPanel: React.FC<Props> = ({
                                     <Gauge className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Intensité de Contribution</h4>
-                                    <p className="text-xs text-slate-500">Définit la part de bande passante allouée au réseau.</p>
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Intensité du minage</h4>
+                                    <p className="text-xs text-slate-500">Définit la part de ressources allouée à la contribution réseau.</p>
                                 </div>
                             </div>
                             <div className="text-lg font-mono font-black text-brand-500">{settings.miningIntensity}%</div>
@@ -316,9 +316,9 @@ export const SettingsPanel: React.FC<Props> = ({
                             className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-500"
                         />
                         <div className="flex justify-between mt-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                            <span className={settings.miningIntensity <= 30 ? 'text-brand-500' : ''}>Économique</span>
-                            <span className={settings.miningIntensity > 30 && settings.miningIntensity <= 70 ? 'text-brand-500' : ''}>Balancé</span>
-                            <span className={settings.miningIntensity > 70 ? 'text-brand-500' : ''}>Performance</span>
+                            <span className={settings.miningIntensity <= 30 ? 'text-brand-500' : ''}>Économe</span>
+                            <span className={settings.miningIntensity > 30 && settings.miningIntensity <= 70 ? 'text-brand-500' : ''}>Équilibré</span>
+                            <span className={settings.miningIntensity > 70 ? 'text-brand-500' : ''}>Maximum</span>
                         </div>
                     </div>
 
@@ -342,7 +342,7 @@ export const SettingsPanel: React.FC<Props> = ({
 
                     {/* Contribution Mode Selection */}
                     <div className="space-y-4">
-                        <label className="text-xs font-bold uppercase text-slate-500 ml-1">Rôle dans le Réseau</label>
+                        <label className="text-xs font-bold uppercase text-slate-500 ml-1">Type de contribution (Rôle)</label>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {(['passive', 'relay', 'exit'] as const).map((type) => (
                                 <button

@@ -4,11 +4,11 @@ import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
 import { REALISTIC_USER_AGENTS } from '../constants';
 import { 
   Globe, Monitor, Network, ShieldCheck, Pin, Building2, 
-  Copy, Check, Activity, X, Users, MapPin, 
-  CloudSun, Ghost, Fingerprint, Info, 
+  Copy, Activity, X, Users, MapPin, 
+  Ghost, Fingerprint, Info, 
   Loader2, Terminal, ShieldAlert, Clock, ShieldEllipsis, Cpu, Globe2, Chrome, CloudRain, Sun, Cloud,
-  Map as MapIcon, Coins, Thermometer, RefreshCw, Zap, Shield, ToggleLeft, ToggleRight,
-  EyeOff, Unplug
+  Map as MapIcon, Coins, Thermometer, RefreshCw, ToggleLeft, ToggleRight,
+  EyeOff, Unplug, Shield as ShieldIcon
 } from 'lucide-react';
 
 interface Props {
@@ -20,6 +20,7 @@ interface Props {
   securityReport?: SecurityReport | null;
   onMask?: () => void;
   onScrambleMac?: (forceLAA: boolean) => void;
+  onScrambleUA?: () => void;
   isConnected?: boolean;
 }
 
@@ -31,6 +32,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   securityReport, 
   onMask,
   onScrambleMac,
+  onScrambleUA,
   isConnected = false
 }) => {
   const [copiedIp, setCopiedIp] = useState(false);
@@ -40,10 +42,26 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [localTime, setLocalTime] = useState<string>('');
   const [forceLAA, setForceLAA] = useState(true);
   const [isScramblingMac, setIsScramblingMac] = useState(false);
+  const [isScramblingUA, setIsScramblingUA] = useState(false);
+  const [scrambleText, setScrambleText] = useState('');
 
   useEffect(() => {
     if (isMasking) setHasMaskedOnce(true);
   }, [isMasking]);
+
+  useEffect(() => {
+    if (isMasking || isScramblingUA) {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789./()_";
+      const interval = setInterval(() => {
+        let result = "";
+        for (let i = 0; i < 60; i++) {
+          result += chars[Math.floor(Math.random() * chars.length)];
+        }
+        setScrambleText(result);
+      }, 50);
+      return () => clearInterval(interval);
+    }
+  }, [isMasking, isScramblingUA]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -66,7 +84,7 @@ export const IdentityMatrix: React.FC<Props> = ({
     setTimeout(() => setCopiedIp(false), 2000);
   };
 
-  const handleScramble = () => {
+  const handleScrambleMacLocal = () => {
     if (!onScrambleMac || isRotating || isMasking || isScramblingMac) return;
     setIsScramblingMac(true);
     setTimeout(() => {
@@ -75,43 +93,16 @@ export const IdentityMatrix: React.FC<Props> = ({
     }, 800);
   };
 
-  const openCityDetails = () => {
-    if (isRotating) return;
-    setIsFetchingCity(true);
+  const handleScrambleUALocal = () => {
+    if (!onScrambleUA || isRotating || isMasking || isScramblingUA) return;
+    setIsScramblingUA(true);
     setTimeout(() => {
-      setIsFetchingCity(false);
-      setShowCityDetails(true);
-    }, 600);
+      onScrambleUA();
+      setIsScramblingUA(false);
+    }, 800);
   };
 
-  const getCityDetails = (city: string) => {
-    const data: Record<string, any> = {
-      'Paris': { pop: '2.16M', region: 'Île-de-France', currency: 'Euro (€)', weather: '14°C Nuageux', icon: <Cloud className="w-3.5 h-3.5" />, isp: 'Orange Cyberdefense', reputation: '98%' },
-      'Zürich': { pop: '402K', region: 'Canton de Zurich', currency: 'Franc Suisse (CHF)', weather: '10°C Pluvieux', icon: <CloudRain className="w-3.5 h-3.5" />, isp: 'Swisscom Private', reputation: '99%' },
-      'Singapore': { pop: '5.6M', region: 'Central Region', currency: 'Dollar (SGD)', weather: '31°C Humide', icon: <Sun className="w-3.5 h-3.5" />, isp: 'Singtel Secure', reputation: '94%' },
-      'Reykjavik': { pop: '131K', region: 'Höfuðborgarsvæðið', currency: 'Couronne (ISK)', weather: '4°C Vent', icon: <CloudRain className="w-3.5 h-3.5" />, isp: 'Arctic Fibers', reputation: '99%' },
-      'Panama City': { pop: '880K', region: 'Panamá', currency: 'Balboa (PAB)', weather: '29°C Ensoleillé', icon: <Sun className="w-3.5 h-3.5" />, isp: 'LatAm Secure Gateway', reputation: '89%' },
-      'Tallinn': { pop: '426K', region: 'Harju', currency: 'Euro (€)', weather: '8°C Variable', icon: <Cloud className="w-3.5 h-3.5" />, isp: 'E-stonia Cloud', reputation: '97%' },
-    };
-    return data[city] || { pop: '150K+', region: 'District Local', currency: 'Global (USD)', weather: 'Stable', icon: <Sun className="w-3.5 h-3.5" />, isp: 'Générique', reputation: '95%' };
-  };
-
-  const cityInfo = getCityDetails(identity.city);
-  
-  const getLatencyColor = (ms: number) => {
-      if (ms < 50) return 'text-emerald-500';
-      if (ms < 120) return 'text-amber-500';
-      return 'text-red-500';
-  };
-
-  const currentUAData = REALISTIC_USER_AGENTS.find(ua => ua.short === identity.userAgentShort) || {
-    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    os: 'Detecting...',
-    browser: identity.userAgentShort,
-    build: 'N/A',
-    engine: 'Blink/WebKit',
-    preciseVersion: '124.0.0.0'
-  };
+  const currentUAData = REALISTIC_USER_AGENTS.find(ua => ua.short === identity.userAgentShort) || REALISTIC_USER_AGENTS[0];
 
   const isLAA = (mac: string) => {
       const clean = mac.replace(/[:.-]/g, '');
@@ -135,283 +126,256 @@ export const IdentityMatrix: React.FC<Props> = ({
           "E0D55E": "Giga-Byte",
           "525400": "QEMU Virtual"
       };
-      return vendors[prefix] || "Vendor Unknow";
+      return vendors[prefix] || "Vendor Unknown";
   };
 
   const isSmartDns = mode === ConnectionMode.SMART_DNS;
   const isMaskingDisabled = !isConnected || isSmartDns || isRotating || isMasking;
 
   return (
-    <div className="space-y-4 relative">
-      {/* Modal Détails Ville */}
-      {showCityDetails && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowCityDetails(false)}></div>
-            <div className="relative bg-white dark:bg-slate-900 w-full max-sm rounded-[2.5rem] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-6 bg-gradient-to-br from-brand-600 via-indigo-700 to-slate-900 text-white relative">
-                    <button onClick={() => setShowCityDetails(false)} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-                        <X className="w-4 h-4" />
-                    </button>
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/10 shadow-inner">
-                            <Building2 className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h4 className="text-xl font-black leading-none uppercase tracking-tight">{identity.city}</h4>
-                            <p className="text-white/60 text-[10px] font-bold flex items-center gap-1.5 mt-2 uppercase tracking-[0.2em]">
-                                <Globe className="w-3 h-3" /> {identity.country}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                            <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                <Users className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Population</span>
-                            </div>
-                            <div className="font-mono font-bold text-slate-700 dark:text-slate-200">{cityInfo.pop}</div>
-                        </div>
-                        <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                            <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                <MapIcon className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Région</span>
-                            </div>
-                            <div className="font-bold text-slate-700 dark:text-slate-200 text-xs truncate">{cityInfo.region}</div>
-                        </div>
-                        <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                            <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                <Thermometer className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Météo</span>
-                            </div>
-                            <div className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                                {cityInfo.icon} {cityInfo.weather}
-                            </div>
-                        </div>
-                        <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                            <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                <Clock className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Heure Locale</span>
-                            </div>
-                            <div className="font-mono font-bold text-slate-700 dark:text-slate-200">{localTime}</div>
-                        </div>
-                        <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                            <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                <Coins className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Devise</span>
-                            </div>
-                            <div className="font-bold text-slate-700 dark:text-slate-200 text-xs">{cityInfo.currency}</div>
-                        </div>
-                        <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                            <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                <ShieldEllipsis className="w-3 h-3" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Fiabilité</span>
-                            </div>
-                            <div className="font-bold text-emerald-500">{cityInfo.reputation}</div>
-                        </div>
-                    </div>
-                    
-                    <div className="p-4 bg-brand-500/5 rounded-2xl border border-brand-500/10">
-                        <div className="text-[9px] font-black uppercase tracking-widest text-brand-500 mb-1 flex items-center gap-2">
-                           <Network className="w-3 h-3" /> Nœud ISP : {cityInfo.isp}
-                        </div>
-                        <p className="text-[10px] text-slate-500 italic">Passerelle de sortie certifiée et auditée par Renumerate.</p>
-                    </div>
-
-                    <button 
-                        onClick={() => setShowCityDetails(false)}
-                        className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] mt-2 transition-all active:scale-95 shadow-xl hover:shadow-brand-500/10"
-                    >
-                        Fermer le rapport urbain
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* Matrix Dashboard */}
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      
+      {/* Primary Identity Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* IP Card */}
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
-          <div className="flex items-center justify-between mb-2">
+        {/* Virtual IP Display */}
+        <div className="glass-card p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-cyan-500/5 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-110 transition-transform"></div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
             <div className="flex items-center gap-3">
-              <Network className="w-4 h-4 text-brand-500" />
-              <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Adresse IP</span>
+              <div className="p-2 bg-cyan-500/10 rounded-xl text-cyan-600 dark:text-cyan-400">
+                <Network className="w-5 h-5" />
+              </div>
+              <span className="text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">Tunnel de Sortie</span>
             </div>
-            {copiedIp && <span className="text-[9px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded uppercase">Copié</span>}
-          </div>
-          <div className="flex items-center justify-between">
-            <div className={`font-mono text-lg font-bold tracking-wider ${isRotating ? 'text-brand-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
-               {isRotating ? 'RENUM...' : (isSmartDns ? 'LOCAL IP' : identity.ip)}
-            </div>
-            {!isRotating && (
-              <button onClick={handleCopyIp} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-brand-500 transition-all">
+            {copiedIp ? (
+              <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-full uppercase tracking-tighter animate-in zoom-in-50">Copié</span>
+            ) : (
+              <button onClick={handleCopyIp} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all text-slate-400">
                 <Copy className="w-4 h-4" />
               </button>
             )}
           </div>
+          <div className="relative z-10 flex flex-col">
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-[0.2em] mb-1">Adresse IP Virtuelle</span>
+            <div className={`font-mono text-2xl font-black tracking-widest ${isRotating ? 'text-cyan-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+               {isRotating ? 'RENUMERATING...' : (isSmartDns ? 'LOCAL_DNS_IP' : identity.ip)}
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Cryptage AES-256 Actif</span>
+            </div>
+          </div>
         </div>
 
-        {/* Location Card (Cliquable) */}
-        <div 
-          onClick={openCityDetails}
-          className={`bg-white dark:bg-slate-900 p-4 rounded-xl border transition-all active:scale-[0.98] relative overflow-hidden group shadow-sm ${
-            isRotating ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:border-brand-500 hover:ring-2 hover:ring-brand-500/10'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
+        {/* Node Location Display */}
+        <div className="glass-card p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl shadow-brand-500/5 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/5 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-110 transition-transform"></div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
             <div className="flex items-center gap-3">
-              <Globe className="w-4 h-4 text-brand-500" />
-              <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Passerelle de Sortie</span>
+              <div className="p-2 bg-brand-500/10 rounded-xl text-brand-600 dark:text-brand-400">
+                <Globe className="w-5 h-5" />
+              </div>
+              <span className="text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-widest">Localisation</span>
             </div>
-            <div className="flex items-center gap-1.5">
-                {isFetchingCity ? <Loader2 className="w-3.5 h-3.5 text-brand-500 animate-spin" /> : <div className="text-[9px] font-black text-brand-500 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-tighter">Détails <Info className="w-3 h-3" /></div>}
+            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-400">
+              <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className={`font-bold truncate text-sm flex items-center gap-2 ${isRotating ? 'text-brand-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
-            <Pin className="w-3.5 h-3.5 text-brand-500 shrink-0" />
-            <span className="border-b border-dotted border-slate-300 dark:border-slate-700 group-hover:border-brand-500 group-hover:text-brand-600 transition-all">
+          <div className="relative z-10 flex flex-col">
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-[0.2em] mb-1">Point de Terminaison</span>
+            <div className={`font-black tracking-tight text-xl ${isRotating ? 'text-brand-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
                 {identity.city}, {identity.country}
-            </span>
-          </div>
-        </div>
-
-        {/* Dedicated Masking Section */}
-        <div className={`bg-white dark:bg-slate-900 p-6 rounded-2xl border transition-all md:col-span-2 relative overflow-hidden ${isMasking ? 'border-indigo-500 ring-4 ring-indigo-500/10 shadow-indigo-500/5' : 'border-slate-200 dark:border-slate-800 shadow-sm'}`}>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-2xl transition-all ${isMasking ? 'bg-indigo-500/20 text-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.2)]' : 'bg-brand-600 text-white shadow-[0_4px_12px_rgba(8,145,178,0.3)]'}`}>
-                <Ghost className={`w-6 h-6 ${isMasking ? 'animate-pulse' : ''}`} />
-              </div>
-              <div>
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Footprint Protection</span>
-                  <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${hasMaskedOnce && isConnected ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
-                    {hasMaskedOnce && isConnected ? 'MASQUÉ' : 'VULNÉRABLE'}
-                  </div>
+            </div>
+            <div className="mt-3 flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-cyan-500" />
+                  <span className="text-[10px] font-bold text-slate-500 font-mono">{identity.latency}ms</span>
                 </div>
-                <h4 className="text-lg font-bold text-slate-900 dark:text-white mt-1">Masquage de l'empreinte</h4>
-              </div>
-            </div>
-            
-            <div className="flex flex-col items-end gap-2">
-                <button 
-                    onClick={(e) => { e.stopPropagation(); onMask?.(); }}
-                    disabled={isMaskingDisabled}
-                    className={`flex items-center justify-center gap-3 px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl active:scale-95 ${
-                        isMasking ? 'bg-indigo-500 text-white shadow-indigo-500/40' : isMaskingDisabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed' : 'bg-brand-600 text-white hover:bg-brand-700'
-                    }`}
-                >
-                    {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <EyeOff className="w-5 h-5" />}
-                    {isMasking ? 'SÉCURISATION...' : "Masquer l'empreinte"}
-                </button>
-                {isSmartDns && isConnected && (
-                    <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-1">
-                        <ShieldAlert className="w-3 h-3" /> Indisponible en mode Smart DNS
-                    </span>
-                )}
-                {!isConnected && (
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                        <Unplug className="w-3 h-3" /> Connexion VPN requise
-                    </span>
-                )}
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* User Agent Console */}
-            <div className={`bg-slate-50 dark:bg-slate-950 rounded-xl p-4 border transition-colors ${isMasking ? 'border-indigo-500/30' : 'border-slate-200/50 dark:border-slate-800/50'}`}>
-              <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between mb-3 uppercase tracking-widest">
-                  <div className="flex items-center gap-2"><Terminal className="w-3.5 h-3.5 text-brand-500" /><span>Browser Fingerprint</span></div>
-                  {isMasking && <span className="text-indigo-500 animate-pulse text-[8px] font-black">SPOOFING...</span>}
-              </div>
-              <div className={`text-xs font-mono font-medium break-all leading-relaxed h-12 overflow-hidden ${isMasking ? 'text-indigo-500 blur-[1px] animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
-                  {isRotating ? 'RENUMERATING...' : currentUAData.full}
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"><Monitor className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 truncate">OS: {(isMasking || isRotating) ? '???' : currentUAData.os}</span></div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"><Chrome className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 truncate">App: {(isMasking || isRotating) ? '???' : currentUAData.browser}</span></div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"><Cpu className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 truncate">Bld: {(isMasking || isRotating) ? '0.0' : currentUAData.build}</span></div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"><Activity className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 truncate">Eng: {(isMasking || isRotating) ? '???' : currentUAData.engine}</span></div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 col-span-2"><Globe2 className="w-3 h-3 text-slate-400" /><span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 truncate">Ver: {(isMasking || isRotating) ? '0.0.0.0' : currentUAData.preciseVersion}</span></div>
-              </div>
-            </div>
-            
-            {/* MAC Console with dedicated SCRAMBLER */}
-            <div className={`bg-slate-50 dark:bg-slate-950 rounded-xl p-4 border transition-colors ${isMasking || isScramblingMac ? 'border-indigo-500/30' : 'border-slate-200/50 dark:border-slate-800/50'}`}>
-              <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between mb-3 uppercase tracking-widest">
-                  <div className="flex items-center gap-2"><Fingerprint className="w-3.5 h-3.5 text-brand-500" /><span>Hardware Descriptor</span></div>
-                  <div className="flex items-center gap-2">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setForceLAA(!forceLAA); }}
-                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all text-[8px] font-black border ${forceLAA ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700'}`}
-                      >
-                         {forceLAA ? <ToggleRight className="w-3 h-3" /> : <ToggleLeft className="w-3 h-3" />}
-                         MODE LAA
-                      </button>
-                      <button 
-                        onClick={handleScramble}
-                        disabled={isMaskingDisabled || isScramblingMac}
-                        className={`p-1 rounded-lg transition-all ${isScramblingMac ? 'bg-indigo-500 text-white animate-spin' : 'bg-white dark:bg-slate-800 text-slate-500 hover:text-indigo-500 hover:shadow-lg active:scale-90 border border-slate-200 dark:border-slate-700'}`}
-                        title="Scramble MAC only"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                      </button>
-                  </div>
-              </div>
-              <div className={`text-sm sm:text-lg font-mono font-black tracking-widest h-12 flex items-center ${isMasking || isScramblingMac ? 'text-indigo-500 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
-                  {isRotating ? '---' : identity.mac}
-              </div>
-              <div className="mt-4 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className={`w-3.5 h-3.5 ${isLAA(identity.mac) ? 'text-indigo-500' : 'text-emerald-500'}`} />
-                      <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
-                          {getMacVendor(identity.mac).toUpperCase()}
-                      </span>
-                    </div>
-                    <div className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${isLAA(identity.mac) ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
-                      {isLAA(identity.mac) ? 'ANONYMAT MATÉRIEL' : 'SIGNATURE RÉELLE'}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-[9px] text-slate-500 leading-tight">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Statut Spoofing :</span> {isLAA(identity.mac) ? "L'adresse LAA empêche les routeurs publics de lister votre identifiant matériel unique." : "Adresse de constructeur légitime. Utilisez le Scrambler pour masquer cet ID physique."}
-                  </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Network Metrics */}
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm md:col-span-2">
-          <div className="flex items-center gap-3 mb-3">
-            <Activity className="w-4 h-4 text-brand-500" />
-            <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">Métriques de Session</span>
-          </div>
-          <div className="flex items-center justify-between">
-             <div className="flex flex-col">
-                <span className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Latence Passerelle</span>
-                <div className={`font-mono text-xl font-black ${getLatencyColor(identity.latency)}`}>{identity.latency}ms</div>
-             </div>
-             <div className="text-right">
-                <span className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Heure du Nœud</span>
-                <div className="text-sm font-bold text-emerald-500 flex items-center gap-1.5 justify-end font-mono">
-                    <Clock className="w-3.5 h-3.5" /> {localTime}
+                <div className="flex items-center gap-1.5">
+                  <ShieldIcon className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="text-[10px] font-bold text-slate-500 font-mono">{localTime}</span>
                 </div>
-             </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {securityReport && (
-        <div className="mt-4 p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom-2">
-            <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-emerald-500" /><h4 className="text-xs font-bold uppercase tracking-widest text-slate-500">Verdict de l'Expert IA</h4></div>
-                <div className={`px-2 py-0.5 rounded text-[10px] font-black ${securityReport.score > 80 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>CONFIANCE : {securityReport.score}%</div>
+      {/* Main Protection Card */}
+      <div className={`glass-card p-6 md:p-8 rounded-[2.5rem] border transition-all relative overflow-hidden ${isMasking ? 'border-indigo-500 ring-4 ring-indigo-500/10 shadow-2xl shadow-indigo-500/20 animate-glow' : 'border-slate-200 dark:border-slate-800 shadow-2xl shadow-slate-900/10'}`}>
+        
+        {/* Dynamic Background Effects */}
+        <div className="absolute inset-0 pointer-events-none opacity-20 dark:opacity-40">
+           <div className="absolute inset-0 cyber-grid"></div>
+           {isMasking && <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-cyan-500/10"></div>}
+           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent animate-scanline"></div>
+        </div>
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-10 relative z-10">
+          <div className="flex items-center gap-5">
+            <div className={`p-5 rounded-[2rem] transition-all transform ${isMasking ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 rotate-12 scale-110' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+              <Ghost className="w-8 h-8" />
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 italic leading-relaxed border-l-2 border-slate-300 dark:border-slate-700 pl-4">"{securityReport.analysis}"</p>
+            <div>
+              <div className="flex items-center gap-3">
+                <span className="text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-[0.3em]">Protection Empreinte</span>
+                <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 ${hasMaskedOnce && isConnected ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
+                  {hasMaskedOnce && isConnected ? (
+                    <><ShieldCheck className="w-3 h-3" /> MASQUÉ</>
+                  ) : (
+                    <><ShieldAlert className="w-3 h-3 animate-pulse" /> VULNÉRABLE</>
+                  )}
+                </div>
+              </div>
+              <h4 className="text-2xl font-black text-slate-900 dark:text-white mt-1.5">Anonymisation Avancée</h4>
+            </div>
+          </div>
+          
+          <div className="flex flex-col items-end gap-3">
+              <button 
+                  onClick={(e) => { e.stopPropagation(); onMask?.(); }}
+                  disabled={isMaskingDisabled}
+                  className={`flex items-center justify-center gap-4 px-10 py-4 rounded-[1.5rem] font-black text-sm uppercase tracking-[0.15em] transition-all shadow-2xl active:scale-95 ${
+                      isMasking 
+                        ? 'bg-indigo-600 text-white shadow-indigo-500/40' 
+                        : isMaskingDisabled 
+                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50' 
+                          : 'bg-cyan-600 text-white hover:bg-cyan-700 hover:-translate-y-1 shadow-cyan-500/30'
+                  }`}
+              >
+                  {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <EyeOff className="w-5 h-5" />}
+                  {isMasking ? 'RE-GÉNÉRATION...' : "Masquer l'empreinte"}
+              </button>
+              {isSmartDns && isConnected && (
+                  <div className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-3 py-1 rounded-lg uppercase tracking-wider flex items-center gap-2">
+                      <ShieldAlert className="w-3.5 h-3.5" /> Désactivé en Smart DNS
+                  </div>
+              )}
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
+          {/* User Agent Block */}
+          <div className={`p-6 rounded-3xl border transition-all ${isMasking || isScramblingUA ? 'bg-slate-900/50 border-indigo-500/40' : 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <Terminal className="w-4 h-4 text-cyan-500" />
+                <span className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest">Spoofing Navigateur</span>
+              </div>
+              <button 
+                onClick={handleScrambleUALocal}
+                disabled={isMaskingDisabled || isScramblingUA}
+                className="p-2 rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-cyan-500 transition-all border border-slate-200 dark:border-slate-700"
+              >
+                <RefreshCw className={`w-4 h-4 ${isScramblingUA ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            
+            <div className="font-mono text-[11px] leading-relaxed h-16 overflow-hidden relative">
+               <div className={`transition-opacity duration-300 ${isMasking || isScramblingUA ? 'opacity-0' : 'opacity-100'}`}>
+                  {currentUAData.full}
+               </div>
+               {(isMasking || isScramblingUA) && (
+                 <div className="absolute inset-0 text-indigo-500 break-all font-bold animate-pulse">
+                    {scrambleText}
+                 </div>
+               )}
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+               {[
+                 { icon: Monitor, label: 'Système', val: currentUAData.os },
+                 { icon: Chrome, label: 'Navigateur', val: currentUAData.browser },
+                 { icon: Cpu, label: 'Build ID', val: currentUAData.build },
+                 { icon: Globe2, label: 'Moteur', val: currentUAData.engine }
+               ].map((item, i) => (
+                 <div key={i} className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                   <item.icon className="w-4 h-4 text-slate-400 shrink-0" />
+                   <div className="min-w-0">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">{item.label}</p>
+                      <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{(isMasking || isScramblingUA) ? '???' : item.val}</p>
+                   </div>
+                 </div>
+               ))}
+            </div>
+          </div>
+          
+          {/* MAC Address Block */}
+          <div className={`p-6 rounded-3xl border transition-all ${isMasking || isScramblingMac ? 'bg-slate-900/50 border-indigo-500/40' : 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <Fingerprint className="w-4 h-4 text-cyan-500" />
+                <span className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest">Usurpation Matérielle</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setForceLAA(!forceLAA)}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-black border transition-all ${forceLAA ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}
+                >
+                  LAA
+                </button>
+                <button 
+                  onClick={handleScrambleMacLocal}
+                  disabled={isMaskingDisabled || isScramblingMac}
+                  className="p-2 rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-cyan-500 transition-all border border-slate-200 dark:border-slate-700"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isScramblingMac ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+            
+            <div className={`text-2xl font-mono font-black tracking-[0.2em] h-16 flex items-center justify-center ${isMasking || isScramblingMac ? 'text-indigo-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+                {isRotating ? '--:--:--' : identity.mac}
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3">
+               <div className="flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <ShieldCheck className={`w-5 h-5 ${isLAA(identity.mac) ? 'text-indigo-500' : 'text-emerald-500'}`} />
+                    <div className="flex flex-col">
+                       <span className="text-[9px] font-black text-slate-400 uppercase">Constructeur Détecté</span>
+                       <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{getMacVendor(identity.mac)}</span>
+                    </div>
+                  </div>
+                  <div className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${isLAA(identity.mac) ? 'bg-indigo-500/10 text-indigo-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+                    {isLAA(identity.mac) ? 'ANONYME' : 'VISIBLE'}
+                  </div>
+               </div>
+               <div className="px-4 py-3 bg-brand-500/5 border border-brand-500/10 rounded-2xl">
+                  <p className="text-[10px] text-slate-500 leading-tight italic">
+                    {isLAA(identity.mac) 
+                      ? "L'adresse LAA empêche l'identification physique de votre carte réseau." 
+                      : "Utilisez le mode LAA pour briser la corrélation matérielle sur les réseaux publics."}
+                  </p>
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Security AI Report (Expert Opinion) */}
+      {securityReport && (
+        <div className="glass-card p-6 rounded-[2rem] border border-emerald-500/20 bg-emerald-500/5 animate-in slide-in-from-bottom-2 duration-700">
+           <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-500/30">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                   <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Rapport d'Expert IA</h4>
+                   <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Analyse en temps réel de votre tunnel</p>
+                </div>
+              </div>
+              <div className="flex items-baseline gap-1">
+                 <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{securityReport.score}</span>
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">/100</span>
+              </div>
+           </div>
+           <div className="p-4 bg-white/50 dark:bg-slate-950/50 rounded-2xl border border-emerald-500/10 relative">
+              <Terminal className="absolute top-3 right-3 w-3 h-3 text-emerald-500/30" />
+              <p className="text-xs text-slate-600 dark:text-slate-400 italic leading-relaxed pl-4 border-l-2 border-emerald-500/30">
+                "{securityReport.analysis}"
+              </p>
+           </div>
         </div>
       )}
     </div>

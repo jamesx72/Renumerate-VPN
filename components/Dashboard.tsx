@@ -37,10 +37,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [fastOnly, setFastOnly] = useState<boolean>(false);
 
   const modes = [
-    { id: ConnectionMode.STANDARD, icon: Shield, label: 'Standard', desc: 'Équilibre parfait' },
-    { id: ConnectionMode.STEALTH, icon: Ghost, label: 'Stealth', desc: 'Furtivité totale' },
-    { id: ConnectionMode.DOUBLE_HOP, icon: Layers, label: 'Double Hop', desc: 'Double tunnel' },
-    { id: ConnectionMode.SMART_DNS, icon: Globe, label: 'Smart DNS', desc: 'Vitesse max' },
+    { id: ConnectionMode.STANDARD, icon: Shield, label: 'Standard', desc: 'Protection équilibrée' },
+    { id: ConnectionMode.STEALTH, icon: Ghost, label: 'Stealth', desc: 'Contournement DPI' },
+    { id: ConnectionMode.DOUBLE_HOP, icon: Layers, label: 'Double Hop', desc: 'Cascade multi-nœuds' },
+    { id: ConnectionMode.SMART_DNS, icon: Globe, label: 'Smart DNS', desc: 'Vitesse de streaming' },
   ];
 
   const countriesWithFlags: Record<string, string> = {
@@ -78,24 +78,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const nodesToShow = filteredNodes.slice(0, 10);
 
   return (
-    <div className="space-y-6">
-      {/* Mode Selector Section */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
-        <div className="flex items-center justify-between mb-5 px-1">
-           <div className="flex flex-col">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5 text-brand-500" /> Mode de Connexion
-              </h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">Routage dynamique sécurisé</p>
-           </div>
-           
-           <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${isConnected ? 'bg-amber-500/10 border-amber-500/20 text-amber-600' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600'}`}>
-              {isConnected ? <Lock className="w-3 h-3" /> : <Check className="w-3 h-3" />}
-              <span className="text-[9px] font-bold uppercase">{isConnected ? 'Tunnel Actif' : 'Disponible'}</span>
-           </div>
-        </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
+      
+      {/* Mode Navigation Bar */}
+      <div className="glass-card p-2 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-xl shadow-cyan-500/5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           {modes.map((m) => {
             const Icon = m.icon;
             const isActive = mode === m.id;
@@ -104,129 +91,111 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 key={m.id}
                 onClick={() => onModeChange(m.id)}
                 disabled={isConnected}
-                className={`flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all relative ${
+                className={`flex flex-col items-center justify-center gap-2 p-4 rounded-[1.5rem] transition-all relative group ${
                   isActive
-                    ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/25 scale-[1.02]'
-                    : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-brand-400 dark:hover:border-brand-500/50'
-                } ${isConnected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-md'}`}
+                    ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/20 active:scale-95'
+                    : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50'
+                } ${isConnected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                <div className={`p-2 rounded-xl transition-colors ${isActive ? 'bg-white/20' : 'bg-white dark:bg-slate-800 shadow-sm'}`}>
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-brand-500'}`} />
-                </div>
-                <div className="text-center">
-                  <div className={`text-xs font-bold tracking-tight ${isActive ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>{m.label}</div>
-                  <div className={`text-[9px] mt-0.5 leading-tight ${isActive ? 'text-brand-100' : 'text-slate-400'}`}>{m.desc}</div>
-                </div>
+                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-cyan-500'}`} />
+                <span className={`text-[11px] font-black uppercase tracking-widest ${isActive ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>
+                  {m.label}
+                </span>
+                {isActive && <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full"></div>}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Network Map Section with Enhanced Filtering */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-4 gap-4">
-          <div className="flex flex-col">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
-              <Share2 className="w-3.5 h-3.5 text-brand-500" /> Topologie Réseau
+      {/* Analytics Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 glass-card p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden relative">
+           <div className="absolute top-0 right-0 p-3 flex items-center gap-2">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Protocol:</span>
+              <span className="text-[10px] font-black text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded-full">{protocol.toUpperCase()}</span>
+           </div>
+           <div className="flex items-center gap-2 mb-6">
+              <Activity className="w-4 h-4 text-cyan-500" />
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Moniteur de Flux</h3>
+           </div>
+           <TrafficMonitor isDark={isDark} />
+        </div>
+        
+        <div className="glass-card p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col justify-center items-center">
+           <div className="flex items-center gap-2 mb-6 self-start">
+              <Zap className="w-4 h-4 text-cyan-500" />
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Indice d'Anonymat</h3>
+           </div>
+           <AnonymityScore 
+              score={isEmergency ? 10 : (securityReport?.score || (isConnected ? (userPlan === 'free' ? 75 : 99) : 0))} 
+              isDark={isDark} 
+           />
+        </div>
+      </div>
+
+      {/* Global Network Explorer */}
+      <div className="glass-card p-6 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl relative group">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 relative z-10">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+              <Share2 className="w-4 h-4 text-cyan-500" /> Cartographie Topologique
             </h3>
-            <p className="text-[10px] text-slate-400 mt-0.5">Exploration des points de terminaison par localisation</p>
+            <p className="text-[10px] text-slate-400 mt-1">Exploration des clusters de sortie mondiaux</p>
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
-             {/* Country Select Filter */}
              <div className="relative group">
-                <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 group-hover:text-brand-500 transition-colors" />
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-hover:text-cyan-500 transition-colors" />
                 <select 
                   value={countryFilter}
                   onChange={(e) => setCountryFilter(e.target.value)}
-                  className="pl-8 pr-10 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-bold uppercase tracking-wider outline-none focus:border-brand-500 transition-all dark:text-white appearance-none cursor-pointer min-w-[140px]"
+                  className="pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-cyan-500 transition-all dark:text-white appearance-none cursor-pointer min-w-[160px]"
                 >
                   {availableCountries.map(country => (
                     <option key={country} value={country}>
-                      {country === 'Tous' ? 'Tous les pays' : country}
+                      {country === 'Tous' ? 'Réseau Global' : country}
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
              </div>
-
-             {/* Search Bar */}
-             <div className="relative group">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 group-hover:text-brand-500 transition-colors" />
-                <input 
-                  type="text"
-                  placeholder="Nom ou IP..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] w-32 md:w-40 focus:w-56 transition-all outline-none focus:border-brand-500 dark:text-white"
-                />
-             </div>
-
-             {/* Fast Only Toggle */}
+             
              <button 
                onClick={() => setFastOnly(!fastOnly)}
-               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-bold transition-all ${
+               className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl border text-[10px] font-black uppercase tracking-widest transition-all ${
                  fastOnly 
-                  ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/20' 
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-brand-500/50'
+                  ? 'bg-cyan-500 border-cyan-500 text-white shadow-lg shadow-cyan-500/30' 
+                  : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-cyan-500/50'
                }`}
              >
-               <Gauge className="w-3.5 h-3.5" />
-               <span className="hidden md:inline">Optimisé</span>
+               <Gauge className="w-4 h-4" />
+               Performance
              </button>
           </div>
         </div>
 
-        {/* Quick Country Chips Filter */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 custom-scrollbar scroll-smooth no-scrollbar">
-            {availableCountries.map(country => {
-                const count = nodes.filter(n => n.country === country).length;
-                return (
-                    <button
-                        key={country}
-                        onClick={() => setCountryFilter(country)}
-                        className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 group ${
-                            countryFilter === country 
-                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-lg scale-105 z-10' 
-                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-brand-500/50'
-                        }`}
-                    >
-                        <span className="text-sm leading-none transition-transform group-hover:scale-125">{countriesWithFlags[country] || '🚩'}</span>
-                        {country}
-                        {country !== 'Tous' && (
-                            <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[8px] font-mono ${countryFilter === country ? 'bg-white/10 dark:bg-black/10' : 'bg-slate-100 dark:bg-slate-900'}`}>
-                                {count}
-                            </span>
-                        )}
-                    </button>
-                );
-            })}
-        </div>
-
-        <div className="relative h-72 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800/50 overflow-hidden flex items-center justify-center transition-all duration-500">
-          {/* Grid Background */}
-          <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]" 
-               style={{ backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
+        <div className="relative h-80 bg-slate-50 dark:bg-slate-950/40 rounded-[2rem] border border-slate-100 dark:border-slate-800 flex items-center justify-center overflow-hidden transition-all duration-700">
+          {/* Cyber Patterns */}
+          <div className="absolute inset-0 cyber-grid opacity-20"></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/5 to-transparent pointer-events-none"></div>
           
-          {/* Center (USER) */}
-          <div className="relative z-10">
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center border-2 transition-all duration-500 ${
-                isConnected ? 'bg-brand-500/10 border-brand-500 shadow-lg shadow-brand-500/20' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+          {/* Client Node */}
+          <div className="relative z-10 flex flex-col items-center">
+            <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center border-2 transition-all duration-500 transform ${
+                isConnected ? 'bg-cyan-500/10 border-cyan-500 shadow-xl shadow-cyan-500/20 scale-110' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'
             }`}>
-              <Smartphone className={`w-6 h-6 ${isConnected ? 'text-brand-500 animate-pulse' : 'text-slate-400'}`} />
+              <Smartphone className={`w-7 h-7 ${isConnected ? 'text-cyan-500 animate-pulse' : 'text-slate-400'}`} />
             </div>
             {isConnected && (
-                <div className="absolute -bottom-1 -right-1 p-1 bg-brand-500 rounded-full text-white shadow-lg">
-                    <Check className="w-3 h-3" />
-                </div>
+                <div className="mt-2 px-2 py-0.5 bg-cyan-500 text-white text-[8px] font-black uppercase rounded-full shadow-lg">Link Active</div>
             )}
           </div>
 
-          {/* Orbiting Nodes */}
-          {nodesToShow.length > 0 ? nodesToShow.map((node, idx) => {
+          {/* Orbiting Satellite Nodes */}
+          {nodesToShow.map((node, idx) => {
             const angle = (idx / nodesToShow.length) * 2 * Math.PI;
-            const radius = 100;
+            const radius = 110;
             const x = Math.cos(angle) * radius;
             const y = Math.sin(angle) * radius;
             const isNodeConnected = isConnected && currentIp === node.ip;
@@ -237,112 +206,58 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div 
                 key={node.id}
                 style={{ transform: `translate(${x}px, ${y}px)` }}
-                className="absolute transition-all duration-700 animate-in fade-in zoom-in"
+                className="absolute transition-all duration-1000 group/node"
                 onMouseEnter={() => setHoveredNode(node.id)}
                 onMouseLeave={() => setHoveredNode(null)}
               >
-                {/* Connection Line */}
+                {/* Visual Connection Link */}
                 <div 
-                  className={`absolute top-1/2 left-1/2 h-0.5 origin-left transition-all duration-500 ${
-                    isNodeConnected ? 'bg-brand-500/40 w-[100px]' : isHovered ? 'bg-brand-500/20 w-[100px]' : 'bg-slate-200 dark:bg-slate-800/10 w-0'
+                  className={`absolute top-1/2 left-1/2 h-px origin-left transition-all duration-500 ${
+                    isNodeConnected ? 'bg-cyan-500/40 w-[110px]' : isHovered ? 'bg-cyan-500/20 w-[110px]' : 'bg-transparent w-0'
                   }`}
                   style={{ transform: `rotate(${angle + Math.PI}rad) translateY(-50%)` }}
                 ></div>
 
                 <button
                   onClick={() => onConnectNode(node.id)}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all border-2 relative z-20 ${
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all border-2 relative z-20 hover:-translate-y-1 ${
                     isNodeConnected 
-                        ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/30 ring-4 ring-brand-500/10' 
+                        ? 'bg-cyan-500 border-cyan-500 text-white shadow-xl shadow-cyan-500/30 ring-4 ring-cyan-500/10' 
                         : isRecommended
-                            ? 'bg-white dark:bg-slate-900 border-amber-400 text-amber-500 shadow-lg shadow-amber-500/10'
-                            : isHovered
-                                ? 'bg-white dark:bg-slate-800 border-brand-500 text-brand-500 scale-110 shadow-lg'
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'
+                            ? 'bg-white dark:bg-slate-900 border-amber-400 text-amber-500 shadow-xl shadow-amber-500/10'
+                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:border-cyan-500'
                   }`}
                 >
                   <Server className="w-4 h-4" />
+                  <span className="absolute -top-1.5 -right-1.5 text-xs drop-shadow-sm">{countriesWithFlags[node.country] || '🚩'}</span>
                   
-                  <div className="absolute -top-1 -right-1 text-[10px] drop-shadow-sm transition-transform group-hover:scale-125">
-                      {countriesWithFlags[node.country] || '🚩'}
-                  </div>
-
-                  {isRecommended && !isNodeConnected && (
-                    <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-amber-400 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
-                        <Sparkles className="w-1.5 h-1.5 text-white" />
-                    </div>
-                  )}
-
-                  {/* Tooltip */}
                   {isHovered && (
-                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-3 py-1.5 rounded-lg shadow-xl text-[10px] whitespace-nowrap animate-in fade-in zoom-in-90 z-30 border border-slate-700">
-                        <div className="font-bold flex items-center gap-1.5">
-                            {node.name} {isRecommended && <span className="text-[8px] text-amber-400 font-black">OPTICAL</span>}
+                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 glass-card border border-slate-200 dark:border-slate-700 p-2.5 rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200 z-30">
+                        <div className="text-[10px] font-black uppercase text-slate-500 mb-1">{node.name}</div>
+                        <div className="flex items-center gap-2">
+                           <span className="text-[10px] font-mono font-bold text-cyan-500">{node.latency}ms</span>
+                           <span className="text-[10px] font-bold text-slate-400">{node.ip}</span>
                         </div>
-                        <div className="opacity-70 font-mono mt-0.5 text-[9px] flex items-center gap-1">
-                             <Navigation className="w-2.5 h-2.5" /> {node.country} • {node.latency}ms
-                        </div>
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900"></div>
                     </div>
                   )}
                 </button>
               </div>
             );
-          }) : (
-            <div className="flex flex-col items-center gap-2 text-slate-400 animate-in fade-in zoom-in duration-500">
-                <div className="p-4 bg-slate-200/50 dark:bg-slate-800/50 rounded-full mb-2">
-                    <AlertCircle className="w-8 h-8 opacity-30" />
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] italic">Aucun nœud actif trouvé</span>
-                <p className="text-[9px] text-slate-500 max-w-[180px] text-center leading-relaxed">Désolé, aucun point de terminaison ne correspond à vos filtres actuels ({countryFilter}).</p>
-                <button 
-                  onClick={() => { setCountryFilter('Tous'); setSearchQuery(''); setFastOnly(false); }} 
-                  className="text-[9px] font-bold text-brand-500 hover:text-brand-400 underline mt-2 uppercase tracking-widest"
-                >
-                    Réinitialiser les filtres
-                </button>
-            </div>
-          )}
+          })}
         </div>
-        
-        {/* Recommended Node Quick Action */}
+
+        {/* Floating Quick Action */}
         {recommendedNodeId && currentIp !== nodes.find(n => n.id === recommendedNodeId)?.ip && (
-            <div className="mt-4 flex justify-center">
+            <div className="mt-6 flex justify-center">
                 <button 
                     onClick={() => onConnectNode(recommendedNodeId)}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all group"
+                    className="flex items-center gap-3 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-2xl hover:scale-105 active:scale-95 transition-all group"
                 >
                     <Sparkles className="w-4 h-4 text-amber-500 group-hover:animate-spin" />
-                    Bascule sur le nœud optimal ({nodes.find(n => n.id === recommendedNodeId)?.country})
+                    Optimiser la sortie ({nodes.find(n => n.id === recommendedNodeId)?.country})
                 </button>
             </div>
         )}
-      </div>
-
-      {/* Analytics Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm font-bold uppercase tracking-wider">
-              <Activity className="w-4 h-4 text-brand-500" /> Flux Réseau
-            </h3>
-            <span className="text-[9px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md text-slate-500 font-mono font-bold">{protocol.toUpperCase()}</span>
-          </div>
-          <TrafficMonitor isDark={isDark} />
-        </div>
-        
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm font-bold uppercase tracking-wider">
-              <Lock className="w-4 h-4 text-brand-500" /> Confidentialité
-            </h3>
-            {isConnected && <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>}
-          </div>
-          <AnonymityScore 
-              score={isEmergency ? 10 : (securityReport?.score || (isConnected ? (userPlan === 'free' ? 75 : 99) : 0))} 
-              isDark={isDark} 
-          />
-        </div>
       </div>
     </div>
   );
