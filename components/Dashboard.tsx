@@ -110,7 +110,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Analytics Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 glass-card p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden relative">
+        <div className="lg:col-span-2 glass-card p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden relative min-w-0">
            <div className="absolute top-0 right-0 p-3 flex items-center gap-2">
               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Protocol:</span>
               <span className="text-[10px] font-black text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded-full">{protocol.toUpperCase()}</span>

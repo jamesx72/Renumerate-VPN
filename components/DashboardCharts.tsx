@@ -14,8 +14,8 @@ interface ChartProps {
 
 export const TrafficMonitor = ({ isDark }: ChartProps) => {
   return (
-    <div className="relative w-full overflow-hidden" style={{ minWidth: '0', height: '192px', flexGrow: 1 }}>
-      <ResponsiveContainer width="99.9%" height="100%" debounce={100}>
+    <div className="w-full h-48 min-w-0 overflow-hidden">
+      <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={trafficData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="colorDown" x1="0" y1="0" x2="0" y2="1">
@@ -47,7 +47,7 @@ export const TrafficMonitor = ({ isDark }: ChartProps) => {
             fillOpacity={1} 
             fill="url(#colorDown)" 
             strokeWidth={2} 
-            isAnimationActive={true}
+            isAnimationActive={false}
           />
           <Area 
             type="monotone" 
@@ -56,7 +56,7 @@ export const TrafficMonitor = ({ isDark }: ChartProps) => {
             fillOpacity={1} 
             fill="url(#colorUp)" 
             strokeWidth={2} 
-            isAnimationActive={true}
+            isAnimationActive={false}
           />
         </AreaChart>
       </ResponsiveContainer>
