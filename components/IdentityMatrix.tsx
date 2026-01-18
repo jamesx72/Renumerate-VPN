@@ -7,7 +7,8 @@ import {
   Loader2, Clock, Chrome, RefreshCw, 
   Hash, Sparkles, CheckCircle2, Globe2,
   Cpu, Activity, Target, ShieldCheck, Orbit, Lock, ArrowRight,
-  Shield, Zap, Radio, BarChart3, Scan, Layers, Tv, Binary, ChevronRight
+  Shield, Zap, Radio, BarChart3, Scan, Layers, Tv, Binary, ChevronRight,
+  MapPin, Users, Thermometer, Cloud, Info, X
 } from 'lucide-react';
 
 interface Props {
@@ -23,6 +24,13 @@ interface Props {
   macFormat?: 'standard' | 'hyphen' | 'cisco' | 'random';
   onFormatChange?: (format: 'standard' | 'hyphen' | 'cisco' | 'random') => void;
 }
+
+// Données géographiques étendues pour l'immersion
+const CITY_METADATA: Record<string, any> = {
+  'Paris': { population: '2.1M', region: 'Île-de-France', weather: 'Nuageux', temp: '14°C', threat: 'Bas' },
+  'Zürich': { population: '415k', region: 'Canton de Zurich', weather: 'Dégagé', temp: '11°C', threat: 'Minimal' },
+  'Singapore': { population: '5.6M', region: 'Central Region', weather: 'Orageux', temp: '29°C', threat: 'Moyen' },
+};
 
 export const IdentityMatrix: React.FC<Props> = ({ 
   identity, 
@@ -43,6 +51,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [scrambleText, setScrambleText] = useState('');
   const [entropy, setEntropy] = useState('0.00');
   const [signature, setSignature] = useState('0x' + Math.random().toString(16).slice(2, 10).toUpperCase());
+  const [showCityModal, setShowCityModal] = useState(false);
 
   const isOnion = mode === ConnectionMode.ONION_VORTEX;
   const isSmartDNS = mode === ConnectionMode.SMART_DNS;
@@ -104,6 +113,8 @@ export const IdentityMatrix: React.FC<Props> = ({
     accent: isOnion ? 'bg-purple-500' : isSmartDNS ? 'bg-amber-500' : 'bg-cyan-500'
   };
 
+  const currentCityData = CITY_METADATA[identity.city] || { population: 'N/A', region: 'N/A', weather: 'Stable', temp: 'N/A', threat: 'Inconnu' };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-1000">
       
@@ -111,7 +122,6 @@ export const IdentityMatrix: React.FC<Props> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* IP Info HUD */}
         <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.border} relative overflow-hidden group transition-all duration-500 hover:translate-y-[-2px] ${theme.glow}`}>
-          {/* Cyber Decor Brackets */}
           <div className={`absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 ${theme.borderStrong} rounded-tl-[2.5rem] opacity-30`}></div>
           <div className={`absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 ${theme.borderStrong} rounded-br-[2.5rem] opacity-30`}></div>
           
@@ -142,19 +152,23 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Geo Context HUD */}
-        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.border} relative overflow-hidden group transition-all duration-500 hover:translate-y-[-2px] ${theme.glow}`}>
+        {/* Geo Context HUD cliquable */}
+        <div 
+          className={`glass-card p-6 rounded-[2.5rem] border ${theme.border} relative overflow-hidden group transition-all duration-500 hover:translate-y-[-2px] ${theme.glow} cursor-pointer group/geo`}
+          onClick={() => !isRotating && setShowCityModal(true)}
+        >
            <div className={`absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 ${theme.borderStrong} rounded-tr-[2.5rem] opacity-30`}></div>
            <div className={`absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 ${theme.borderStrong} rounded-bl-[2.5rem] opacity-30`}></div>
            
            <div className="flex justify-between items-start relative z-10">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                 <Globe className={`w-4 h-4 ${theme.secondary}`} />
+                 <Globe className={`w-4 h-4 ${theme.secondary} group-hover/geo:rotate-180 transition-transform duration-700`} />
                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Satellite_Relay</span>
               </div>
-              <div className={`text-2xl font-black tracking-tight ${isRotating ? 'blur-sm' : 'text-slate-900 dark:text-white'}`}>
+              <div className={`text-2xl font-black tracking-tight flex items-center gap-2 ${isRotating ? 'blur-sm' : 'text-slate-900 dark:text-white'}`}>
                 {identity.city}, <span className={`${theme.secondary}`}>{identity.country}</span>
+                <Info className="w-4 h-4 text-slate-400 opacity-0 group-hover/geo:opacity-100 transition-opacity" />
               </div>
             </div>
             <div className="flex flex-col items-end">
@@ -177,16 +191,93 @@ export const IdentityMatrix: React.FC<Props> = ({
                  </div>
              </div>
              <div className="flex gap-0.5 items-end h-6">
-                {[...Array(8)].map((_, i) => (
-                    <div key={i} className={`w-1 rounded-full ${i < 6 ? theme.accent : 'bg-slate-700'}`} style={{height: `${(i+1)*12}%`}}></div>
+                {/* Fixed: Use Array.from to avoid spread operator issue and fix potential callable expression error on line 195 */}
+                {Array.from({ length: 8 }).map((_, i) => (
+                    <div 
+                      key={i} 
+                      className={`w-1 rounded-full ${i < 6 ? theme.accent : 'bg-slate-700'}`} 
+                      style={{ height: `${(i+1)*12}%` }}
+                    ></div>
                 ))}
              </div>
           </div>
+
+          {/* Modal Geo-HUD interne */}
+          {showCityModal && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={(e) => {e.stopPropagation(); setShowCityModal(false);}}>
+               <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-md"></div>
+               <div 
+                 className="relative w-full max-w-sm glass-card p-8 rounded-[3rem] border border-cyan-500/30 shadow-2xl animate-in zoom-in-95 duration-300 bracket-corner text-white"
+                 onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="absolute top-0 right-0 p-6">
+                     <button onClick={() => setShowCityModal(false)} className="p-2 hover:bg-white/10 rounded-full text-slate-400 transition-colors">
+                        <X className="w-5 h-5" />
+                     </button>
+                  </div>
+
+                  <div className="flex items-center gap-4 mb-8">
+                     <div className="p-4 bg-cyan-600 text-white rounded-2xl shadow-lg">
+                        <MapPin className="w-8 h-8" />
+                     </div>
+                     <div>
+                        <h4 className="text-[10px] font-black text-cyan-500 uppercase tracking-[0.4em]">Local_Metadata</h4>
+                        <h3 className="text-2xl font-black uppercase tracking-tight">{identity.city}</h3>
+                     </div>
+                  </div>
+
+                  <div className="space-y-4">
+                     <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <div className="flex items-center gap-3">
+                           <Users className="w-4 h-4 text-cyan-400" />
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Population</span>
+                        </div>
+                        <span className="font-mono font-black text-sm">{currentCityData.population}</span>
+                     </div>
+
+                     <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <div className="flex items-center gap-3">
+                           <Globe2 className="w-4 h-4 text-emerald-400" />
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Région</span>
+                        </div>
+                        <span className="font-black text-[11px] uppercase tracking-tighter">{currentCityData.region}</span>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex flex-col items-center">
+                           <Thermometer className="w-5 h-5 text-amber-500 mb-2" />
+                           <span className="text-[9px] font-black text-slate-500 uppercase mb-1">Température</span>
+                           <span className="font-mono font-black text-lg">{currentCityData.temp}</span>
+                        </div>
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex flex-col items-center">
+                           <Cloud className="w-5 h-5 text-blue-400 mb-2" />
+                           <span className="text-[9px] font-black text-slate-500 uppercase mb-1">Météo</span>
+                           <span className="font-black text-xs uppercase">{currentCityData.weather}</span>
+                        </div>
+                     </div>
+
+                     <div className="mt-6 pt-6 border-t border-white/5 flex flex-col gap-3">
+                        <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest">
+                           <span className="text-slate-500">Risque Interception_OSINT</span>
+                           <span className={currentCityData.threat === 'Bas' ? 'text-emerald-500' : 'text-amber-500'}>{currentCityData.threat}</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                           <div 
+                             className={`h-full ${currentCityData.threat === 'Bas' ? 'bg-emerald-500' : 'bg-amber-500'}`} 
+                             style={{ width: currentCityData.threat === 'Bas' ? '15%' : '45%' }}
+                            ></div>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main Tactical Interface */}
-      <div className={`glass-card p-1 relative rounded-[3.5rem] border transition-all duration-1000 overflow-hidden group/panel ${isMasking ? 'border-brand-500 shadow-[0_0_80px_rgba(6,182,212,0.15)]' : `border-slate-800 shadow-2xl hover:${theme.borderStrong}`}`}>
+      {/* Fixed: Replaced complex template literal with concatenation to avoid parsing errors in some environments */}
+      <div className={"glass-card p-1 relative rounded-[3.5rem] border transition-all duration-1000 overflow-hidden group/panel " + (isMasking ? "border-brand-500 shadow-[0_0_80px_rgba(6,182,212,0.15)]" : "border-slate-800 shadow-2xl hover:" + theme.borderStrong)}>
         
         {/* Animated Scanline Overlay */}
         <div className={`absolute left-0 right-0 h-[3px] z-30 pointer-events-none opacity-40 ${isOnion ? 'bg-purple-500 shadow-[0_0_15px_purple]' : isSmartDNS ? 'bg-amber-500 shadow-[0_0_15px_amber]' : 'bg-cyan-500 shadow-[0_0_15px_cyan]'} animate-cyber-scan`}></div>
@@ -218,7 +309,6 @@ export const IdentityMatrix: React.FC<Props> = ({
                 disabled={isMaskingDisabled}
                 className={`relative px-16 py-7 rounded-[2.5rem] font-black text-sm uppercase tracking-[0.4em] overflow-hidden group/btn transition-all duration-500 shadow-2xl active:scale-95 disabled:opacity-30 ${isMasking ? 'bg-indigo-600 text-white cursor-wait' : theme.accent + ' hover:opacity-90 text-white'}`}
              >
-                {/* Shimmer Effect */}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700"></div>
                 
                 <div className="flex items-center gap-4 relative z-10">
@@ -305,7 +395,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                         </div>
                       ) : identity.mac}
                       {!isMasking && isConnected && (
-                         <div className="absolute -right-14 opacity-0 group-hover/card:opacity-100 p-2 text-brand-500 hover:scale-125 transition-all drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]">
+                         <div className="absolute -right-14 opacity-0 group-hover/card:opacity-100 p-2 text-brand-500 hover:scale-125 transition-all drop-shadow-[0_0_80px_rgba(6,182,212,0.4)]">
                             <RefreshCw className="w-6 h-6" />
                          </div>
                       )}

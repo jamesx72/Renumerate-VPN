@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck } from 'lucide-react';
+import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck, History } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { PricingModal } from './components/PricingModal';
@@ -11,8 +11,9 @@ import { SecurityAudit } from './components/SecurityAudit';
 import { AuthScreen } from './components/AuthScreen';
 import { VerificationModal } from './components/VerificationModal';
 import { IdentityAssistant } from './components/IdentityAssistant';
+import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac, MOCK_NODES } from './constants';
-import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, DeviceNode } from './types';
+import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, DeviceNode, ConnectionSession } from './types';
 import { analyzeSecurity } from './services/geminiService';
 
 function App() {
@@ -35,6 +36,8 @@ function App() {
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
+  const [showConnectionHistory, setShowConnectionHistory] = useState(false);
+  const [connectionHistory, setConnectionHistory] = useState<ConnectionSession[]>([]);
   
   const [appSettings, setAppSettings] = useState<AppSettings>({
     protocol: 'wireguard',
@@ -84,6 +87,19 @@ function App() {
     setTimeout(async () => {
       setIsConnected(true);
       addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success');
+      
+      // Save to connection history
+      const newSession: ConnectionSession = {
+        id: Math.random().toString(36).substr(2, 9),
+        serverCountry: currentIdentity.country,
+        serverIp: currentIdentity.ip,
+        startTime: Date.now(),
+        protocol: appSettings.protocol,
+        mode: mode,
+        durationString: 'En cours...'
+      };
+      setConnectionHistory(prev => [newSession, ...prev]);
+
       const report = await analyzeSecurity(mode, currentIdentity.country, currentIdentity.ip);
       setSecurityReport(report);
     }, 1200);
@@ -93,6 +109,15 @@ function App() {
     setIsDisconnecting(true);
     addLog('Fermeture sécurisée du tunnel...', 'warning');
     setTimeout(() => {
+      // Update last session duration on disconnect
+      setConnectionHistory(prev => {
+        if (prev.length === 0) return prev;
+        const last = { ...prev[0] };
+        const durationMin = Math.max(1, Math.round((Date.now() - last.startTime) / 60000));
+        last.durationString = `${durationMin} min`;
+        return [last, ...prev.slice(1)];
+      });
+
       setIsConnected(false);
       setIsDisconnecting(false);
       setSecurityReport(null);
@@ -154,6 +179,7 @@ function App() {
           </div>
           <div className="flex items-center gap-4">
             <button onClick={() => setShowPricing(true)} className="hidden md:flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-[10px] font-black border uppercase tracking-widest bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-cyan-500 hover:scale-105 transition-transform"><Crown className="w-4 h-4 text-amber-500" /> {userPlan.toUpperCase()} Plan</button>
+            <button onClick={() => setShowConnectionHistory(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:scale-110" title="Historique de connexion"><History className="w-5 h-5" /></button>
             <button onClick={() => setShowSettings(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:rotate-90 duration-500"><SlidersVertical className="w-5 h-5" /></button>
             <button onClick={() => setIsDark(!isDark)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">{isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
             <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-3 rounded-2xl text-slate-500 hover:bg-red-500/10 hover:text-red-500 transition-all"><LogOut className="w-5 h-5" /></button>
@@ -234,6 +260,7 @@ function App() {
       )}
       {showVerification && <VerificationModal onClose={() => setShowVerification(false)} onSuccess={()=>{setIsVerified(true); setShowVerification(false)}} />}
       {showSettings && <SettingsPanel settings={appSettings} updateSettings={(k,v)=>setAppSettings(prev=>({...prev,[k]:v}))} onClose={() => setShowSettings(false)} userPlan={userPlan} onShowPricing={() => { setShowSettings(false); setShowPricing(true); }} />}
+      {showConnectionHistory && <ConnectionHistoryModal history={connectionHistory} onClose={() => setShowConnectionHistory(false)} onClear={() => setConnectionHistory([])} />}
     </div>
   );
 }
