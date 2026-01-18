@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Activity, Shield, Ghost, Layers, Globe, Share2, Server, MapPin, Search, Gauge, Sparkles, ChevronDown, Check, X, Zap, Smartphone, Orbit, Terminal, Lock, EyeOff, Globe2, Loader2, ArrowRight, ShieldAlert, Link2, ExternalLink, ShieldCheck, Tv, Radio, PlayCircle, ZapOff, Info, Cpu, Database, CloudLightning, Rocket, Filter, Map as MapIcon, LayoutGrid, Power } from 'lucide-react';
+/* Added RefreshCw and CheckCircle2 to imports */
+import { Activity, Shield, Ghost, Layers, Globe, Share2, Server, MapPin, Search, Gauge, Sparkles, ChevronDown, Check, X, Zap, Smartphone, Orbit, Terminal, Lock, EyeOff, Globe2, Loader2, ArrowRight, ShieldAlert, Link2, ExternalLink, ShieldCheck, Tv, Radio, PlayCircle, ZapOff, Info, Cpu, Database, CloudLightning, Rocket, Filter, Map as MapIcon, LayoutGrid, Power, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { SecurityReport, PlanTier, ConnectionMode, DeviceNode, AppSettings } from '../types';
 
@@ -31,6 +32,7 @@ const STREAMING_REGIONS = [
   { id: 'uk', name: 'BBC iPlayer', flag: '🇬🇧', delay: '45ms', status: 'Stable' },
   { id: 'jp', name: 'Hulu Japan', flag: '🇯🇵', delay: '210ms', status: 'Bypass OK' },
   { id: 'de', name: 'ZDF Mediathek', flag: '🇩🇪', delay: '32ms', status: 'Ultra HD' },
+  { id: 'ca', name: 'Crave Canada', flag: '🇨🇦', delay: '95ms', status: 'Optimal' },
 ];
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -54,6 +56,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [onionUrl, setOnionUrl] = useState('');
   const [isOnionResolving, setIsOnionResolving] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState('us');
+  const [isDnsTesting, setIsDnsTesting] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Extraction dynamique des pays depuis la liste des nœuds
@@ -116,6 +119,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }, 2500);
   };
 
+  const handleTestDns = () => {
+    setIsDnsTesting(true);
+    setTimeout(() => setIsDnsTesting(false), 2000);
+  };
+
   const isOnionMode = mode === ConnectionMode.ONION_VORTEX;
   const isSmartDNS = mode === ConnectionMode.SMART_DNS;
 
@@ -147,8 +155,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50'
                 } ${isConnected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                <Icon className={`w-5 h-5 ${
-                  isActive ? 'text-white' : 
+                <Icon className={`w-5 h-5 transition-transform duration-500 ${
+                  isActive ? 'text-white scale-110' : 
                   isVortex ? 'text-purple-500 group-hover:text-purple-400' : 
                   isDNS ? 'text-amber-500 group-hover:text-amber-400' :
                   'text-slate-400 group-hover:text-cyan-500'}`} />
@@ -173,7 +181,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Protocol Engine:</span>
               <span className={`text-[10px] font-black px-3 py-1 rounded-full ${
                 isOnionMode ? 'text-purple-400 bg-purple-500/10 border border-purple-500/20' : 
-                isSmartDNS ? 'text-amber-500 bg-amber-500/10 border border-amber-500/20' : 
+                isSmartDNS ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20' : 
                 'text-cyan-500 bg-cyan-500/10 border border-cyan-500/20'
               }`}>
                 {isOnionMode ? 'VORTEX-TOR-NET' : isSmartDNS ? 'SMART-DNS-OPTIM' : protocol.toUpperCase()}
@@ -204,7 +212,157 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Cartographie Tactique Réinventée */}
+      {/* Interface Smart DNS spécifique */}
+      {isSmartDNS && (
+          <div className="space-y-6 animate-in zoom-in-95 duration-500">
+             <div className="glass-card p-10 rounded-[4rem] border border-amber-500/30 bg-amber-500/5 relative overflow-hidden">
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute inset-0 cyber-grid opacity-10"></div>
+                    <div className="absolute -left-20 -top-20 w-80 h-80 bg-amber-600/10 blur-[120px] rounded-full"></div>
+                </div>
+
+                <div className="flex flex-col md:flex-row items-center justify-between gap-10 relative z-10">
+                    <div className="flex items-center gap-8">
+                        <div className="p-8 bg-amber-500 text-white rounded-[2.5rem] shadow-2xl shadow-amber-600/40 animate-pulse relative">
+                            <Tv className="w-14 h-14" />
+                            <div className="absolute inset-[-10px] border-2 border-amber-400/30 rounded-full animate-spin-slow"></div>
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.5em]">Selective_Bypass_Engine</span>
+                                <div className="px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black rounded uppercase">LOW LATENCY</div>
+                            </div>
+                            <h4 className="text-4xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Global Streaming Hub</h4>
+                            <p className="text-xs text-slate-500 mt-2">Détournement DNS haute fidélité pour services de streaming mondiaux.</p>
+                        </div>
+                    </div>
+
+                    <div className="flex bg-slate-900/80 p-3 rounded-[2rem] border border-white/10 shadow-2xl">
+                        <div className="flex flex-col p-4">
+                            <span className="text-[10px] font-black text-slate-500 uppercase mb-2">DNS_Provider_Target</span>
+                            <div className="flex items-center gap-3">
+                                <Radio className="w-6 h-6 text-amber-500 animate-pulse" />
+                                <span className="text-base font-mono font-black text-white uppercase">{settings.dns} (Tier-1)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-14 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 relative z-10">
+                    {STREAMING_REGIONS.map((region) => (
+                        <button
+                            key={region.id}
+                            onClick={() => setSelectedRegion(region.id)}
+                            className={`p-6 rounded-[2.5rem] border transition-all flex flex-col items-start gap-6 group bracket-corner ${
+                                selectedRegion === region.id 
+                                ? 'bg-amber-500/20 border-amber-500 shadow-2xl shadow-amber-500/20 scale-105 z-10' 
+                                : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10'
+                            }`}
+                        >
+                            <div className="flex items-center justify-between w-full">
+                                <span className="text-3xl filter drop-shadow-lg">{region.flag}</span>
+                                {selectedRegion === region.id && <PlayCircle className="w-6 h-6 text-amber-500 animate-bounce" />}
+                            </div>
+                            <div>
+                                <h5 className="text-sm font-black text-white uppercase tracking-tight truncate w-full">{region.name}</h5>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-slate-600'}`}></div>
+                                    <span className="text-[9px] font-mono font-bold text-slate-400">{region.status} • {region.delay}</span>
+                                </div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="glass-card p-8 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-950/40">
+                    <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center gap-4">
+                            <Zap className="w-6 h-6 text-amber-500" />
+                            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">Injecteur DNS IA_v2</h3>
+                        </div>
+                        <button 
+                            onClick={handleTestDns}
+                            disabled={isDnsTesting}
+                            className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/20 transition-all"
+                        >
+                            {isDnsTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        </button>
+                    </div>
+                    <div className="space-y-3">
+                        {[
+                            { name: 'Cloudflare (1.1.1.1)', ping: '8ms', score: 98, load: 12 },
+                            { name: 'Renumerate Elite DNS', ping: '12ms', score: 100, load: 4 },
+                            { name: 'Google (8.8.8.8)', ping: '15ms', score: 94, load: 45 }
+                        ].map((dns, i) => (
+                            <div key={i} className="p-5 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:border-amber-500/30 transition-all">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                        {dns.name}
+                                        {dns.score === 100 && <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />}
+                                    </span>
+                                    <div className="flex items-center gap-3 mt-1">
+                                        <span className="text-[10px] font-mono text-slate-500">{dns.ping} latency</span>
+                                        <div className="w-1 h-1 rounded-full bg-slate-700"></div>
+                                        <span className="text-[10px] font-mono text-slate-500">Charge: {dns.load}%</span>
+                                    </div>
+                                </div>
+                                <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black flex items-center gap-2 ${dns.score === 100 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                                    {isDnsTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                                    {dns.score}% SYNC
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                
+                <div className="glass-card p-8 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl bg-gradient-to-br from-amber-500/5 to-transparent relative overflow-hidden">
+                    <div className="absolute -bottom-10 -right-10 opacity-[0.05] pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                        <PlayCircle className="w-48 h-48 text-amber-500" />
+                    </div>
+                    <div className="flex items-center gap-4 mb-8">
+                        <Info className="w-6 h-6 text-amber-500" />
+                        <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">Protocoles de Détournement</h3>
+                    </div>
+                    <div className="space-y-4">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                            Le système **Smart DNS** redirige chirurgicalement vos requêtes sans impacter le reste de votre trafic IP. 
+                            <br/><br/>
+                            <span className="text-slate-900 dark:text-white font-black uppercase tracking-widest text-[10px] bg-amber-500/10 px-2 py-1 rounded">Metrics_Streaming_v4 :</span>
+                        </p>
+                        <ul className="space-y-3">
+                            <li className="flex items-center gap-3 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                <div className="p-1 rounded-md bg-emerald-500 text-white"><Check className="w-3.5 h-3.5" /></div>
+                                Zéro Perte de Débit (Vitesse Native)
+                            </li>
+                            <li className="flex items-center gap-3 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                <div className="p-1 rounded-md bg-emerald-500 text-white"><Check className="w-3.5 h-3.5" /></div>
+                                Bypass des Geo-Blocks 4K HDR
+                            </li>
+                            <li className="flex items-center gap-3 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                <div className="p-1 rounded-md bg-emerald-500 text-white"><Check className="w-3.5 h-3.5" /></div>
+                                Masquage des requêtes DNS (HTTPS/TLS)
+                            </li>
+                        </ul>
+                        <div className="mt-6 p-4 bg-black/20 rounded-2xl border border-white/5 flex items-center justify-between">
+                            <div className="flex flex-col">
+                                <span className="text-[9px] font-black text-slate-500 uppercase">Statut_Bypass</span>
+                                <span className="text-xs font-black text-emerald-500">ENGINE_READY</span>
+                            </div>
+                            <div className="h-8 w-[1px] bg-white/10"></div>
+                            <div className="flex flex-col items-end">
+                                <span className="text-[9px] font-black text-slate-500 uppercase">Buffer_IA</span>
+                                <span className="text-xs font-black text-amber-500">OPTIMIZED</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+             </div>
+          </div>
+      )}
+
+      {/* Cartographie Tactique (Uniquement si pas Vortex/SmartDNS) */}
       {!isOnionMode && !isSmartDNS && (
           <div className="glass-card p-8 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl relative group overflow-hidden">
             {/* HUD Header */}
@@ -653,122 +811,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     ))}
                 </div>
             </div>
-          </div>
-      )}
-
-      {/* Interface Smart DNS spécifique */}
-      {isSmartDNS && (
-          <div className="space-y-6 animate-in zoom-in-95 duration-500">
-             <div className="glass-card p-10 rounded-[4rem] border border-amber-500/30 bg-amber-500/5 relative overflow-hidden">
-                <div className="absolute inset-0 pointer-events-none">
-                    <div className="absolute inset-0 cyber-grid opacity-10"></div>
-                    <div className="absolute -left-20 -top-20 w-80 h-80 bg-amber-600/10 blur-[120px] rounded-full"></div>
-                </div>
-
-                <div className="flex flex-col md:flex-row items-center justify-between gap-10 relative z-10">
-                    <div className="flex items-center gap-8">
-                        <div className="p-8 bg-amber-500 text-white rounded-[2.5rem] shadow-2xl shadow-amber-600/40">
-                            <Tv className="w-14 h-14" />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-3 mb-2">
-                                <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.5em]">Selective_Bypass_Engine</span>
-                                <div className="px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black rounded uppercase">LOW LATENCY</div>
-                            </div>
-                            <h4 className="text-4xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Global Streaming Hub</h4>
-                            <p className="text-xs text-slate-500 mt-2">Détournement DNS haute fidélité pour services de streaming mondiaux.</p>
-                        </div>
-                    </div>
-
-                    <div className="flex bg-slate-900/80 p-3 rounded-[2rem] border border-white/10 shadow-2xl">
-                        <div className="flex flex-col p-4">
-                            <span className="text-[10px] font-black text-slate-500 uppercase mb-2">DNS_Provider_Target</span>
-                            <div className="flex items-center gap-3">
-                                <Radio className="w-6 h-6 text-amber-500 animate-pulse" />
-                                <span className="text-base font-mono font-black text-white uppercase">{settings.dns} (Tier-1)</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="mt-14 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 relative z-10">
-                    {STREAMING_REGIONS.map((region) => (
-                        <button
-                            key={region.id}
-                            onClick={() => setSelectedRegion(region.id)}
-                            className={`p-6 rounded-[2.5rem] border transition-all flex flex-col items-start gap-6 group bracket-corner ${
-                                selectedRegion === region.id 
-                                ? 'bg-amber-500/10 border-amber-500 shadow-2xl shadow-amber-500/10' 
-                                : 'bg-white/5 border-white/5 hover:border-white/10'
-                            }`}
-                        >
-                            <div className="flex items-center justify-between w-full">
-                                <span className="text-3xl">{region.flag}</span>
-                                {selectedRegion === region.id && <PlayCircle className="w-6 h-6 text-amber-500" />}
-                            </div>
-                            <div>
-                                <h5 className="text-base font-black text-white uppercase tracking-tight">{region.name}</h5>
-                                <div className="flex items-center gap-3 mt-2">
-                                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`}></div>
-                                    <span className="text-[10px] font-mono font-bold text-slate-400">{region.status} • {region.delay}</span>
-                                </div>
-                            </div>
-                        </button>
-                    ))}
-                </div>
-             </div>
-
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="glass-card p-8 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl">
-                    <div className="flex items-center gap-4 mb-8">
-                        <Zap className="w-6 h-6 text-amber-500" />
-                        <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">Injecteur DNS IA_v2</h3>
-                    </div>
-                    <div className="space-y-4">
-                        {[
-                            { name: 'Cloudflare (1.1.1.1)', ping: '8ms', score: 98 },
-                            { name: 'Renumerate Elite DNS', ping: '12ms', score: 100 },
-                            { name: 'Google (8.8.8.8)', ping: '15ms', score: 94 }
-                        ].map((dns, i) => (
-                            <div key={i} className="p-5 rounded-3xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:border-amber-500/30 transition-all">
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-black text-slate-800 dark:text-white">{dns.name}</span>
-                                    <span className="text-[10px] font-mono text-slate-500">{dns.ping} • Latence du Tunnel</span>
-                                </div>
-                                <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${dns.score === 100 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                                    {dns.score}% SYNC
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-                
-                <div className="glass-card p-8 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl bg-gradient-to-br from-amber-500/5 to-transparent relative overflow-hidden">
-                    <div className="absolute -bottom-10 -right-10 opacity-[0.05] pointer-events-none">
-                        <PlayCircle className="w-40 h-40 text-amber-500" />
-                    </div>
-                    <div className="flex items-center gap-4 mb-8">
-                        <Info className="w-6 h-6 text-amber-500" />
-                        <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">Architecture Smart_DNS</h3>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
-                        Le système **Smart DNS** redirige chirurgicalement vos requêtes de service de diffusion sans impacter le reste de votre trafic IP. 
-                        <br/><br/>
-                        <span className="text-slate-900 dark:text-white font-black uppercase tracking-widest text-[10px]">Performances :</span>
-                        <ul className="mt-4 space-y-3">
-                            <li className="flex items-center gap-3 text-xs">
-                                <Check className="w-4 h-4 text-emerald-500" /> Vitesse de téléchargement native (0% perte).
-                            </li>
-                            <li className="flex items-center gap-3 text-xs">
-                                <Check className="w-4 h-4 text-emerald-500" /> Déblocage 4K HDR sans mise en mémoire tampon.
-                            </li>
-                            <li className="flex items-center gap-3 text-xs">
-                                <Check className="w-4 h-4 text-emerald-500" /> Support multi-plateforme (AppleTV, Console).
-                            </li>
-                        </ul>
-                    </p>
-                </div>
-             </div>
           </div>
       )}
     </div>
