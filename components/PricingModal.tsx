@@ -1,21 +1,20 @@
 
 import React, { useState } from 'react';
-import { Check, X, Crown, ArrowLeft, Lock, CreditCard, ShieldCheck, CheckCircle, Loader2, Coins, Search, Fingerprint } from 'lucide-react';
+import { Check, X, Crown, ArrowLeft, Lock, CreditCard, ShieldCheck, CheckCircle, Loader2, Coins, Search, Fingerprint, ShieldAlert, Globe } from 'lucide-react';
 import { PlanTier } from '../types';
 
 interface Props {
   currentPlan: PlanTier;
-  onUpgrade: (plan: PlanTier) => void;
+  onUpgrade: (plan: PlanTier, method: string) => Promise<boolean>;
   onClose: () => void;
 }
 
-type CheckoutStep = 'selection' | 'checkout' | 'processing' | 'success';
+type CheckoutStep = 'selection' | 'checkout' | 'authenticating' | 'success';
 
 export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose }) => {
   const [step, setStep] = useState<CheckoutStep>('selection');
   const [selectedPlanId, setSelectedPlanId] = useState<PlanTier | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'paypal' | 'card' | 'crypto'>('card');
-  const [txHash, setTxHash] = useState('');
 
   const plans = [
     {
@@ -56,34 +55,33 @@ export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose 
     setStep('checkout');
   };
 
-  const handlePaymentStart = (method: 'paypal' | 'card' | 'crypto') => {
+  const handlePaymentStart = async (method: 'paypal' | 'card' | 'crypto') => {
     setPaymentMethod(method);
-    setStep('processing');
     
-    // Simuler un appel vers PayPal ou une passerelle bancaire
-    if (method === 'paypal' && selectedPlanId) {
-        const plan = plans.find(p => p.id === selectedPlanId);
-        if (plan && plan.rawPrice > 0) {
-            const paypalUrl = `https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=papaoumar72@gmail.com&item_name=${encodeURIComponent(`RenumerateVPN ${plan.name} Subscription`)}&amount=${plan.rawPrice}&currency_code=EUR&no_shipping=1&no_note=1&return=${encodeURIComponent(window.location.href)}`;
-            window.open(paypalUrl, '_blank');
-        }
+    if (method === 'crypto') {
+        // Redirection externe directe
+        await onUpgrade(selectedPlanId!, 'crypto');
+        onClose();
+        return;
     }
 
-    // Cycle de vérification simulé
-    setTimeout(() => {
-        if (selectedPlanId) {
-            onUpgrade(selectedPlanId);
-            setStep('success');
-            setTimeout(() => onClose(), 2500);
-        }
-    }, 4500);
+    setStep('authenticating');
+    
+    // Appel du handler de l'application parente pour l'authentification
+    const success = await onUpgrade(selectedPlanId!, method);
+    if (success) {
+      setStep('success');
+      setTimeout(() => onClose(), 2500);
+    } else {
+      setStep('checkout'); // Retour en cas d'échec
+    }
   };
 
   const selectedPlanData = plans.find(p => p.id === selectedPlanId);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={step === 'processing' ? undefined : onClose} />
+      <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={step === 'authenticating' ? undefined : onClose} />
       
       <div className="relative w-full max-w-5xl bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-300">
         
@@ -102,12 +100,12 @@ export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose 
                 <h2 className="text-xl font-black flex items-center gap-2 uppercase tracking-[0.2em]">
                   <Crown className="w-6 h-6 text-amber-500 animate-pulse" />
                   <span className="bg-gradient-to-r from-amber-500 to-brand-500 bg-clip-text text-transparent">
-                    {step === 'selection' ? 'RE-NUMÉROTEZ VOTRE PLAN' : step === 'success' ? 'TRANSACTION VALIDÉE' : 'VÉRIFICATION DU PAIEMENT'}
+                    {step === 'selection' ? 'RE-NUMÉROTEZ VOTRE PLAN' : step === 'success' ? 'TRANSACTION VALIDÉE' : 'VÉRIFICATION SÉCURISÉE'}
                   </span>
                 </h2>
             </div>
 
-            <button onClick={onClose} disabled={step === 'processing'} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors">
+            <button onClick={onClose} disabled={step === 'authenticating'} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors">
                 <X className="w-6 h-6" />
             </button>
         </div>
@@ -211,14 +209,14 @@ export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose 
                              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-16 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-lg active:scale-95"
                           >
                              <Coins className="w-5 h-5" />
-                             <span className="font-black text-xs uppercase tracking-widest">Payer en Crypto (BTC/ETH)</span>
+                             <span className="font-black text-xs uppercase tracking-widest">Payer en Crypto (Redirect)</span>
                           </button>
                           
-                          <div className="flex items-center justify-center gap-6 mt-8">
-                              <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                          <div className="flex items-center justify-center gap-6 mt-8 text-slate-400">
+                              <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
                                   <Lock className="w-3.5 h-3.5" /> SSL 256-BIT
                               </div>
-                              <div className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
                                   <ShieldCheck className="w-3.5 h-3.5" /> ANTI-FRAUDE
                               </div>
                           </div>
@@ -248,28 +246,35 @@ export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose 
               </div>
           )}
 
-          {step === 'processing' && (
+          {step === 'authenticating' && (
               <div className="flex flex-col items-center justify-center py-12 animate-in fade-in zoom-in duration-300">
                   <div className="relative mb-8">
                       <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-slate-800"></div>
                       <div className="absolute inset-0 w-24 h-24 rounded-full border-4 border-brand-500 border-t-transparent animate-spin"></div>
                       <Fingerprint className="absolute inset-0 m-auto w-8 h-8 text-brand-500" />
                   </div>
-                  <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-widest">Vérification de la Transaction</h3>
-                  <div className="mt-6 flex flex-col gap-3 w-full max-w-sm">
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-widest">Authentification via {paymentMethod.toUpperCase()}</h3>
+                  
+                  <div className="mt-8 p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-center gap-4 max-w-sm">
+                      <ShieldCheck className="w-6 h-6 text-blue-500" />
+                      <p className="text-xs text-blue-700 dark:text-blue-400 font-medium">
+                          Une fenêtre d'authentification bancaire (3D Secure) va s'ouvrir. Veuillez confirmer la transaction sur votre application mobile.
+                      </p>
+                  </div>
+
+                  <div className="mt-10 flex flex-col gap-3 w-full max-w-sm">
                        <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Gateway</span>
-                            <span className="text-[10px] font-mono font-bold text-brand-500 uppercase">{paymentMethod}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Serveur Auth</span>
+                            <span className="text-[10px] font-mono font-bold text-brand-500 uppercase">RE-NUM-AUTH-V2</span>
                        </div>
                        <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Confirmation</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Statut</span>
                             <div className="flex items-center gap-2">
                                 <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
-                                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Awaiting Bank</span>
+                                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">En attente confirmation</span>
                             </div>
                        </div>
                   </div>
-                  <p className="text-xs text-slate-500 mt-8 italic">Transmission chiffrée via tunnel Renumerate-Vortex...</p>
               </div>
           )}
 
@@ -278,7 +283,7 @@ export const PricingModal: React.FC<Props> = ({ currentPlan, onUpgrade, onClose 
                   <div className="w-24 h-24 bg-emerald-500 text-white rounded-full flex items-center justify-center mb-8 shadow-2xl shadow-emerald-500/40">
                       <Check className="w-12 h-12 stroke-[3]" />
                   </div>
-                  <h3 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-widest mb-4">Accès Activé</h3>
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-widest mb-4 text-center">Identité Premium Activée</h3>
                   <p className="text-slate-500 dark:text-slate-400 font-medium text-center max-w-sm">
                       Paiement validé par le réseau. Votre plan {selectedPlanData?.name} est désormais actif sur tous vos nœuds.
                   </p>

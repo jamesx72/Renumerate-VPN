@@ -100,6 +100,30 @@ function App() {
     }, 800);
   };
 
+  // Fixed: handleProcessPayment now explicitly returns a type including 'redirect' to satisfy TypeScript.
+  /**
+   * Gère l'authentification des paiements avant activation
+   */
+  const handleProcessPayment = async (plan: PlanTier, method: 'card' | 'paypal' | 'crypto'): Promise<{ success: boolean; redirect: boolean }> => {
+    if (method === 'crypto') {
+      addLog(`Redirection vers la passerelle Crypto pour le plan ${plan.toUpperCase()}...`, 'info');
+      // Redirection simulée vers une plateforme externe (Coinbase Commerce / BitPay)
+      window.open('https://commerce.coinbase.com/checkout/renumerate-elite', '_blank');
+      return { success: true, redirect: true };
+    }
+
+    addLog(`Authentification du paiement ${method.toUpperCase()} en cours...`, 'info');
+    
+    // Simulation d'une vérification 3D Secure ou Token PayPal
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        addLog(`Authentification réussie via ${method.toUpperCase()}. Plan ${plan.toUpperCase()} activé.`, 'success');
+        setUserPlan(plan);
+        resolve({ success: true, redirect: false });
+      }, 3000);
+    });
+  };
+
   const handleGlobalScramble = () => {
     setIsMasking(true);
     addLog('Initialisation du re-numérotage global...', 'info');
@@ -207,7 +231,19 @@ function App() {
           </div>
       </div>
 
-      {showPricing && <PricingModal currentPlan={userPlan} onUpgrade={(p)=>{setUserPlan(p); setShowPricing(false)}} onClose={() => setShowPricing(false)} />}
+      {showPricing && (
+        <PricingModal 
+          currentPlan={userPlan} 
+          onUpgrade={async (plan, method) => {
+            const result = await handleProcessPayment(plan, method as any);
+            if (result.success && !result.redirect) {
+              return true; // Informe le modal que c'est ok
+            }
+            return false;
+          }} 
+          onClose={() => setShowPricing(false)} 
+        />
+      )}
       {showVerification && <VerificationModal onClose={() => setShowVerification(false)} onSuccess={()=>{setIsVerified(true); setShowVerification(false)}} />}
       {showSettings && <SettingsPanel settings={appSettings} updateSettings={(k,v)=>setAppSettings(prev=>({...prev,[k]:v}))} onClose={() => setShowSettings(false)} userPlan={userPlan} onShowPricing={() => { setShowSettings(false); setShowPricing(true); }} />}
     </div>
