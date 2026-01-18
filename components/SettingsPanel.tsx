@@ -169,7 +169,6 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                             </select>
                         </div>
                         <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
-                             {/* Added Globe2 to imports to fix missing name error */}
                             <h4 className="text-xs font-black uppercase text-slate-500 mb-4 flex items-center gap-2"><Globe2 className="w-4 h-4" /> Format MAC</h4>
                             <select value={settings.macFormat} onChange={(e)=>updateSettings('macFormat', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl py-2 text-xs font-bold px-3">
                                 <option value="random">Aléatoire (Auto)</option>

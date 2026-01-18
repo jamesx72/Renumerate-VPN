@@ -3,13 +3,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
 import { REALISTIC_USER_AGENTS } from '../constants';
 import { 
-  Globe, Monitor, Network, ShieldCheck, 
-  Copy, Activity, 
-  Ghost, Fingerprint, 
-  Loader2, Terminal, ShieldAlert, Clock, Cpu, Globe2, Chrome,
-  RefreshCw,
-  EyeOff, Shield as ShieldIcon, ChevronRight, Hash, Sparkles, Wand2,
-  CheckCircle2, Type
+  Globe, Network, Copy, Ghost, Fingerprint, 
+  Loader2, Clock, Chrome, RefreshCw, 
+  Hash, Sparkles, Wand2, CheckCircle2, Globe2, ShieldAlert
 } from 'lucide-react';
 
 interface Props {
@@ -92,7 +88,8 @@ export const IdentityMatrix: React.FC<Props> = ({
     return vendors[clean.slice(0, 6)] || "Generic Hardware";
   };
 
-  const isMaskingDisabled = !isConnected || isRotating || isMasking;
+  const isSmartDNS = mode === ConnectionMode.SMART_DNS;
+  const isMaskingDisabled = !isConnected || isRotating || isMasking || isSmartDNS;
 
   const macFormats = [
     { id: 'standard', label: 'XX:XX', icon: Hash },
@@ -140,42 +137,66 @@ export const IdentityMatrix: React.FC<Props> = ({
                 <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-400">{isRotating ? '--' : `${identity.latency}ms`}</span>
              </div>
              <div className="flex items-center justify-between">
-                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Délai Réseau (IA)</span>
-                <span className="text-xs font-mono font-bold text-emerald-500">{isRotating ? '--' : `${networkDelay}ms`}</span>
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Délai Réseau</span>
+                <div className="flex items-center gap-1.5">
+                   <span className="text-xs font-mono font-bold text-emerald-500">{isRotating ? '--' : `${networkDelay}ms`}</span>
+                   {!isRotating && <Sparkles className="w-2.5 h-2.5 text-emerald-500 animate-pulse" />}
+                </div>
              </div>
           </div>
         </div>
       </div>
 
-      <div className={`glass-card p-8 md:p-10 rounded-[3rem] border transition-all duration-500 relative overflow-hidden ${isMasking ? 'border-indigo-500/50 ring-8 ring-indigo-500/5' : 'border-white/10 dark:border-slate-800/50 shadow-2xl'}`}>
+      <div className={`glass-card p-8 md:p-10 rounded-[3rem] border transition-all duration-500 relative overflow-hidden ${isMasking ? 'border-indigo-500/50 ring-8 ring-indigo-500/5 shadow-2xl shadow-indigo-500/10' : 'border-white/10 dark:border-slate-800/50 shadow-2xl'}`}>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-10 mb-12 relative z-10">
           <div className="flex items-center gap-6">
-            <div className={`p-6 rounded-[2.2rem] transition-all duration-700 shadow-2xl transform ${isMasking ? 'bg-indigo-600 text-white rotate-12 scale-110' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
-              <Ghost className="w-10 h-10" />
+            <div className={`p-6 rounded-[2.2rem] transition-all duration-700 shadow-2xl transform ${isMasking ? 'bg-indigo-600 text-white rotate-12 scale-110 shadow-indigo-500/40' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+              <Fingerprint className="w-10 h-10" />
             </div>
             <div>
               <h4 className="text-3xl font-black text-slate-900 dark:text-white leading-tight uppercase tracking-tighter">Re-Numérotation IA</h4>
               <p className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em] mt-1">Anonymisation matérielle & logicielle active</p>
             </div>
           </div>
-          <button 
-              onClick={onMask}
-              disabled={isMaskingDisabled}
-              className={`group flex items-center justify-center gap-4 px-12 py-5 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] transition-all ${isMasking ? 'bg-indigo-600 text-white cursor-wait' : 'bg-blue-700 text-white hover:bg-blue-800 hover:-translate-y-1 shadow-xl disabled:opacity-50'}`}
-          >
-              {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5 group-hover:rotate-45 transition-transform" />}
-              {isMasking ? 'GÉNÉRATION...' : "Scramble Global"}
-          </button>
+          
+          <div className="flex flex-col items-center gap-3">
+              <button 
+                  onClick={onMask}
+                  disabled={isMaskingDisabled}
+                  className={`group flex items-center justify-center gap-4 px-12 py-5 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] transition-all ${isMasking ? 'bg-indigo-600 text-white cursor-wait shadow-2xl shadow-indigo-500/40' : 'bg-indigo-700 text-white hover:bg-indigo-800 hover:-translate-y-1 shadow-xl disabled:opacity-40 disabled:hover:translate-y-0 disabled:cursor-not-allowed'}`}
+              >
+                  {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5 group-hover:rotate-45 transition-transform" />}
+                  {isMasking ? 'GÉNÉRATION...' : "Masquer l'empreinte"}
+              </button>
+              
+              {isSmartDNS && (
+                  <div className="flex items-center gap-2 text-amber-500 text-[9px] font-black uppercase tracking-widest animate-pulse">
+                      <ShieldAlert className="w-3 h-3" />
+                      Indisponible en mode Smart DNS
+                  </div>
+              )}
+              {!isConnected && !isRotating && (
+                  <div className="text-slate-400 text-[9px] font-black uppercase tracking-widest">
+                      Activez le tunnel pour masquer l'empreinte
+                  </div>
+              )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
           <div className={`p-8 rounded-[2.5rem] border transition-all duration-500 ${isMasking || isScramblingUA ? 'bg-slate-950/80 border-indigo-500/30' : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50'}`}>
             <div className="flex items-center justify-between mb-6">
               <span className="text-[11px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><Chrome className="w-4 h-4 text-blue-500" /> User-Agent Spoof</span>
-              <button onClick={() => {setIsScramblingUA(true); setTimeout(()=>{onScrambleUA?.(); setIsScramblingUA(false)},800)}} disabled={isMaskingDisabled} className="p-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-blue-700 border border-slate-200 transition-all"><RefreshCw className={`w-4 h-4 ${isScramblingUA ? 'animate-spin' : ''}`} /></button>
+              <button 
+                onClick={() => {setIsScramblingUA(true); setTimeout(()=>{onScrambleUA?.(); setIsScramblingUA(false)},800)}} 
+                disabled={isMaskingDisabled} 
+                className="p-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-blue-700 border border-slate-200 transition-all disabled:opacity-30"
+              >
+                <RefreshCw className={`w-4 h-4 ${isScramblingUA ? 'animate-spin' : ''}`} />
+              </button>
             </div>
-            <div className="font-mono text-[10px] leading-relaxed h-14 overflow-hidden relative mb-4 p-4 bg-white/40 dark:bg-slate-950/40 rounded-2xl border border-white/10">
-               {isMasking || isScramblingUA ? <div className="text-indigo-500 animate-pulse">{scrambleText}</div> : currentUAData.full}
+            <div className={`font-mono text-[10px] leading-relaxed h-14 overflow-hidden relative mb-4 p-4 bg-white/40 dark:bg-slate-950/40 rounded-2xl border border-white/10 ${isMasking || isScramblingUA ? 'text-indigo-500 animate-pulse' : 'text-slate-600 dark:text-slate-400'}`}>
+               {isMasking || isScramblingUA ? <div className="text-indigo-500">{scrambleText}</div> : currentUAData.full}
             </div>
           </div>
 
@@ -187,8 +208,9 @@ export const IdentityMatrix: React.FC<Props> = ({
                 {macFormats.map((fmt) => (
                   <button
                     key={fmt.id}
-                    onClick={() => onFormatChange?.(fmt.id)}
-                    className={`px-2 py-1 rounded-md text-[8px] font-black transition-all ${macFormat === fmt.id ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                    onClick={() => !isMaskingDisabled && onFormatChange?.(fmt.id)}
+                    disabled={isMaskingDisabled}
+                    className={`px-2 py-1 rounded-md text-[8px] font-black transition-all ${macFormat === fmt.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-20'}`}
                     title={fmt.id.toUpperCase()}
                   >
                     {fmt.label}
@@ -203,7 +225,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                   <button 
                     onClick={onScrambleMac} 
                     disabled={isMaskingDisabled}
-                    className="absolute right-2 opacity-0 group-hover/mac:opacity-100 p-2 text-slate-400 hover:text-emerald-500 transition-all"
+                    className="absolute right-2 opacity-0 group-hover/mac:opacity-100 p-2 text-slate-400 hover:text-emerald-500 transition-all disabled:hidden"
                   >
                     <RefreshCw className="w-4 h-4" />
                   </button>
