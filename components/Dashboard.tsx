@@ -196,36 +196,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Neon Database Section */}
-      <div className="glass-card p-8 rounded-[3rem] border border-cyan-500/20 bg-cyan-500/5 relative overflow-hidden group">
+      {/* Neon Database Block */}
+      <div className="glass-card p-8 rounded-[3rem] border border-brand-500/30 bg-brand-500/5 relative overflow-hidden group shadow-2xl shadow-brand-500/10">
         <div className="absolute inset-0 cyber-grid opacity-10 pointer-events-none"></div>
-        <div className="absolute -right-20 -top-20 w-64 h-64 bg-cyan-500/10 blur-[100px] rounded-full"></div>
+        <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-brand-500/10 blur-[120px] rounded-full"></div>
         
-        <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
-            <div className="p-6 bg-cyan-600 text-white rounded-[2rem] shadow-2xl shadow-cyan-500/40">
-                <Database className="w-10 h-10 animate-pulse" />
+        <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
+            <div className="p-7 bg-brand-600 text-white rounded-[2.5rem] shadow-[0_0_40px_rgba(6,182,212,0.4)] animate-pulse">
+                <Database className="w-12 h-12" />
             </div>
             <div className="flex-1">
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-4">Neon Database : Identity Vault</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-cyan-500">
-                            <Zap className="w-4 h-4" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Effortless setup</span>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-6 flex items-center gap-3">
+                  Neon Database : Identity Storage
+                  <div className="px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black rounded uppercase">Active Serverless</div>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="space-y-3 group/feat">
+                        <div className="flex items-center gap-3 text-brand-500 group-hover/feat:translate-x-1 transition-transform">
+                            <Zap className="w-5 h-5" />
+                            <span className="text-[11px] font-black uppercase tracking-widest">Effortless setup</span>
                         </div>
                         <p className="text-xs text-slate-500 leading-relaxed">Get a fully functional database without writing a line of backend code.</p>
                     </div>
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-cyan-400">
-                            <CloudLightning className="w-4 h-4" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">All in one place</span>
+                    <div className="space-y-3 group/feat">
+                        <div className="flex items-center gap-3 text-emerald-500 group-hover/feat:translate-x-1 transition-transform">
+                            <CloudLightning className="w-5 h-5" />
+                            <span className="text-[11px] font-black uppercase tracking-widest">All in one place</span>
                         </div>
                         <p className="text-xs text-slate-500 leading-relaxed">Your code, deploys, and database managed through Netlify, no context switching.</p>
                     </div>
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-brand-400">
-                            <Rocket className="w-4 h-4" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Built to scale</span>
+                    <div className="space-y-3 group/feat">
+                        <div className="flex items-center gap-3 text-amber-500 group-hover/feat:translate-x-1 transition-transform">
+                            <Rocket className="w-5 h-5" />
+                            <span className="text-[11px] font-black uppercase tracking-widest">Built to scale</span>
                         </div>
                         <p className="text-xs text-slate-500 leading-relaxed">Start small and grow without changing your stack or setup.</p>
                     </div>
@@ -537,29 +540,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     return (
                       <div 
                         key={node.id} 
-                        className={`p-6 rounded-[2.5rem] border transition-all duration-500 flex flex-col justify-between group/node ${
+                        className={`p-6 rounded-[2.5rem] border transition-all duration-500 flex flex-col justify-between group/node relative overflow-hidden ${
                           isActive 
-                          ? 'bg-cyan-500/10 border-cyan-500 shadow-xl shadow-cyan-500/10' 
+                          ? 'bg-cyan-500/10 border-cyan-500 shadow-xl shadow-cyan-500/10 animate-glow' 
                           : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 hover:shadow-lg'
                         }`}
                       >
-                        <div className="flex items-start justify-between mb-4">
+                        {/* Scanline subtile pour les nœuds actifs */}
+                        {isActive && (
+                          <div className="absolute inset-0 bg-scanline opacity-[0.05] pointer-events-none animate-scanline"></div>
+                        )}
+
+                        <div className="flex items-start justify-between mb-4 relative z-10">
                           <div className="flex items-center gap-4">
-                            <div className="text-3xl">{countriesWithFlags[node.country] || '📍'}</div>
+                            <div className="text-3xl transition-transform group-hover/node:scale-110 duration-500">{countriesWithFlags[node.country] || '📍'}</div>
                             <div>
                                <h5 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">{node.name}</h5>
                                <p className="text-[10px] font-mono font-bold text-slate-500">{node.ip}</p>
                             </div>
                           </div>
                           {isActive && (
-                            <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-500/20 rounded-full border border-emerald-500/30">
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-500/20 rounded-full border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.3)]">
                               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                              <span className="text-[8px] font-black text-emerald-500 uppercase">ACTIVE</span>
+                              <span className="text-[8px] font-black text-emerald-500 uppercase tracking-tighter">ACTIVE_LINK</span>
                             </div>
                           )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 mb-6 pt-4 border-t border-slate-100 dark:border-white/5">
+                        <div className="grid grid-cols-2 gap-4 mb-6 pt-4 border-t border-slate-100 dark:border-white/5 relative z-10">
                            <div className="flex flex-col">
                               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Délai</span>
                               <span className="text-xs font-mono font-black text-slate-700 dark:text-slate-300">{node.latency}ms</span>
@@ -573,12 +581,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <button
                           onClick={() => onConnectNode(node.id)}
                           disabled={isActive || isConnected}
-                          className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                          className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all relative z-10 ${
                             isActive 
                             ? 'bg-cyan-500 text-white cursor-default' 
                             : isConnected 
                               ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                              : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:scale-[1.02] active:scale-95'
+                              : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:scale-[1.02] active:scale-95 shadow-lg'
                           }`}
                         >
                           {isActive ? 'NŒUD CONNECTÉ' : 'SÉLECTIONNER'}
@@ -592,10 +600,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {/* Central Connection Overlay if connected */}
               {isConnected && activeNode && (
                 <div className="mt-12 sticky bottom-0 z-20 pointer-events-none">
-                    <div className="px-10 py-6 bg-white/80 dark:bg-slate-900/90 backdrop-blur-2xl border border-cyan-500/50 rounded-[3rem] shadow-2xl shadow-cyan-500/30 flex items-center justify-between group/active relative overflow-hidden max-w-2xl mx-auto pointer-events-auto">
+                    <div className="px-10 py-6 bg-white/80 dark:bg-slate-900/90 backdrop-blur-2xl border border-cyan-500/50 rounded-[3rem] shadow-2xl shadow-cyan-500/30 flex items-center justify-between group/active relative overflow-hidden max-w-2xl mx-auto pointer-events-auto animate-in slide-in-from-bottom-4">
                       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent animate-shimmer"></div>
                       <div className="flex items-center gap-6">
-                        <div className="p-4 bg-cyan-600 text-white rounded-[1.5rem] shadow-xl">
+                        <div className="p-4 bg-cyan-600 text-white rounded-[1.5rem] shadow-xl animate-glow">
                           <Smartphone className="w-8 h-8 animate-bounce" />
                         </div>
                         <div className="flex flex-col">
