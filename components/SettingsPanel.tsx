@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2 } from 'lucide-react';
+import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -23,6 +23,8 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
     { id: 'earnings', label: 'Gains RNC', icon: Wallet },
     { id: 'general', label: 'Général', icon: Sliders },
   ];
+
+  const isPremium = userPlan !== 'free';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -181,8 +183,114 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                 </div>
             )}
 
+            {activeTab === 'earnings' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-widest">Configuration des Gains</h3>
+                            <p className="text-sm text-slate-500">Optimisez vos revenus RNC en partageant vos ressources.</p>
+                        </div>
+                        {!isPremium && (
+                            <button 
+                                onClick={onShowPricing}
+                                className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/20"
+                            >
+                                <Crown className="w-3 h-3" /> Requiert ELITE
+                            </button>
+                        )}
+                    </div>
+
+                    <div className={`space-y-6 ${!isPremium ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                        {/* Mining Intensity */}
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-500"><Gauge className="w-5 h-5" /></div>
+                                    <div>
+                                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">Intensité du Minage</h4>
+                                        <p className="text-xs text-slate-500">Allocation des ressources CPU pour le réseau.</p>
+                                    </div>
+                                </div>
+                                <span className="text-xs font-black font-mono text-emerald-500">{settings.miningIntensity}%</span>
+                            </div>
+                            <input 
+                                type="range" min="0" max="100" step="10" 
+                                value={settings.miningIntensity} 
+                                onChange={(e)=>updateSettings('miningIntensity', parseInt(e.target.value))} 
+                                className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none accent-emerald-500" 
+                            />
+                            <div className="flex justify-between mt-2">
+                                <span className="text-[9px] font-bold text-slate-400">PASSIF</span>
+                                <span className="text-[9px] font-bold text-slate-400">AGRESSIF</span>
+                            </div>
+                        </div>
+
+                        {/* AI Yield Optimization */}
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-brand-500/10 rounded-xl text-brand-500"><Brain className="w-5 h-5" /></div>
+                                    <div>
+                                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">Optimisation IA des Rendements</h4>
+                                        <p className="text-xs text-slate-500">Ajustement automatique du routage pour maximiser les gains.</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => updateSettings('yieldOptimizationIA', !settings.yieldOptimizationIA)}>
+                                    {settings.yieldOptimizationIA ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300" />}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Contribution Type */}
+                        <div className="space-y-4">
+                            <h4 className="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-2 px-1">
+                                <Network className="w-4 h-4" /> Type de Contribution Réseau
+                            </h4>
+                            <div className="grid grid-cols-3 gap-4">
+                                {[
+                                    { id: 'passive', label: 'Passif', icon: Zap, desc: 'Revenu de base', bonus: '1x' },
+                                    { id: 'relay', label: 'Relais', icon: ArrowRightLeft, desc: 'Bande passante', bonus: '1.2x' },
+                                    { id: 'exit', label: 'Sortie', icon: ShieldAlert, desc: 'Haut risque', bonus: '1.5x' }
+                                ].map((type) => (
+                                    <button
+                                        key={type.id}
+                                        onClick={() => updateSettings('contributionType', type.id)}
+                                        className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all text-center relative overflow-hidden group ${
+                                            settings.contributionType === type.id 
+                                            ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500' 
+                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-400'
+                                        }`}
+                                    >
+                                        <type.icon className="w-6 h-6 mb-1" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">{type.label}</span>
+                                        <span className="text-[8px] font-bold opacity-70">{type.desc}</span>
+                                        <div className={`absolute -top-1 -right-1 px-2 py-0.5 text-[8px] font-black rounded-bl-lg ${settings.contributionType === type.id ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
+                                            {type.bonus}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {!isPremium && (
+                        <div className="p-6 bg-slate-900 rounded-3xl border border-slate-800 text-center">
+                            <Lock className="w-8 h-8 text-amber-500 mx-auto mb-4" />
+                            <h4 className="text-sm font-black text-white uppercase tracking-widest mb-2">Accès Monétisation Verrouillé</h4>
+                            <p className="text-xs text-slate-400 mb-6">Passez au plan ELITE pour commencer à générer des RNC en partageant vos ressources inutilisées.</p>
+                            <button 
+                                onClick={onShowPricing}
+                                className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                            >
+                                Devenir un Nœud Elite
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {activeTab === 'security' && (
-                <div className="space-y-6">
+                <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
                     <h3 className="text-lg font-bold">Sécurité & Protocoles</h3>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
                         <div className="flex items-center justify-between">
@@ -193,7 +301,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                 </div>
             )}
 
-            {(activeTab === 'earnings' || activeTab === 'general') && (
+            {activeTab === 'general' && (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-50">
                     <Settings className="w-12 h-12 mb-4" />
                     <p className="text-sm">Paramètres en cours d'optimisation...</p>
