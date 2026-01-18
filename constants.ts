@@ -4,47 +4,74 @@ import { VirtualIdentity, DeviceNode } from './types';
 export const REALISTIC_USER_AGENTS = [
   {
     short: 'Chrome 124 / Windows 11',
-    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.61 Safari/537.36',
-    os: 'Windows 11 23H2',
-    browser: 'Chrome',
-    preciseVersion: '124.0.6367.61',
+    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.118 Safari/537.36',
+    os: 'Windows 11 Pro 23H2',
+    browser: 'Chrome 124.0.6367',
+    preciseVersion: '124.0.6367.118',
+    build: '22631.3527',
+    engine: 'Blink (V8 12.4.254)'
+  },
+  {
+    short: 'Safari 17.5 / macOS',
+    full: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+    os: 'macOS Sonoma 14.5.0',
+    browser: 'Safari 17.5',
+    preciseVersion: '17.5 (19618.2.12.11.6)',
+    build: '23F79',
+    engine: 'WebKit/605.1.15'
+  },
+  {
+    short: 'Edge 124 / Windows 10',
+    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.2478.80',
+    os: 'Windows 10 Enterprise 22H2',
+    browser: 'Edge 124.0.2478',
+    preciseVersion: '124.0.2478.80',
+    build: '19045.4291',
+    engine: 'Blink (Chromium 124)'
+  },
+  {
+    short: 'Firefox 126 / Fedora',
+    full: 'Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0',
+    os: 'Fedora Linux 40 (Workstation)',
+    browser: 'Firefox 126.0',
+    preciseVersion: '126.0.1',
+    build: 'fc40.x86_64',
+    engine: 'Gecko/20240514'
+  },
+  {
+    short: 'Chrome 125 / Android 14',
+    full: 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro Build/AP1A.240405.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.52 Mobile Safari/537.36',
+    os: 'Android 14 (UPS1.231105.002)',
+    browser: 'Chrome Mobile 125',
+    preciseVersion: '125.0.6422.52',
+    build: 'AP1A.240405.002',
+    engine: 'Blink/125.0.0.0'
+  },
+  {
+    short: 'Safari / iPhone iOS 17.5',
+    full: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    os: 'iOS 17.5.1 (stable)',
+    browser: 'Mobile Safari 17.5',
+    preciseVersion: '17.5.1 (21F90)',
+    build: '21F90',
+    engine: 'WebKit/605.1.15'
+  },
+  {
+    short: 'Opera 109 / Windows 11',
+    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 OPR/109.0.5097.68',
+    os: 'Windows 11 Home 23H2',
+    browser: 'Opera 109.0',
+    preciseVersion: '109.0.5097.68',
     build: '22631.3447',
-    engine: 'Blink/WebKit'
+    engine: 'Blink/Chromium 123'
   },
   {
-    short: 'Safari 17.4 / macOS',
-    full: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
-    os: 'macOS Sonoma 14.4.1',
-    browser: 'Safari',
-    preciseVersion: '17.4.1',
-    build: '23E224',
-    engine: 'WebKit/605.1.15'
-  },
-  {
-    short: 'Firefox 125 / Linux',
-    full: 'Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0',
-    os: 'Ubuntu 22.04.4 LTS',
-    browser: 'Firefox',
-    preciseVersion: '125.0.2',
-    build: '20240419144423',
-    engine: 'Gecko/Quantum'
-  },
-  {
-    short: 'Safari / iPhone iOS 17.4',
-    full: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1',
-    os: 'iOS 17.4.1',
-    browser: 'Mobile Safari',
-    preciseVersion: '17.4.1',
-    build: '21E236',
-    engine: 'WebKit/605.1.15'
-  },
-  {
-    short: 'Chrome 124 / Android 14',
-    full: 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UD1A.231105.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36',
-    os: 'Android 14 (Upside Down Cake)',
-    browser: 'Chrome Mobile',
-    preciseVersion: '124.0.6367.82',
-    build: 'UD1A.231105.004',
+    short: 'Chrome 124 / Ubuntu',
+    full: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.60 Safari/537.36',
+    os: 'Ubuntu 24.04 LTS (Noble)',
+    browser: 'Chrome 124.0.6367',
+    preciseVersion: '124.0.6367.60',
+    build: '6.8.0-31-generic',
     engine: 'Blink/124.0.0.0'
   }
 ];
@@ -101,8 +128,8 @@ export const generateRandomMac = (forceLAA: boolean = false) => {
 
 export const MOCK_IDENTITIES: VirtualIdentity[] = [
   { ip: '192.168.1.105', country: 'France', city: 'Paris', mac: '00:1B:44:11:3A:B7', userAgentShort: 'Chrome 124 / Windows 11', latency: 12, timezone: 'UTC+1' },
-  { ip: '45.33.22.11', country: 'Suisse', city: 'Zürich', mac: 'AC:DE:48:23:45:67', userAgentShort: 'Firefox 125 / Linux', latency: 24, timezone: 'UTC+1' },
-  { ip: '104.28.11.5', country: 'Singapour', city: 'Singapore', mac: '0014.22ef.6816', userAgentShort: 'Safari 17.4 / macOS', latency: 145, timezone: 'UTC+8' },
+  { ip: '45.33.22.11', country: 'Suisse', city: 'Zürich', mac: 'AC:DE:48:23:45:67', userAgentShort: 'Firefox 126 / Fedora', latency: 24, timezone: 'UTC+1' },
+  { ip: '104.28.11.5', country: 'Singapour', city: 'Singapore', mac: '0014.22ef.6816', userAgentShort: 'Safari 17.5 / macOS', latency: 145, timezone: 'UTC+8' },
 ];
 
 export const MOCK_NODES: DeviceNode[] = [
