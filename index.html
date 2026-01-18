@@ -40,6 +40,22 @@
               scanline: {
                 '0%': { transform: 'translateY(-100%)' },
                 '100%': { transform: 'translateY(100%)' }
+              },
+              glitch: {
+                '0%, 100%': { transform: 'translate(0)' },
+                '20%': { transform: 'translate(-2px, 1px)' },
+                '40%': { transform: 'translate(2px, -1px)' },
+                '60%': { transform: 'translate(-1px, 2px)' },
+                '80%': { transform: 'translate(1px, -2px)' }
+              },
+              cyberScan: {
+                '0%': { top: '0%' },
+                '100%': { top: '100%' }
+              },
+              flicker: {
+                '0%, 100%': { opacity: '1' },
+                '50%': { opacity: '0.8' },
+                '80%': { opacity: '0.95' },
               }
             },
             animation: {
@@ -47,6 +63,9 @@
               'shimmer': 'shimmer 2s infinite linear',
               'glow': 'pulseGlow 3s infinite ease-in-out',
               'scanline': 'scanline 4s linear infinite',
+              'glitch': 'glitch 0.3s infinite linear',
+              'cyber-scan': 'cyberScan 3s linear infinite',
+              'flicker': 'flicker 0.1s infinite alternate',
             }
           }
         }
@@ -90,6 +109,28 @@
         background: linear-gradient(to right, #06b6d4, #10b981);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+      }
+
+      .bracket-corner::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 15px;
+        height: 15px;
+        border-top: 2px solid currentColor;
+        border-left: 2px solid currentColor;
+      }
+
+      .bracket-corner::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 15px;
+        height: 15px;
+        border-bottom: 2px solid currentColor;
+        border-right: 2px solid currentColor;
       }
     </style>
   <script type="importmap">

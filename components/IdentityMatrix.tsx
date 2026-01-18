@@ -7,7 +7,7 @@ import {
   Loader2, Clock, Chrome, RefreshCw, 
   Hash, Sparkles, CheckCircle2, Globe2,
   Cpu, Activity, Target, ShieldCheck, Orbit, Lock, ArrowRight,
-  Shield, Zap, Radio
+  Shield, Zap, Radio, BarChart3, Scan, Layers
 } from 'lucide-react';
 
 interface Props {
@@ -42,21 +42,17 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [isScramblingUA, setIsScramblingUA] = useState(false);
   const [scrambleText, setScrambleText] = useState('');
   const [entropy, setEntropy] = useState('0.00');
+  const [signature, setSignature] = useState('0x' + Math.random().toString(16).slice(2, 10).toUpperCase());
 
   const isOnion = mode === ConnectionMode.ONION_VORTEX;
 
-  // Simulation d'entropie d'identité
   useEffect(() => {
     const interval = setInterval(() => {
       setEntropy((Math.random() * 0.5 + 9.5).toFixed(2));
+      if (Math.random() > 0.8) setSignature('0x' + Math.random().toString(16).slice(2, 10).toUpperCase());
     }, 2000);
     return () => clearInterval(interval);
   }, []);
-
-  // Calcul du délai réseau
-  const networkDelay = useMemo(() => {
-    return identity.latency + Math.floor(Math.random() * 8) + 3;
-  }, [identity.latency, isRotating]);
 
   useEffect(() => {
     if (isMasking || isScramblingUA) {
@@ -99,211 +95,217 @@ export const IdentityMatrix: React.FC<Props> = ({
   const theme = {
     primary: isOnion ? 'text-purple-400' : 'text-cyan-400',
     secondary: isOnion ? 'text-indigo-400' : 'text-emerald-400',
-    accent: isOnion ? 'text-fuchsia-500' : 'text-blue-500',
     border: isOnion ? 'border-purple-500/40' : 'border-cyan-500/40',
-    bg: isOnion ? 'bg-purple-500/5' : 'bg-cyan-500/5',
-    glow: isOnion ? 'shadow-[0_0_25px_rgba(168,85,247,0.15)]' : 'shadow-[0_0_25px_rgba(6,182,212,0.15)]',
-    gradient: isOnion ? 'from-purple-600 via-fuchsia-500 to-indigo-500' : 'from-cyan-500 via-blue-500 to-emerald-500'
+    borderStrong: isOnion ? 'border-purple-500/80' : 'border-cyan-500/80',
+    bg: isOnion ? 'bg-purple-950/40' : 'bg-slate-900/40',
+    glow: isOnion ? 'shadow-[0_0_40px_rgba(168,85,247,0.1)]' : 'shadow-[0_0_40px_rgba(6,182,212,0.1)]',
+    gradient: isOnion ? 'from-purple-600 via-indigo-500 to-purple-400' : 'from-cyan-600 via-blue-500 to-emerald-400'
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-1000">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Primary Identity HUD Card */}
-        <div className={`glass-card p-8 rounded-[2rem] border-2 ${theme.border} ${theme.glow} relative overflow-hidden group transition-all duration-700 hover:scale-[1.01] ${theme.bg}`}>
-          {/* HUD Corner Accents */}
-          <div className={`absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 ${theme.border} opacity-40 rounded-tl-3xl transition-all group-hover:w-16 group-hover:h-16`}></div>
-          <div className={`absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 ${theme.border} opacity-40 rounded-br-3xl transition-all group-hover:w-16 group-hover:h-16`}></div>
-          
-          <div className="flex items-center justify-between mb-6 relative z-10">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-2xl bg-slate-900/80 border ${theme.border} ${theme.primary} shadow-lg shadow-black/50`}>
-                {isOnion ? <Orbit className="w-6 h-6 animate-spin-slow" /> : <ShieldCheck className="w-6 h-6" />}
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+      
+      {/* Top Meta-Bar Identity */}
+      <div className="flex flex-col md:flex-row gap-4">
+        {/* IP Card HUD */}
+        <div className={`flex-1 glass-card p-6 rounded-[2rem] border-2 ${theme.border} relative overflow-hidden group ${theme.glow}`}>
+          <div className={`absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 ${theme.borderStrong} opacity-60 rounded-tl-2xl`}></div>
+          <div className="flex justify-between items-start relative z-10">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                 <ShieldCheck className={`w-3.5 h-3.5 ${theme.primary}`} />
+                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Access_Node_Public_IP</span>
               </div>
-              <div>
-                <span className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] block mb-0.5">
-                  {isOnion ? 'Vortex_Status' : 'Link_Verification'}
-                </span>
-                <span className={`${theme.primary} text-[9px] font-mono font-black uppercase tracking-widest block opacity-70`}>0x82_NODE_SECURED</span>
+              <div className={`text-3xl font-mono font-black tracking-tight ${isRotating ? 'animate-glitch' : 'text-slate-900 dark:text-white'}`}>
+                {isRotating ? '???.???.???.???' : identity.ip}
               </div>
             </div>
             <button 
               onClick={() => {navigator.clipboard.writeText(identity.ip); setCopiedIp(true); setTimeout(()=>setCopiedIp(false),2000)}} 
-              className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-slate-400 hover:text-white border border-white/5"
+              className={`p-2.5 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition-all ${copiedIp ? 'text-emerald-500' : 'text-slate-400'}`}
             >
-               {copiedIp ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5" />}
+               {copiedIp ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
             </button>
           </div>
-          
-          <div className="relative z-10">
-            <div className={`font-mono text-4xl font-black tracking-[0.15em] bg-gradient-to-r ${theme.gradient} bg-clip-text text-transparent mb-4 transition-all duration-1000 ${isRotating ? 'animate-pulse skew-x-2' : ''}`}>
-              {isRotating ? '???.???.???.???' : isOnion ? 'ENCRYPTED_PATH' : identity.ip}
-            </div>
-            
-            <div className="flex items-center justify-between mt-2">
-                <div className="flex items-center gap-3">
-                    <span className={`w-2.5 h-2.5 rounded-full animate-ping ${isOnion ? 'bg-purple-500' : 'bg-cyan-500'}`}></span>
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-[0.2em] max-w-[200px] truncate">
-                      {isOnion ? 'Layer_Circuit: 0xF22...81' : 'AES-256-GCM_ACTIVE'}
-                    </span>
-                </div>
-                <div className="text-[9px] font-mono text-slate-600 font-bold uppercase tracking-widest bg-black/40 px-3 py-1 rounded-full border border-white/5">
-                   SIG: {Math.random().toString(16).slice(2, 8).toUpperCase()}
-                </div>
-            </div>
+          <div className="mt-4 flex items-center justify-between relative z-10">
+             <div className="flex items-center gap-1.5 px-3 py-1 bg-black/40 rounded-full border border-white/5">
+                <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`}></div>
+                <span className="text-[9px] font-mono font-bold text-slate-400 uppercase">{isConnected ? 'Handshake_OK' : 'Link_Closed'}</span>
+             </div>
+             <span className="text-[9px] font-mono text-slate-600 font-bold">{signature}</span>
           </div>
         </div>
 
-        {/* Network Context Card */}
-        <div className={`glass-card p-8 rounded-[2rem] border-2 ${theme.border} ${theme.glow} relative overflow-hidden group transition-all duration-700 hover:scale-[1.01] ${theme.bg}`}>
-          <div className={`absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 ${theme.border} opacity-40 rounded-tr-3xl transition-all group-hover:w-16 group-hover:h-16`}></div>
-          <div className={`absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 ${theme.border} opacity-40 rounded-bl-3xl transition-all group-hover:w-16 group-hover:h-16`}></div>
-          
-          <div className="flex items-center justify-between mb-6 relative z-10">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-2xl bg-slate-900/80 border ${theme.border} ${theme.secondary} shadow-lg shadow-black/50`}>
-                <Globe className="w-6 h-6 group-hover:rotate-[25deg] transition-transform duration-500" />
+        {/* Location Card HUD */}
+        <div className={`flex-1 glass-card p-6 rounded-[2rem] border-2 ${theme.border} relative overflow-hidden group ${theme.glow}`}>
+           <div className={`absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 ${theme.borderStrong} opacity-60 rounded-tr-2xl`}></div>
+           <div className="flex justify-between items-start relative z-10">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                 <Globe className={`w-3.5 h-3.5 ${theme.secondary}`} />
+                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Geospatial_Resolution</span>
               </div>
-              <span className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.3em]">Geospatial_Context</span>
+              <div className={`text-2xl font-black tracking-tighter ${isRotating ? 'blur-sm' : 'text-slate-900 dark:text-white'}`}>
+                {identity.city}, <span className={`${theme.secondary}`}>{identity.country}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-black/40 rounded-2xl text-slate-300 font-mono text-[11px] font-black border border-white/10 shadow-inner">
-              <Clock className={`w-4 h-4 ${theme.primary} animate-pulse`} /> {localTime}
+            <div className="px-3 py-1.5 bg-black/40 rounded-xl border border-white/5 text-[10px] font-mono font-black text-slate-400 flex items-center gap-2">
+               <Clock className={`w-3 h-3 ${theme.primary}`} /> {localTime}
             </div>
           </div>
-          
-          <div className="relative z-10 flex justify-between items-end gap-6 h-full">
-            <div className={`font-black tracking-tighter text-3xl text-slate-900 dark:text-white flex-1 mb-2 ${isRotating ? 'animate-pulse blur-sm' : ''}`}>
-                {identity.city}
-                <div className={`text-[11px] font-black uppercase tracking-[0.4em] mt-2 opacity-60 ${theme.secondary}`}>
-                  {identity.country}
-                </div>
-            </div>
-
-            <div className="flex flex-col gap-5 min-w-[140px] border-l border-white/10 pl-6 pb-2">
-               <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-1">Local_Latency</span>
-                  <div className="flex items-center gap-2 font-mono font-bold text-sm text-slate-700 dark:text-slate-200">
-                    <Activity className={`w-4 h-4 ${theme.primary}`} />
-                    {isRotating ? '--' : `${identity.latency}ms`}
-                  </div>
-               </div>
-               <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-1">Entropie_ID</span>
-                  <div className={`flex items-center gap-2 font-mono font-bold text-sm ${theme.secondary}`}>
-                     <Radio className="w-4 h-4 animate-pulse" />
-                     {isRotating ? '--' : entropy}
-                  </div>
-               </div>
-            </div>
+          <div className="mt-6 grid grid-cols-2 gap-4 relative z-10">
+             <div className="flex flex-col">
+                <span className="text-[8px] font-black text-slate-500 uppercase mb-1">Délai_Sync</span>
+                <span className="text-xs font-mono font-black text-slate-700 dark:text-slate-200">{identity.latency}ms</span>
+             </div>
+             <div className="flex flex-col items-end">
+                <span className="text-[8px] font-black text-slate-500 uppercase mb-1">Entropie</span>
+                <span className={`text-xs font-mono font-black ${theme.secondary}`}>{entropy} H</span>
+             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Matrice Panel */}
-      <div className={`glass-card p-12 rounded-[3.5rem] border-2 transition-all duration-700 relative overflow-hidden group/panel ${isMasking ? 'border-indigo-500/80 shadow-[0_0_80px_rgba(99,102,241,0.2)]' : `border-slate-800 shadow-2xl hover:${theme.border}`}`}>
-        {/* Background Aura Layers */}
-        <div className={`absolute inset-0 opacity-[0.12] pointer-events-none bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] ${isOnion ? 'from-purple-500 via-indigo-900 to-transparent' : 'from-cyan-500 via-blue-900 to-transparent'}`}></div>
-        <div className="absolute inset-0 bg-scanline pointer-events-none opacity-[0.05]"></div>
-        {(isMasking || isOnion) && (
-            <div className="absolute inset-0 pointer-events-none opacity-[0.03] animate-pulse">
-                <div className="grid grid-cols-12 h-full w-full">
-                    {Array.from({length: 12}).map((_, i) => <div key={i} className="border-r border-white/5 h-full"></div>)}
+      {/* Main Tactical Identity Panel */}
+      <div className={`glass-card p-1 relative rounded-[3rem] border-2 transition-all duration-700 overflow-hidden group/panel ${isMasking ? 'border-indigo-500 shadow-[0_0_60px_rgba(99,102,241,0.2)]' : `border-slate-800 shadow-2xl hover:${theme.border}`}`}>
+        
+        {/* Scan Animation Line */}
+        {isConnected && <div className={`absolute left-0 right-0 h-[2px] z-20 ${isOnion ? 'bg-purple-500/50 shadow-[0_0_15px_purple]' : 'bg-cyan-500/50 shadow-[0_0_15px_cyan]'} animate-cyber-scan pointer-events-none`}></div>}
+        
+        <div className={`p-8 md:p-12 rounded-[2.9rem] ${theme.bg} relative overflow-hidden`}>
+          {/* Decorative Grid & Background */}
+          <div className="absolute inset-0 cyber-grid opacity-10 pointer-events-none"></div>
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-white/5 to-transparent pointer-events-none"></div>
+
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-10 mb-12 relative z-10">
+             <div className="flex flex-col md:flex-row items-center gap-8">
+                <div className={`p-8 rounded-[2.5rem] bg-slate-900 border-2 transition-all duration-500 transform group-hover/panel:rotate-[4deg] ${isMasking ? 'border-indigo-500 text-indigo-400 animate-pulse' : isOnion ? 'border-purple-500 text-purple-400 shadow-xl shadow-purple-500/10' : 'border-cyan-500 text-cyan-400 shadow-xl shadow-cyan-500/10'}`}>
+                   <Fingerprint className="w-14 h-14" />
                 </div>
-            </div>
-        )}
+                <div className="text-center md:text-left">
+                   <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
+                      <span className={`px-3 py-1 bg-black/40 rounded-full text-[9px] font-black uppercase tracking-widest border ${theme.border}`}>
+                        {isOnion ? 'Moteur_Vortex_v3' : 'Protocole_Matrix_RNC'}
+                      </span>
+                      <Activity className={`w-4 h-4 ${theme.primary} animate-pulse`} />
+                   </div>
+                   <h4 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white uppercase tracking-tighter leading-none">Matrice_Spoofing</h4>
+                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.4em] mt-3">Synthesized Terminal Identity Readout</p>
+                </div>
+             </div>
 
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-12 mb-16 relative z-10">
-          <div className="flex items-center gap-10">
-            <div className={`p-10 rounded-[3rem] transition-all duration-700 shadow-3xl transform group-hover/panel:scale-110 group-hover/panel:rotate-[5deg] bg-slate-900 border-2 ${isMasking ? 'border-indigo-500 text-indigo-400 animate-pulse shadow-indigo-500/20' : isOnion ? 'border-purple-500 text-purple-400 shadow-purple-500/20' : 'border-cyan-500 text-cyan-400 shadow-cyan-500/20'}`}>
-              <Fingerprint className="w-16 h-16" />
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-3">
-                <span className={`px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest shadow-inner ${isOnion ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'bg-cyan-600/20 text-cyan-400 border border-cyan-500/30'}`}>
-                  {isOnion ? 'CORE_ENGINE: VORTEX_OS' : 'CORE_ENGINE: MATRIX_V4'}
-                </span>
-                <Target className={`w-6 h-6 ${theme.primary} animate-pulse`} />
-              </div>
-              <h4 className="text-5xl font-black text-slate-900 dark:text-white leading-tight uppercase tracking-tighter">Matrice_Identité</h4>
-              <p className="text-[12px] text-slate-500 font-black uppercase tracking-[0.5em] mt-1 opacity-70">Synthesized Machine Fingerprint</p>
-            </div>
-          </div>
-          
-          <button 
-              onClick={onMask}
-              disabled={isMaskingDisabled}
-              className={`group relative flex items-center justify-center gap-6 px-20 py-8 rounded-[2.5rem] font-black text-base uppercase tracking-[0.4em] transition-all duration-500 overflow-hidden shadow-2xl ${isMasking ? 'bg-indigo-600 text-white cursor-wait' : isOnion ? 'bg-purple-700 hover:bg-purple-800 text-white' : 'bg-cyan-700 hover:bg-cyan-800 text-white disabled:opacity-30'}`}
-          >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out"></div>
-              {isMasking ? <Loader2 className="w-7 h-7 animate-spin" /> : <Sparkles className="w-7 h-7" />}
-              <span className="relative z-10">{isMasking ? 'SYNCHRONISING...' : "RE-NUMÉROTER"}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
-          {/* User-Agent Panel */}
-          <div className={`p-10 rounded-[3rem] border-2 transition-all duration-500 group/ua relative overflow-hidden ${isMasking || isScramblingUA ? 'bg-slate-950 border-indigo-500/50 shadow-indigo-500/10' : 'bg-black/40 border-slate-800 hover:border-slate-600'}`}>
-            <div className="flex items-center justify-between mb-8">
-              <span className="text-[13px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-4 group-hover/ua:text-white transition-colors">
-                <Chrome className={`w-7 h-7 ${theme.primary}`} /> Logiciel_Empreinte
-              </span>
-              <button 
-                onClick={() => {setIsScramblingUA(true); setTimeout(()=>{onScrambleUA?.(); setIsScramblingUA(false)},800)}} 
-                disabled={isMaskingDisabled} 
-                className={`p-4 rounded-2xl bg-slate-900 border border-white/5 text-slate-500 hover:text-white transition-all shadow-xl active:scale-95`}
-              >
-                <RefreshCw className={`w-6 h-6 ${isScramblingUA ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-            <div className={`font-mono text-[12px] leading-relaxed h-28 overflow-hidden relative p-6 bg-slate-900/60 rounded-[2rem] border border-white/10 shadow-inner ${isMasking || isScramblingUA ? 'text-indigo-400 italic' : 'text-slate-300'}`}>
-               {isMasking || isScramblingUA ? <div className="break-all tracking-widest">{scrambleText}</div> : currentUAData.full}
-               <div className="absolute bottom-3 right-6 text-[10px] font-black text-slate-700 uppercase bg-black/80 px-4 py-1 rounded border border-white/5">UA_BITSTREAM_FLOW</div>
-            </div>
+             <button 
+                onClick={onMask}
+                disabled={isMaskingDisabled}
+                className={`relative px-16 py-6 rounded-[2rem] font-black text-sm uppercase tracking-[0.3em] overflow-hidden group/btn transition-all duration-500 ${isMasking ? 'bg-indigo-600 text-white cursor-wait' : isOnion ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-cyan-600 hover:bg-cyan-700 text-white disabled:opacity-30'}`}
+             >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700"></div>
+                <div className="flex items-center gap-3 relative z-10">
+                   {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Scan className="w-5 h-5 group-hover/btn:rotate-90 transition-transform duration-500" />}
+                   <span>{isMasking ? 'SÉCURISATION...' : 'RÉ-NUMÉROTER'}</span>
+                </div>
+             </button>
           </div>
 
-          {/* Hardware ID Panel */}
-          <div className={`p-10 rounded-[3rem] border-2 transition-all duration-500 group/hw relative overflow-hidden ${isMasking ? 'bg-slate-950 border-indigo-500/50 shadow-indigo-500/10' : 'bg-black/40 border-slate-800 hover:border-slate-600'}`}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-8 mb-8">
-              <span className="text-[13px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-4 group-hover/hw:text-white transition-colors">
-                <Shield className={`w-7 h-7 ${theme.secondary}`} /> Matériel_Spoof (MAC)
-              </span>
-              
-              <div className="flex bg-slate-900 p-2 rounded-2xl border border-white/5 shadow-2xl">
-                {['standard', 'hyphen', 'cisco', 'random'].map((fmt) => (
-                  <button
-                    key={fmt}
-                    onClick={() => !isMaskingDisabled && onFormatChange?.(fmt as any)}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
+             {/* Component: UA Masking */}
+             <div className={`bracket-corner p-8 rounded-[2rem] border-2 transition-all duration-500 flex flex-col justify-between h-56 relative ${isMasking || isScramblingUA ? 'border-indigo-500 bg-indigo-500/5' : 'border-slate-800 bg-black/20 hover:border-slate-700'}`}>
+                <div className="flex items-center justify-between mb-4">
+                   <div className="flex items-center gap-3">
+                      <Chrome className={`w-5 h-5 ${theme.primary}`} />
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Logiciel_Empreinte</span>
+                   </div>
+                   <button 
+                    onClick={() => {setIsScramblingUA(true); setTimeout(()=>{onScrambleUA?.(); setIsScramblingUA(false)},800)}} 
                     disabled={isMaskingDisabled}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${macFormat === fmt ? 'bg-white text-black shadow-lg' : 'text-slate-500 hover:text-white'}`}
-                  >
-                    {fmt === 'standard' ? 'XX:XX' : fmt === 'hyphen' ? 'XX-XX' : fmt === 'cisco' ? 'XXXX' : 'AUTO'}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    className="p-2 hover:bg-white/5 rounded-xl transition-all text-slate-500 hover:text-white"
+                   >
+                     <RefreshCw className={`w-4 h-4 ${isScramblingUA ? 'animate-spin' : ''}`} />
+                   </button>
+                </div>
+                
+                <div className="p-4 bg-black/40 rounded-xl border border-white/5 font-mono text-[11px] leading-relaxed text-slate-300 h-24 overflow-hidden relative">
+                   {isMasking || isScramblingUA ? <div className="break-all tracking-widest italic text-indigo-400">{scrambleText}</div> : currentUAData.full}
+                   <div className="absolute bottom-2 right-4 flex items-center gap-1.5">
+                      <div className="w-1 h-1 rounded-full bg-emerald-500 animate-flicker"></div>
+                      <span className="text-[7px] font-black text-slate-600 uppercase">UA_Flow_Active</span>
+                   </div>
+                </div>
+             </div>
 
-            <div className={`text-3xl font-mono font-black tracking-[0.3em] h-28 flex items-center justify-center p-6 bg-slate-900/60 rounded-[2rem] border border-white/10 shadow-inner relative group/mac ${isMasking ? 'text-indigo-400 animate-pulse' : 'text-white'}`}>
-                {isRotating ? 'MASKED' : identity.mac}
-                {!isMasking && (
-                  <button 
-                    onClick={onScrambleMac} 
-                    disabled={isMaskingDisabled}
-                    className="absolute right-8 opacity-0 group-hover/mac:opacity-100 p-4 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/10"
-                  >
-                    <RefreshCw className="w-6 h-6 text-brand-500" />
-                  </button>
-                )}
-            </div>
-            <div className="flex items-center justify-between mt-4 px-2">
-              <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
-                Fabricant_OEM: <span className={`${theme.primary} font-mono`}>{getMacVendor(identity.mac)}</span>
-              </p>
-              <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/10 bg-slate-900/80 ${theme.secondary}`}>
-                <div className={`w-2.5 h-2.5 rounded-full ${isOnion ? 'bg-purple-500 shadow-[0_0_8px_purple]' : 'bg-emerald-500 shadow-[0_0_8px_emerald]'} animate-pulse`}></div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Live_Spoof_Active</span>
-              </div>
-            </div>
+             {/* Component: MAC Hardware Masking */}
+             <div className={`bracket-corner p-8 rounded-[2rem] border-2 transition-all duration-500 flex flex-col justify-between h-56 relative ${isMasking ? 'border-indigo-500 bg-indigo-500/5' : 'border-slate-800 bg-black/20 hover:border-slate-700'}`}>
+                <div className="flex items-center justify-between mb-4">
+                   <div className="flex items-center gap-3">
+                      <Cpu className={`w-5 h-5 ${theme.secondary}`} />
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Matériel_Spoof (MAC)</span>
+                   </div>
+                   <div className="flex bg-slate-900/80 p-1 rounded-lg border border-white/5">
+                      {['standard', 'hyphen', 'cisco'].map((fmt) => (
+                        <button
+                          key={fmt}
+                          onClick={() => !isMaskingDisabled && onFormatChange?.(fmt as any)}
+                          disabled={isMaskingDisabled}
+                          className={`px-2 py-1 rounded text-[8px] font-black transition-all uppercase ${macFormat === fmt ? 'bg-white text-black' : 'text-slate-500 hover:text-white'}`}
+                        >
+                          {fmt.toUpperCase()}
+                        </button>
+                      ))}
+                   </div>
+                </div>
+
+                <div className="flex-1 flex flex-col justify-center items-center gap-4">
+                   <div className="text-3xl font-mono font-black text-white tracking-[0.2em] relative group/mac">
+                      {isRotating ? '??:??:??' : identity.mac}
+                      {!isMasking && isConnected && (
+                         <button onClick={onScrambleMac} className="absolute -right-10 opacity-0 group-hover/mac:opacity-100 p-2 text-brand-500 hover:scale-110 transition-all">
+                            <RefreshCw className="w-4 h-4" />
+                         </button>
+                      )}
+                   </div>
+                   <div className="w-full flex items-center justify-between px-2">
+                      <div className="flex items-center gap-2">
+                         <span className="text-[9px] font-bold text-slate-500 uppercase">Fabricant:</span>
+                         <span className={`text-[9px] font-black uppercase text-slate-300`}>{getMacVendor(identity.mac)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[8px] font-mono text-emerald-500 uppercase tracking-tighter">
+                         <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div>
+                         Spoof_Valid
+                      </div>
+                   </div>
+                </div>
+             </div>
+          </div>
+
+          {/* Bottom HUD Metadata */}
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-6 border-t border-white/5 pt-8">
+             <div className="flex items-center gap-10">
+                <div className="flex items-center gap-3">
+                   <BarChart3 className="w-4 h-4 text-slate-500" />
+                   <div className="flex flex-col">
+                      <span className="text-[8px] font-black text-slate-600 uppercase">Anonymat_Rating</span>
+                      <span className={`text-[10px] font-black ${theme.primary}`}>ULTRA_HIGH (0.98)</span>
+                   </div>
+                </div>
+                <div className="flex items-center gap-3">
+                   <Layers className="w-4 h-4 text-slate-500" />
+                   <div className="flex flex-col">
+                      <span className="text-[8px] font-black text-slate-600 uppercase">Couches_Protection</span>
+                      <span className="text-[10px] font-black text-slate-300">{isOnion ? '12-LEVEL ONION' : 'AES-256 TUNNEL'}</span>
+                   </div>
+                </div>
+             </div>
+             
+             <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-xl border border-white/5">
+                   <Zap className="w-3.5 h-3.5 text-amber-500" />
+                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Moteur IA Actif</span>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-500">
+                   <Lock className="w-3.5 h-3.5" />
+                   <span className="text-[10px] font-black uppercase tracking-widest">Zéro-Log Policy</span>
+                </div>
+             </div>
           </div>
         </div>
       </div>
