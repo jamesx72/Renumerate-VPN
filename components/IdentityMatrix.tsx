@@ -8,7 +8,7 @@ import {
   Ghost, Fingerprint, 
   Loader2, Terminal, ShieldAlert, Clock, Cpu, Globe2, Chrome,
   RefreshCw,
-  EyeOff, Shield as ShieldIcon, ChevronRight, Hash
+  EyeOff, Shield as ShieldIcon, ChevronRight, Hash, Sparkles, Wand2
 } from 'lucide-react';
 
 interface Props {
@@ -43,7 +43,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [isScramblingUA, setIsScramblingUA] = useState(false);
   const [scrambleText, setScrambleText] = useState('');
 
-  // Calcul du délai réseau avec une composante aléatoire
+  // Calcul du délai réseau (Latence + petite valeur aléatoire)
   const networkDelay = useMemo(() => {
     return identity.latency + Math.floor(Math.random() * 8) + 3;
   }, [identity.latency, isRotating]);
@@ -109,7 +109,9 @@ export const IdentityMatrix: React.FC<Props> = ({
           "001422": "Dell Inc.",
           "001018": "Broadcom",
           "E0D55E": "Giga-Byte",
-          "525400": "QEMU Virtual"
+          "525400": "QEMU Virtual",
+          "00155D": "Microsoft (Hyper-V)",
+          "080027": "Oracle (VirtualBox)"
       };
       return vendors[prefix] || "Unknown Hardware";
   };
@@ -169,16 +171,16 @@ export const IdentityMatrix: React.FC<Props> = ({
                 {identity.city}, {identity.country}
             </div>
             
-            {/* Nouvelles lignes pour la latence et le délai réseau */}
-            <div className="flex items-center gap-6 pt-4 border-t border-slate-100 dark:border-slate-800/50">
-               <div className="flex flex-col">
-                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Latence Actuelle</span>
+            {/* Network Delay Display - Vertical Stack Configuration */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800/50 space-y-2">
+               <div className="flex items-center justify-between">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Latence Actuelle</span>
                   <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-400">
                     {isRotating ? '--' : `${identity.latency}ms`}
                   </span>
                </div>
-               <div className="flex flex-col">
-                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Délai Réseau</span>
+               <div className="flex items-center justify-between">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Délai Réseau</span>
                   <span className="text-xs font-mono font-bold text-emerald-500">
                     {isRotating ? '--' : `${networkDelay}ms`}
                   </span>
@@ -194,7 +196,6 @@ export const IdentityMatrix: React.FC<Props> = ({
         {/* Cyber Scanning Line */}
         {isMasking && <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent animate-scanline z-20"></div>}
 
-        {/* Background Patterns */}
         <div className="absolute inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.07]">
            <div className="absolute inset-0 cyber-grid"></div>
            <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-blue-700/10 to-transparent"></div>
@@ -207,7 +208,7 @@ export const IdentityMatrix: React.FC<Props> = ({
             </div>
             <div>
               <div className="flex items-center gap-3 mb-2">
-                <span className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.4em]">Privacy_Matrix_V2</span>
+                <span className="text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-[0.4em]">Privacy_Matrix_V3</span>
                 <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 border ${hasMaskedOnce && isConnected ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
                   {hasMaskedOnce && isConnected ? <><ShieldCheck className="w-3 h-3" /> SECURED</> : <><ShieldAlert className="w-3 h-3 animate-pulse" /> EXPOSED</>}
                 </div>
@@ -228,7 +229,7 @@ export const IdentityMatrix: React.FC<Props> = ({
               }`}
           >
               {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <EyeOff className="w-5 h-5 group-hover:scale-125 transition-transform" />}
-              {isMasking ? 'GÉNÉRATION...' : "Masquer l'empreinte"}
+              {isMasking ? 'RE-NUMÉROTATION...' : "Masquer l'empreinte"}
           </button>
         </div>
         
@@ -242,13 +243,16 @@ export const IdentityMatrix: React.FC<Props> = ({
                 </div>
                 <span className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest">Browser_Spoof</span>
               </div>
-              <button 
-                onClick={() => { if(!isMaskingDisabled && !isScramblingUA) { setIsScramblingUA(true); setTimeout(() => { onScrambleUA?.(); setIsScramblingUA(false); }, 800); }}}
-                disabled={isMaskingDisabled || isScramblingUA}
-                className="p-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-blue-700 transition-all border border-slate-200 dark:border-slate-700 hover:shadow-lg active:scale-90"
-              >
-                <RefreshCw className={`w-4 h-4 ${isScramblingUA ? 'animate-spin' : ''}`} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => { if(!isMaskingDisabled && !isScramblingUA) { setIsScramblingUA(true); setTimeout(() => { onScrambleUA?.(); setIsScramblingUA(false); }, 800); }}}
+                    disabled={isMaskingDisabled || isScramblingUA}
+                    className={`flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 text-slate-400 hover:text-blue-700 transition-all border border-slate-200 dark:border-slate-700 rounded-xl hover:shadow-lg active:scale-90 group/ua ${isScramblingUA ? 'opacity-50' : ''}`}
+                >
+                    <Wand2 className={`w-3.5 h-3.5 ${isScramblingUA ? 'animate-pulse text-blue-500' : 'text-slate-400 group-hover/ua:text-blue-500'}`} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">IA_Gen Realistic UA</span>
+                </button>
+              </div>
             </div>
             
             <div className="font-mono text-[10px] leading-relaxed h-14 overflow-hidden relative mb-8 p-4 bg-white/40 dark:bg-slate-950/40 rounded-2xl border border-white/10 dark:border-slate-800/50">
@@ -333,7 +337,7 @@ export const IdentityMatrix: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Security AI Report (Expert Opinion) */}
+      {/* Security AI Report */}
       {securityReport && (
         <div className="glass-card p-8 rounded-[2.5rem] border border-emerald-500/20 bg-emerald-500/5 animate-in slide-in-from-bottom-2 duration-700 relative overflow-hidden">
            <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-emerald-500/10 blur-3xl rounded-full"></div>

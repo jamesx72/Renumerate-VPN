@@ -88,41 +88,42 @@ export const generateRandomMac = (forceLAA: boolean = false) => {
     "00:14:22", // Dell
     "00:10:18", // Broadcom
     "E0:D5:5E", // Giga-Byte
-    "52:54:00"  // QEMU/KVM
+    "52:54:00", // QEMU/KVM
+    "00:15:5D", // Microsoft (Hyper-V)
+    "08:00:27"  // Oracle (VirtualBox)
   ];
 
   const useVendor = forceLAA ? false : Math.random() > 0.4;
-  let macBytes: string[] = [];
+  let bytes: string[] = [];
 
   if (useVendor) {
     const vendor = vendors[Math.floor(Math.random() * vendors.length)];
-    macBytes = vendor.split(':');
-    while (macBytes.length < 6) {
-      macBytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+    // Support potential dot/dash format in constant string
+    bytes = vendor.split(/[:.-]/);
+    while (bytes.length < 6) {
+      bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   } else {
     // Generate LAA (Locally Administered Address)
-    for (let i = 0; i < 6; i++) {
-      let b1 = hex[Math.floor(Math.random() * 16)];
-      let b2 = hex[Math.floor(Math.random() * 16)];
-      if (i === 0) {
-        // Force Unicast (bit 0 = 0) and Local (bit 1 = 1)
-        // Values for second nibble: 2, 6, A, E
-        const laaNibbles = ['2', '6', 'A', 'E'];
-        b2 = laaNibbles[Math.floor(Math.random() * 4)];
-      }
-      macBytes.push(b1 + b2);
+    // The second nibble of the first byte must be 2, 6, A, or E
+    const b1_1 = hex[Math.floor(Math.random() * 16)];
+    const b1_2 = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
+    bytes.push(b1_1 + b1_2);
+    
+    for (let i = 1; i < 6; i++) {
+      bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   }
 
   const formatRand = Math.random();
-  if (formatRand < 0.5) {
-    return macBytes.join(':').toUpperCase();
-  } else if (formatRand < 0.75) {
-    return macBytes.join('-').toUpperCase();
+  if (formatRand < 0.4) {
+    return bytes.join(':').toUpperCase(); // IEEE Standard
+  } else if (formatRand < 0.7) {
+    return bytes.join('-').toUpperCase(); // Windows Style
   } else {
-    const combined = macBytes.join('').toLowerCase();
-    return `${combined.slice(0,4)}.${combined.slice(4,8)}.${combined.slice(8,12)}`;
+    // Cisco Format: xxxx.xxxx.xxxx
+    const flat = bytes.join('').toLowerCase();
+    return `${flat.slice(0, 4)}.${flat.slice(4, 8)}.${flat.slice(8, 12)}`;
   }
 };
 
