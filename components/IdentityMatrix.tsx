@@ -9,7 +9,7 @@ import {
   Loader2, Terminal, ShieldAlert, Clock, Cpu, Globe2, Chrome,
   RefreshCw,
   EyeOff, Shield as ShieldIcon, ChevronRight, Hash, Sparkles, Wand2,
-  CheckCircle2 // Fixed: Import missing CheckCircle2
+  CheckCircle2, Type
 } from 'lucide-react';
 
 interface Props {
@@ -22,6 +22,8 @@ interface Props {
   onScrambleMac?: () => void;
   onScrambleUA?: () => void;
   isConnected?: boolean;
+  macFormat?: 'standard' | 'hyphen' | 'cisco' | 'random';
+  onFormatChange?: (format: 'standard' | 'hyphen' | 'cisco' | 'random') => void;
 }
 
 export const IdentityMatrix: React.FC<Props> = ({ 
@@ -33,14 +35,15 @@ export const IdentityMatrix: React.FC<Props> = ({
   onMask,
   onScrambleMac,
   onScrambleUA,
-  isConnected = false
+  isConnected = false,
+  macFormat = 'random',
+  onFormatChange
 }) => {
   const [copiedIp, setCopiedIp] = useState(false);
   const [localTime, setLocalTime] = useState<string>('');
   const [isScramblingUA, setIsScramblingUA] = useState(false);
   const [scrambleText, setScrambleText] = useState('');
 
-  // Calcul dynamique du délai réseau (Amélioration configuration)
   const networkDelay = useMemo(() => {
     return identity.latency + Math.floor(Math.random() * 8) + 3;
   }, [identity.latency, isRotating]);
@@ -74,11 +77,29 @@ export const IdentityMatrix: React.FC<Props> = ({
 
   const getMacVendor = (mac: string) => {
     const clean = mac.replace(/[:.-]/g, '').toUpperCase();
-    const vendors: Record<string, string> = { "000502": "Apple", "000CF1": "Intel", "00163E": "Xen", "00000C": "Cisco" };
+    const vendors: Record<string, string> = { 
+        "000502": "Apple", 
+        "000CF1": "Intel", 
+        "00163E": "Xen", 
+        "00000C": "Cisco",
+        "005056": "VMware",
+        "3C5AB4": "Samsung",
+        "001422": "Dell",
+        "001018": "Broadcom",
+        "00155D": "Microsoft",
+        "080027": "Oracle/VBox"
+    };
     return vendors[clean.slice(0, 6)] || "Generic Hardware";
   };
 
   const isMaskingDisabled = !isConnected || isRotating || isMasking;
+
+  const macFormats = [
+    { id: 'standard', label: 'XX:XX', icon: Hash },
+    { id: 'hyphen', label: 'XX-XX', icon: Hash },
+    { id: 'cisco', label: 'XXXX.XXXX', icon: Globe2 },
+    { id: 'random', label: 'AUTO', icon: Sparkles },
+  ] as const;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -159,12 +180,34 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
 
           <div className={`p-8 rounded-[2.5rem] border transition-all duration-500 ${isMasking ? 'bg-slate-950/80 border-indigo-500/30' : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200/50'}`}>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
               <span className="text-[11px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><Fingerprint className="w-4 h-4 text-emerald-500" /> Hardware Mask</span>
-              <button onClick={onScrambleMac} disabled={isMaskingDisabled} className="p-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-400 hover:text-emerald-500 border border-slate-200 transition-all"><RefreshCw className="w-4 h-4" /></button>
+              
+              <div className="flex bg-white dark:bg-slate-800 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700">
+                {macFormats.map((fmt) => (
+                  <button
+                    key={fmt.id}
+                    onClick={() => onFormatChange?.(fmt.id)}
+                    className={`px-2 py-1 rounded-md text-[8px] font-black transition-all ${macFormat === fmt.id ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
+                    title={fmt.id.toUpperCase()}
+                  >
+                    {fmt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className={`text-2xl font-mono font-black tracking-widest h-14 flex items-center justify-center p-4 bg-white/40 dark:bg-slate-950/40 rounded-2xl border border-white/10 ${isMasking ? 'text-indigo-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+
+            <div className={`text-2xl font-mono font-black tracking-widest h-14 flex items-center justify-center p-4 bg-white/40 dark:bg-slate-950/40 rounded-2xl border border-white/10 relative group/mac ${isMasking ? 'text-indigo-500 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
                 {isRotating ? 'XX.XX.XX.XX' : identity.mac}
+                {!isMasking && (
+                  <button 
+                    onClick={onScrambleMac} 
+                    disabled={isMaskingDisabled}
+                    className="absolute right-2 opacity-0 group-hover/mac:opacity-100 p-2 text-slate-400 hover:text-emerald-500 transition-all"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                )}
             </div>
             <p className="text-[10px] font-bold text-slate-500 mt-2">Fabricant détecté : <span className="text-emerald-500">{getMacVendor(identity.mac)}</span></p>
           </div>

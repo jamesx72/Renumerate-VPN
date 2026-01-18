@@ -49,7 +49,12 @@ function App() {
     rotationInterval: 10,
     obfuscationLevel: 'standard',
     macScramblingMode: 'random',
+    macFormat: 'random',
     uaComplexity: 'diverse',
+    vortexBridge: 'none',
+    vortexCircuitLength: 3,
+    vortexExitNodeCountry: 'auto',
+    vortexNoScript: false,
     miningIntensity: 50,
     yieldOptimizationIA: true,
     contributionType: 'passive',
@@ -72,6 +77,10 @@ function App() {
   const connectVPN = async () => {
     setIsDisconnecting(false);
     addLog(`Démarrage du tunnel Renumerate (${appSettings.protocol})...`, 'info');
+    if (mode === ConnectionMode.ONION_VORTEX) {
+        addLog(`Initialisation du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info');
+        if (appSettings.vortexBridge !== 'none') addLog(`Utilisation du bridge: ${appSettings.vortexBridge}`, 'info');
+    }
     setTimeout(async () => {
       setIsConnected(true);
       addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success');
@@ -96,7 +105,7 @@ function App() {
     addLog('Initialisation du re-numérotage global...', 'info');
     setTimeout(() => {
       const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
-      const newMac = generateRandomMac(appSettings.macScramblingMode);
+      const newMac = generateRandomMac(appSettings.macScramblingMode, appSettings.macFormat);
       setCurrentIdentity(prev => ({ ...prev, mac: newMac, userAgentShort: newUA.short }));
       setIsMasking(false);
       addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
@@ -105,9 +114,9 @@ function App() {
   };
 
   const handleScrambleMac = () => {
-    const newMac = generateRandomMac(appSettings.macScramblingMode);
+    const newMac = generateRandomMac(appSettings.macScramblingMode, appSettings.macFormat);
     setCurrentIdentity(prev => ({ ...prev, mac: newMac }));
-    addLog(`Re-numérotation MAC : ${newMac}`, 'success');
+    addLog(`Re-numérotation MAC (${appSettings.macFormat}) : ${newMac}`, 'success');
   };
 
   const handleScrambleUA = () => {
@@ -143,8 +152,39 @@ function App() {
       <main className="max-w-7xl mx-auto px-6 py-10 pb-40 space-y-10 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
             <div className="lg:col-span-8 space-y-10">
-                <Dashboard isDark={isDark} protocol={appSettings.protocol} isEmergency={false} securityReport={securityReport} isConnected={isConnected} userPlan={userPlan} mode={mode} onModeChange={(m) => setMode(m)} nodes={MOCK_NODES} onConnectNode={()=>{}} currentIp={currentIdentity.ip} />
-                <IdentityMatrix identity={currentIdentity} isRotating={isRenumbering} isMasking={isMasking} mode={mode} securityReport={securityReport} onMask={handleGlobalScramble} onScrambleMac={handleScrambleMac} onScrambleUA={handleScrambleUA} isConnected={isConnected} />
+                <Dashboard 
+                    isDark={isDark} 
+                    protocol={appSettings.protocol} 
+                    isEmergency={false} 
+                    securityReport={securityReport} 
+                    isConnected={isConnected} 
+                    userPlan={userPlan} 
+                    mode={mode} 
+                    onModeChange={(m) => setMode(m)} 
+                    nodes={MOCK_NODES} 
+                    onConnectNode={()=>{}} 
+                    currentIp={currentIdentity.ip}
+                    settings={appSettings}
+                />
+                <IdentityMatrix 
+                  identity={currentIdentity} 
+                  isRotating={isRenumbering} 
+                  isMasking={isMasking} 
+                  mode={mode} 
+                  securityReport={securityReport} 
+                  onMask={handleGlobalScramble} 
+                  onScrambleMac={handleScrambleMac} 
+                  onScrambleUA={handleScrambleUA} 
+                  isConnected={isConnected} 
+                  macFormat={appSettings.macFormat}
+                  onFormatChange={(fmt) => {
+                    setAppSettings(prev => ({...prev, macFormat: fmt}));
+                    // Optionnel: On rescramble directement avec le nouveau format pour feedback immédiat
+                    const newMac = generateRandomMac(appSettings.macScramblingMode, fmt);
+                    setCurrentIdentity(prev => ({ ...prev, mac: newMac }));
+                    addLog(`Format MAC mis à jour : ${fmt}`, 'info');
+                  }}
+                />
             </div>
             <div className="lg:col-span-4 space-y-8">
                 <EarningsCard isConnected={isConnected} plan={userPlan} isVerified={isVerified} balance={0.4215} onUpgrade={() => setShowPricing(true)} onVerify={() => setShowVerification(true)} onWithdraw={() => {}} settings={appSettings} />

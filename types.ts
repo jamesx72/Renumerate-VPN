@@ -49,7 +49,13 @@ export interface AppSettings {
   rotationInterval: number; // en minutes
   obfuscationLevel: 'standard' | 'high' | 'ultra';
   macScramblingMode: 'vendor' | 'laa' | 'random';
+  macFormat: 'standard' | 'hyphen' | 'cisco' | 'random';
   uaComplexity: 'standard' | 'diverse' | 'chaotic';
+  // Vortex (Tor) Config
+  vortexBridge: 'none' | 'obfs4' | 'snowflake' | 'meek-azure';
+  vortexCircuitLength: number;
+  vortexExitNodeCountry: string;
+  vortexNoScript: boolean;
   // Earning Configurations
   miningIntensity: number; 
   yieldOptimizationIA: boolean;
@@ -76,7 +82,6 @@ export interface DeviceNode {
   country: string;
 }
 
-// Fixed: Added missing Transaction interface
 export interface Transaction {
   id: string;
   method: 'crypto' | 'paypal' | 'bank_transfer';
@@ -86,7 +91,6 @@ export interface Transaction {
   date: string;
 }
 
-// Fixed: Added missing ConnectionSession interface
 export interface ConnectionSession {
   id: string;
   serverCountry: string;

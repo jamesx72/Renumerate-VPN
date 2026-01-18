@@ -58,11 +58,24 @@ export const REALISTIC_USER_AGENTS = [
   }
 ];
 
-export const generateRandomMac = (mode: 'vendor' | 'laa' | 'random' = 'random') => {
+export const generateRandomMac = (
+  mode: 'vendor' | 'laa' | 'random' = 'random',
+  format: 'standard' | 'hyphen' | 'cisco' | 'random' = 'random'
+) => {
   const hex = "0123456789ABCDEF";
   const vendors = [
-    "00:05:02", "00:0C:F1", "00:16:3E", "00:50:56", "00:00:0C", 
-    "3C:5A:B4", "00:14:22", "00:10:18", "00:15:5D", "08:00:27"
+    "00:05:02", // Apple
+    "00:0C:F1", // Intel
+    "00:16:3E", // Xen
+    "00:50:56", // VMware
+    "00:00:0C", // Cisco
+    "3C:5A:B4", // Samsung
+    "00:14:22", // Dell
+    "00:10:18", // Broadcom
+    "E0:D5:5E", // Giga-Byte
+    "52:54:00", // QEMU/KVM
+    "00:15:5D", // Microsoft
+    "08:00:27"  // VirtualBox
   ];
 
   let bytes: string[] = [];
@@ -70,21 +83,38 @@ export const generateRandomMac = (mode: 'vendor' | 'laa' | 'random' = 'random') 
   if (mode === 'vendor') {
     const vendor = vendors[Math.floor(Math.random() * vendors.length)];
     bytes = vendor.split(':');
-    while (bytes.length < 6) bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+    while (bytes.length < 6) {
+      bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+    }
   } else if (mode === 'laa') {
     const b1_1 = hex[Math.floor(Math.random() * 16)];
     const b1_2 = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
     bytes.push(b1_1 + b1_2);
-    for (let i = 1; i < 6; i++) bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+    for (let i = 1; i < 6; i++) {
+      bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+    }
   } else {
-    for (let i = 0; i < 6; i++) bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+    for (let i = 0; i < 6; i++) {
+      bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+    }
   }
 
-  const formatRand = Math.random();
-  if (formatRand < 0.33) return bytes.join(':').toUpperCase();
-  if (formatRand < 0.66) return bytes.join('-').toUpperCase();
-  const flat = bytes.join('').toLowerCase();
-  return `${flat.slice(0, 4)}.${flat.slice(4, 8)}.${flat.slice(8, 12)}`; // Cisco
+  // Determine final format
+  let finalFormat = format;
+  if (format === 'random') {
+    const r = Math.random();
+    finalFormat = r < 0.35 ? 'standard' : r < 0.65 ? 'hyphen' : 'cisco';
+  }
+
+  if (finalFormat === 'standard') {
+    return bytes.join(':').toUpperCase();
+  } else if (finalFormat === 'hyphen') {
+    return bytes.join('-').toUpperCase();
+  } else {
+    // Cisco format: xxxx.xxxx.xxxx
+    const flat = bytes.join('').toLowerCase();
+    return `${flat.slice(0, 4)}.${flat.slice(4, 8)}.${flat.slice(8, 12)}`;
+  }
 };
 
 export const MOCK_IDENTITIES: VirtualIdentity[] = [
