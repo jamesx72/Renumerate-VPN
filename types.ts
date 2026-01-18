@@ -20,7 +20,8 @@ export enum ConnectionMode {
   STANDARD = 'Standard',
   STEALTH = 'Stealth',
   DOUBLE_HOP = 'Double Hop',
-  SMART_DNS = 'Smart DNS'
+  SMART_DNS = 'Smart DNS',
+  ONION_VORTEX = 'Onion Vortex'
 }
 
 export interface LogEntry {

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
 import { REALISTIC_USER_AGENTS } from '../constants';
 import { 
@@ -42,6 +42,11 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [isScramblingMac, setIsScramblingMac] = useState(false);
   const [isScramblingUA, setIsScramblingUA] = useState(false);
   const [scrambleText, setScrambleText] = useState('');
+
+  // Calcul du délai réseau avec une composante aléatoire
+  const networkDelay = useMemo(() => {
+    return identity.latency + Math.floor(Math.random() * 8) + 3;
+  }, [identity.latency, isRotating]);
 
   useEffect(() => {
     if (isMasking) setHasMaskedOnce(true);
@@ -160,8 +165,24 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
           <div className="relative z-10">
             <span className="text-[9px] text-slate-400 uppercase font-bold tracking-[0.1em] mb-1 block">Nœud de Sortie</span>
-            <div className={`font-black tracking-tight text-2xl ${isRotating ? 'text-blue-700 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
+            <div className={`font-black tracking-tight text-2xl mb-4 ${isRotating ? 'text-blue-700 animate-pulse' : 'text-slate-900 dark:text-white'}`}>
                 {identity.city}, {identity.country}
+            </div>
+            
+            {/* Nouvelles lignes pour la latence et le délai réseau */}
+            <div className="flex items-center gap-6 pt-4 border-t border-slate-100 dark:border-slate-800/50">
+               <div className="flex flex-col">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Latence Actuelle</span>
+                  <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-400">
+                    {isRotating ? '--' : `${identity.latency}ms`}
+                  </span>
+               </div>
+               <div className="flex flex-col">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Délai Réseau</span>
+                  <span className="text-xs font-mono font-bold text-emerald-500">
+                    {isRotating ? '--' : `${networkDelay}ms`}
+                  </span>
+               </div>
             </div>
           </div>
         </div>
