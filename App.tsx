@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Power, Moon, Sun, Globe, Activity, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, Siren, Loader2, LogOut, CheckCircle, ArrowUpRight, History, Network, Zap } from 'lucide-react';
+import { Shield, Power, Moon, Sun, Globe, Activity, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, Siren, Loader2, LogOut, CheckCircle, ArrowUpRight, History, Network, Zap, ShieldCheck } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { PricingModal } from './components/PricingModal';
@@ -12,6 +12,7 @@ import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { AuthScreen } from './components/AuthScreen';
+import { VerificationModal } from './components/VerificationModal';
 import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac, MOCK_NODES } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, Transaction, ConnectionSession, DeviceNode } from './types';
 import { analyzeSecurity } from './services/geminiService';
@@ -38,8 +39,11 @@ function App() {
   const [balance, setBalance] = useState(0.4215);
   const [reputationScore, setReputationScore] = useState(85);
   const [userPlan, setUserPlan] = useState<PlanTier>(() => (localStorage.getItem('userPlan') as PlanTier) || 'free');
+  const [isVerified, setIsVerified] = useState<boolean>(() => localStorage.getItem('isVerified') === 'true');
+  
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
   
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('appSettings');
@@ -82,6 +86,10 @@ function App() {
   }, [userPlan]);
 
   useEffect(() => {
+    localStorage.setItem('isVerified', isVerified.toString());
+  }, [isVerified]);
+
+  useEffect(() => {
     if (!isConnected) {
         const interval = setInterval(() => {
             setReputationScore(prev => Math.max(prev - 0.01, 0));
@@ -97,7 +105,8 @@ function App() {
 
   // Earning Accumulation Engine
   useEffect(() => {
-    if (!isConnected || userPlan === 'free') return;
+    // Condition de rémunération : Connecté + Plan Payant + Identité Vérifiée
+    if (!isConnected || userPlan === 'free' || !isVerified) return;
 
     const interval = setInterval(() => {
       const baseRate = userPlan === 'elite' ? 0.00012 : 0.00004;
@@ -111,7 +120,7 @@ function App() {
     }, 200);
 
     return () => clearInterval(interval);
-  }, [isConnected, userPlan, appSettings.miningIntensity, appSettings.yieldOptimizationIA, appSettings.contributionType, reputationScore]);
+  }, [isConnected, userPlan, isVerified, appSettings.miningIntensity, appSettings.yieldOptimizationIA, appSettings.contributionType, reputationScore]);
 
   const updateSetting = (key: keyof AppSettings, value: any) => {
     setAppSettings(prev => ({ ...prev, [key]: value }));
@@ -137,8 +146,13 @@ function App() {
       const report = await analyzeSecurity(mode, currentIdentity.country, currentIdentity.ip);
       setSecurityReport(report);
       addLog(`Analyse de sécurité terminée : Score ${report.score}/100`, 'info');
+      
       if (userPlan !== 'free') {
-        addLog(`Génération de RNC active (Intensité: ${appSettings.miningIntensity}%)`, 'info');
+        if (isVerified) {
+          addLog(`Génération de RNC active (Intensité: ${appSettings.miningIntensity}%)`, 'info');
+        } else {
+          addLog(`Attention : Rémunération RNC suspendue. Vérification d'identité requise.`, 'warning');
+        }
       }
     }, 1500);
   };
@@ -196,6 +210,20 @@ function App() {
     if (!isConnected) connectVPN();
   };
 
+  const handleVerificationSuccess = () => {
+    setIsVerified(true);
+    setShowVerification(false);
+    addLog("Identité vérifiée avec succès. Accès RNC débloqué.", "success");
+  };
+
+  const handlePlanUpgrade = (plan: PlanTier) => {
+    setUserPlan(plan);
+    addLog(`Plan mis à niveau vers : ${plan.toUpperCase()}. Vérification du paiement en cours...`, "info");
+    setTimeout(() => {
+      addLog(`Paiement confirmé par l'infrastructure bancaire.`, "success");
+    }, 2000);
+  };
+
   if (!user) return <AuthScreen onLogin={(e) => setUser({email: e})} />;
 
   return (
@@ -214,12 +242,19 @@ function App() {
               <div className="p-2.5 bg-cyan-600 rounded-2xl shadow-lg shadow-cyan-500/20 group-hover:scale-110 transition-transform">
                 <Shield className="w-7 h-7 text-white" />
               </div>
-              <span className="font-black text-2xl tracking-tighter">Renumerate<span class="text-cyan-500">VPN</span></span>
+              <span className="font-black text-2xl tracking-tighter">Renumerate<span className="text-cyan-500">VPN</span></span>
           </div>
           
           <div className="flex items-center gap-4">
-            <button onClick={() => setShowPricing(true)} className="hidden md:flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-[10px] font-black bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 shadow-sm transition-all uppercase tracking-widest">
-              <Crown className="w-4 h-4 text-amber-500" />
+            <button 
+              onClick={() => setShowPricing(true)} 
+              className={`hidden md:flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-[10px] font-black border shadow-sm transition-all uppercase tracking-widest ${
+                userPlan === 'elite' ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' : 
+                userPlan === 'pro' ? 'bg-brand-500/10 border-brand-500/30 text-brand-500' :
+                'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-cyan-500'
+              }`}
+            >
+              <Crown className={`w-4 h-4 ${userPlan !== 'free' ? 'animate-pulse' : ''}`} />
               {userPlan} Plan
             </button>
             
@@ -231,7 +266,7 @@ function App() {
             <button onClick={() => setIsDark(!isDark)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:text-cyan-500">
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <button onClick={() => setUser(null)} className="p-3 rounded-2xl text-slate-500 hover:bg-red-500/10 hover:text-red-500 transition-all">
+            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-3 rounded-2xl text-slate-500 hover:bg-red-500/10 hover:text-red-500 transition-all">
               <LogOut className="w-5 h-5" />
             </button>
           </div>
@@ -239,6 +274,27 @@ function App() {
       </header>
       
       <main className="max-w-7xl mx-auto px-6 py-10 pb-40 space-y-10 relative z-10">
+        {/* Verification Banner if Pro but not verified */}
+        {!isVerified && userPlan !== 'free' && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-500">
+            <div className="flex items-center gap-4">
+              <div className="p-2 bg-amber-500 text-white rounded-xl shadow-lg shadow-amber-500/20">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Identité non vérifiée</h4>
+                <p className="text-xs text-slate-500">Vérifiez votre identité pour débloquer la rémunération RNC sur votre plan {userPlan.toUpperCase()}.</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setShowVerification(true)}
+              className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-amber-500/20 active:scale-95"
+            >
+              Vérifier maintenant
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
             {/* Left Content */}
             <div className="lg:col-span-8 space-y-10">
@@ -274,9 +330,11 @@ function App() {
                 <EarningsCard 
                     isConnected={isConnected}
                     plan={userPlan}
+                    isVerified={isVerified}
                     balance={balance}
                     reputation={reputationScore}
                     onUpgrade={() => setShowPricing(true)}
+                    onVerify={() => setShowVerification(true)}
                     onWithdraw={() => {}}
                     settings={appSettings}
                 />
@@ -308,8 +366,10 @@ function App() {
           </div>
       </div>
 
-      {showPricing && <PricingModal currentPlan={userPlan} onUpgrade={(p) => setUserPlan(p)} onClose={() => setShowPricing(false)} />}
+      {showPricing && <PricingModal currentPlan={userPlan} onUpgrade={handlePlanUpgrade} onClose={() => setShowPricing(false)} />}
       
+      {showVerification && <VerificationModal onClose={() => setShowVerification(false)} onSuccess={handleVerificationSuccess} />}
+
       {showSettings && (
         <SettingsPanel 
           settings={appSettings} 
