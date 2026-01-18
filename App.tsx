@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Shield, Power, Moon, Sun, Globe, Activity, Settings, Crown, Wallet, Ghost, Layers, AlertTriangle, Siren, Loader2, LogOut, CheckCircle, ArrowUpRight, History, Network, Zap, ShieldCheck } from 'lucide-react';
+import { Shield, Power, Moon, Sun, Globe, Activity, SlidersVertical, Crown, Wallet, Ghost, Layers, AlertTriangle, Siren, Loader2, LogOut, CheckCircle, ArrowUpRight, History, Network, Zap, ShieldCheck } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { PricingModal } from './components/PricingModal';
@@ -261,7 +261,7 @@ function App() {
             <div className="h-10 w-px bg-slate-200 dark:border-slate-800 mx-2 hidden md:block"></div>
 
             <button onClick={() => setShowSettings(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:text-cyan-500">
-              <Settings className="w-5 h-5" />
+              <SlidersVertical className="w-5 h-5" />
             </button>
             <button onClick={() => setIsDark(!isDark)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:text-cyan-500">
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
