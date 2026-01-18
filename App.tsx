@@ -15,12 +15,15 @@ import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac, MOCK_NODES } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, DeviceNode, ConnectionSession } from './types';
 import { analyzeSecurity } from './services/geminiService';
+import { dbService } from './services/dbService';
+// Fix: Import supabase client to avoid 'Cannot find name supabase' error.
+import { supabase } from './services/supabaseClient';
 
 function App() {
   const [isDark, setIsDark] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [user, setUser] = useState<{email: string} | null>(() => {
+  const [user, setUser] = useState<{id: string, email: string} | null>(() => {
     const saved = localStorage.getItem('user');
     return saved ? JSON.parse(saved) : null;
   });
@@ -33,6 +36,7 @@ function App() {
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(null);
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [isVerified, setIsVerified] = useState(false);
+  const [balance, setBalance] = useState(0.4215);
   const [showPricing, setShowPricing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
@@ -69,6 +73,28 @@ function App() {
     logRetentionHours: 168
   });
 
+  // --- Backend Sync Effect ---
+  useEffect(() => {
+    if (user?.id) {
+      const syncData = async () => {
+        try {
+          const profile = await dbService.getOrCreateProfile(user.id, user.email);
+          setUserPlan(profile.plan_tier);
+          setIsVerified(profile.is_verified);
+          setBalance(parseFloat(profile.balance));
+
+          const remoteSettings = await dbService.getSettings(user.id);
+          if (remoteSettings) {
+            setAppSettings(prev => ({ ...prev, ...remoteSettings }));
+          }
+        } catch (err) {
+          console.error("Erreur de synchronisation initiale:", err);
+        }
+      };
+      syncData();
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     if (isDark) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
@@ -88,7 +114,6 @@ function App() {
       setIsConnected(true);
       addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success');
       
-      // Save to connection history
       const newSession: ConnectionSession = {
         id: Math.random().toString(36).substr(2, 9),
         serverCountry: currentIdentity.country,
@@ -98,7 +123,13 @@ function App() {
         mode: mode,
         durationString: 'En cours...'
       };
+
       setConnectionHistory(prev => [newSession, ...prev]);
+      
+      // Persist session to DB
+      if (user?.id) {
+        dbService.logSession(user.id, newSession).catch(console.error);
+      }
 
       const report = await analyzeSecurity(mode, currentIdentity.country, currentIdentity.ip);
       setSecurityReport(report);
@@ -109,7 +140,6 @@ function App() {
     setIsDisconnecting(true);
     addLog('Fermeture sécurisée du tunnel...', 'warning');
     setTimeout(() => {
-      // Update last session duration on disconnect
       setConnectionHistory(prev => {
         if (prev.length === 0) return prev;
         const last = { ...prev[0] };
@@ -131,11 +161,23 @@ function App() {
       return { success: true, redirect: true };
     }
     return new Promise((resolve) => {
-      setTimeout(() => {
+      setTimeout(async () => {
         setUserPlan(plan);
+        // Persist plan change
+        if (user?.id) {
+           await supabase.from('profiles').update({ plan_tier: plan }).eq('id', user.id);
+        }
         resolve({ success: true, redirect: false });
       }, 3000);
     });
+  };
+
+  const updateAppSettings = async (key: keyof AppSettings, value: any) => {
+    const newSettings = { ...appSettings, [key]: value };
+    setAppSettings(newSettings);
+    if (user?.id) {
+      dbService.saveSettings(user.id, newSettings).catch(console.error);
+    }
   };
 
   const handleGlobalScramble = () => {
@@ -162,7 +204,11 @@ function App() {
     addLog(`Spoofing UA réussi`, 'success');
   };
 
-  if (!user) return <AuthScreen onLogin={(e) => setUser({email: e})} />;
+  if (!user) return <AuthScreen onLogin={(e) => {
+    const userData = {id: Math.random().toString(36).substr(2, 9), email: e};
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  }} />;
 
   return (
     <div className={`min-h-screen transition-colors duration-500 overflow-x-hidden ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
@@ -216,18 +262,18 @@ function App() {
                   isConnected={isConnected} 
                   macFormat={appSettings.macFormat}
                   onFormatChange={(fmt) => {
-                    setAppSettings(prev => ({...prev, macFormat: fmt}));
+                    updateAppSettings('macFormat', fmt);
                   }}
                 />
             </div>
             <div className="lg:col-span-4 space-y-8">
-                <EarningsCard isConnected={isConnected} plan={userPlan} isVerified={isVerified} balance={0.4215} onUpgrade={() => setShowPricing(true)} onVerify={() => setShowVerification(true)} onWithdraw={() => {}} settings={appSettings} />
+                <EarningsCard isConnected={isConnected} plan={userPlan} isVerified={isVerified} balance={balance} onUpgrade={() => setShowPricing(true)} onVerify={() => setShowVerification(true)} onWithdraw={() => {}} settings={appSettings} />
                 <SecurityAudit currentIp={currentIdentity.ip} location={currentIdentity.country} />
                 <SystemLogs 
                   logs={logs} 
                   onClear={() => setLogs([])} 
                   retentionHours={appSettings.logRetentionHours}
-                  onRetentionChange={(hours) => setAppSettings(prev => ({...prev, logRetentionHours: hours}))}
+                  onRetentionChange={(hours) => updateAppSettings('logRetentionHours', hours)}
                 />
             </div>
         </div>
@@ -264,7 +310,7 @@ function App() {
         />
       )}
       {showVerification && <VerificationModal onClose={() => setShowVerification(false)} onSuccess={()=>{setIsVerified(true); setShowVerification(false)}} />}
-      {showSettings && <SettingsPanel settings={appSettings} updateSettings={(k,v)=>setAppSettings(prev=>({...prev,[k]:v}))} onClose={() => setShowSettings(false)} userPlan={userPlan} onShowPricing={() => { setShowSettings(false); setShowPricing(true); }} />}
+      {showSettings && <SettingsPanel settings={appSettings} updateSettings={updateAppSettings} onClose={() => setShowSettings(false)} userPlan={userPlan} onShowPricing={() => { setShowSettings(false); setShowPricing(true); }} />}
       {showConnectionHistory && <ConnectionHistoryModal history={connectionHistory} onClose={() => setShowConnectionHistory(false)} onClear={() => setConnectionHistory([])} />}
     </div>
   );

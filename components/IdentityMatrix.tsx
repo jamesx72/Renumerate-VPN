@@ -8,7 +8,7 @@ import {
   Hash, Sparkles, CheckCircle2, Globe2,
   Cpu, Activity, Target, ShieldCheck, Orbit, Lock, ArrowRight,
   Shield, Zap, Radio, BarChart3, Scan, Layers, Tv, Binary, ChevronRight,
-  MapPin, Users, Thermometer, Cloud, Info, X
+  MapPin, Users, Thermometer, Cloud, Info, X, EyeOff
 } from 'lucide-react';
 
 interface Props {
@@ -48,6 +48,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [copiedIp, setCopiedIp] = useState(false);
   const [localTime, setLocalTime] = useState<string>('');
   const [isScramblingUA, setIsScramblingUA] = useState(false);
+  const [isScramblingMac, setIsScramblingMac] = useState(false);
   const [scrambleText, setScrambleText] = useState('');
   const [entropy, setEntropy] = useState('0.00');
   const [signature, setSignature] = useState('0x' + Math.random().toString(16).slice(2, 10).toUpperCase());
@@ -69,7 +70,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
-    if (isMasking || isScramblingUA) {
+    if (isMasking || isScramblingUA || isScramblingMac) {
       const chars = "10101010101010101010101010101010";
       const interval = setInterval(() => {
         let result = "";
@@ -78,7 +79,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       }, 30);
       return () => clearInterval(interval);
     }
-  }, [isMasking, isScramblingUA]);
+  }, [isMasking, isScramblingUA, isScramblingMac]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -99,7 +100,8 @@ export const IdentityMatrix: React.FC<Props> = ({
     const clean = mac.replace(/[:.-]/g, '').toUpperCase();
     const vendors: Record<string, string> = { 
         "000502": "Apple", "000CF1": "Intel", "00163E": "Xen", "00000C": "Cisco",
-        "005056": "VMware", "3C5AB4": "Samsung", "001422": "Dell", "001018": "Broadcom"
+        "005056": "VMware", "3C5AB4": "Samsung", "001422": "Dell", "001018": "Broadcom",
+        "FCECDA": "Ubiquiti", "D404FF": "Netgear", "00155D": "Microsoft"
     };
     return vendors[clean.slice(0, 6)] || "Generic Hardware";
   };
@@ -118,6 +120,23 @@ export const IdentityMatrix: React.FC<Props> = ({
   };
 
   const currentCityData = CITY_METADATA[identity.city] || { population: 'N/A', region: 'N/A', weather: 'Stable', temp: 'N/A', threat: 'Inconnu' };
+
+  const handleScrambleUAPress = () => {
+    setIsScramblingUA(true);
+    setTimeout(() => {
+      onScrambleUA?.();
+      setIsScramblingUA(false);
+    }, 1200);
+  };
+
+  const handleScrambleMacPress = () => {
+    if (isMaskingDisabled) return;
+    setIsScramblingMac(true);
+    setTimeout(() => {
+      onScrambleMac?.();
+      setIsScramblingMac(false);
+    }, 800);
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-1000">
@@ -196,7 +215,6 @@ export const IdentityMatrix: React.FC<Props> = ({
                  </div>
              </div>
              <div className="flex gap-0.5 items-end h-6">
-                {/* Fixed: Use Array.from to avoid spread operator issue and fix potential callable expression error on line 195 */}
                 {Array.from({ length: 8 }).map((_, i) => (
                     <div 
                       key={i} 
@@ -281,7 +299,6 @@ export const IdentityMatrix: React.FC<Props> = ({
       </div>
 
       {/* Main Tactical Interface */}
-      {/* Fixed: Replaced complex template literal with concatenation to avoid parsing errors in some environments */}
       <div className={"glass-card p-1 relative rounded-[3.5rem] border transition-all duration-1000 overflow-hidden group/panel " + (isMasking ? "border-brand-500 shadow-[0_0_80px_rgba(6,182,212,0.15)]" : "border-slate-800 shadow-2xl hover:" + theme.borderStrong)}>
         
         {/* Animated Scanline Overlay */}
@@ -318,14 +335,14 @@ export const IdentityMatrix: React.FC<Props> = ({
                 
                 <div className="flex items-center gap-4 relative z-10">
                    {isMasking ? <Loader2 className="w-6 h-6 animate-spin" /> : <Scan className="w-6 h-6 group-hover/btn:rotate-180 transition-transform duration-500" />}
-                   <span>{isMasking ? 'TRAITEMENT...' : 'RE-NUMÉROTER'}</span>
+                   <span>{isMasking ? 'TRAITEMENT...' : 'MASQUAGE GLOBAL'}</span>
                 </div>
              </button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
              {/* Component Card: User Agent */}
-             <div className={`p-8 rounded-[2.5rem] border-2 transition-all duration-500 flex flex-col justify-between h-64 relative overflow-hidden group/card ${isMasking || isScramblingUA ? 'border-brand-500 bg-brand-500/5' : 'border-slate-800 bg-black/40 hover:border-slate-700'}`}>
+             <div className={`p-8 rounded-[2.5rem] border-2 transition-all duration-500 flex flex-col justify-between h-[340px] relative overflow-hidden group/card ${isMasking || isScramblingUA ? 'border-brand-500 bg-brand-500/5' : 'border-slate-800 bg-black/40 hover:border-slate-700'}`}>
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
                        <div className={`p-3 rounded-2xl bg-slate-900 ${theme.primary}`}>
@@ -336,13 +353,6 @@ export const IdentityMatrix: React.FC<Props> = ({
                            <span className={`text-[9px] font-mono font-black ${theme.primary}`}>[ SPOOF_BROWSER_READY ]</span>
                        </div>
                     </div>
-                    <button 
-                        onClick={() => {setIsScramblingUA(true); setTimeout(()=>{onScrambleUA?.(); setIsScramblingUA(false)},800)}} 
-                        disabled={isMaskingDisabled}
-                        className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-slate-500 hover:text-white border border-white/5 active:scale-90"
-                    >
-                        <RefreshCw className={`w-5 h-5 ${isScramblingUA ? 'animate-spin' : ''}`} />
-                    </button>
                 </div>
                 
                 <div className="p-5 bg-black/40 rounded-2xl border border-white/5 font-mono text-[11px] leading-relaxed text-slate-300 h-28 overflow-hidden relative shadow-inner">
@@ -361,12 +371,27 @@ export const IdentityMatrix: React.FC<Props> = ({
                       <span className="text-[7px] font-black uppercase tracking-widest">UA_Bitstream_Active</span>
                    </div>
                 </div>
+
+                <div className="mt-4">
+                   <button 
+                      onClick={handleScrambleUAPress}
+                      disabled={isMaskingDisabled}
+                      className={`w-full py-4 rounded-2xl border flex items-center justify-center gap-3 transition-all font-black text-[10px] uppercase tracking-[0.2em] shadow-lg ${
+                        isScramblingUA 
+                        ? 'bg-brand-500/10 border-brand-500 text-brand-500' 
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-brand-500/50 hover:bg-brand-500/5'
+                      } active:scale-95 disabled:opacity-30`}
+                   >
+                      {isScramblingUA ? <Loader2 className="w-4 h-4 animate-spin" /> : <EyeOff className="w-4 h-4" />}
+                      {isScramblingUA ? 'GÉNÉRATION...' : 'Masquer l\'empreinte'}
+                   </button>
+                </div>
              </div>
 
              {/* Component Card: Hardware MAC */}
              <div 
-                onClick={() => !isMasking && onScrambleMac?.()}
-                className={`glass-card p-6 rounded-[2.5rem] border transition-all duration-500 flex flex-col justify-between h-64 relative overflow-hidden group/card ${isMasking ? 'border-brand-500 bg-brand-500/5' : 'border-slate-800 bg-black/40 hover:border-slate-700 hover:scale-[1.01] cursor-pointer'}`}
+                onClick={handleScrambleMacPress}
+                className={`glass-card p-6 rounded-[2.5rem] border transition-all duration-500 flex flex-col justify-between h-[340px] relative overflow-hidden group/card ${isMasking || isScramblingMac ? 'border-brand-500 bg-brand-500/5' : 'border-slate-800 bg-black/40 hover:border-slate-700 hover:scale-[1.01] cursor-pointer'}`}
              >
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
@@ -379,27 +404,29 @@ export const IdentityMatrix: React.FC<Props> = ({
                        </div>
                     </div>
                     <div className="flex bg-slate-900/80 p-1.5 rounded-xl border border-white/5 shadow-xl">
-                        {['standard', 'hyphen', 'cisco'].map((fmt) => (
+                        {['standard', 'hyphen', 'cisco', 'random'].map((fmt) => (
                             <button
                                 key={fmt}
                                 onClick={(e) => { e.stopPropagation(); !isMaskingDisabled && onFormatChange?.(fmt as any); }}
                                 disabled={isMaskingDisabled}
                                 className={`px-2.5 py-1 rounded-lg text-[9px] font-black transition-all uppercase tracking-tighter ${macFormat === fmt ? 'bg-white text-black shadow-md' : 'text-slate-500 hover:text-white'}`}
                             >
-                                {fmt.slice(0, 3)}
+                                {fmt === 'random' ? 'AUTO' : fmt.slice(0, 3)}
                             </button>
                         ))}
                     </div>
                 </div>
 
                 <div className="flex-1 flex flex-col justify-center items-center gap-5">
-                   <div className="text-4xl font-mono font-black text-white tracking-[0.25em] relative group/mac transition-all duration-300 group-hover/card:scale-105">
-                      {isRotating ? (
+                   <div className={`text-4xl font-mono font-black text-white tracking-[0.25em] relative group/mac transition-all duration-300 ${isScramblingMac ? 'scale-90 opacity-50' : 'group-hover/card:scale-105'}`}>
+                      {isRotating || isScramblingMac ? (
                         <div className="flex gap-2 animate-glitch text-brand-500">
                            <span>XX</span>:<span>XX</span>:<span>XX</span>
                         </div>
-                      ) : identity.mac}
-                      {!isMasking && isConnected && (
+                      ) : (
+                        <span className={identity.mac.includes('.') ? 'text-3xl' : 'text-4xl'}>{identity.mac}</span>
+                      )}
+                      {!isMasking && !isScramblingMac && isConnected && (
                          <div className="absolute -right-14 opacity-0 group-hover/card:opacity-100 p-2 text-brand-500 hover:scale-125 transition-all drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]">
                             <RefreshCw className="w-6 h-6" />
                          </div>
@@ -411,8 +438,8 @@ export const IdentityMatrix: React.FC<Props> = ({
                          <span className={`text-[10px] font-black uppercase text-slate-200`}>{getMacVendor(identity.mac)}</span>
                       </div>
                       <div className="flex items-center gap-2 text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
-                         <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-                         SYNC_VALID
+                         <div className={`w-2 h-2 rounded-full ${isScramblingMac ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]`}></div>
+                         {isScramblingMac ? 'ROTATING...' : 'SYNC_VALID'}
                       </div>
                    </div>
                 </div>
