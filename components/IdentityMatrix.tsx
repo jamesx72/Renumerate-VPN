@@ -96,10 +96,10 @@ export const IdentityMatrix: React.FC<Props> = ({
 
   useEffect(() => {
     const updateTime = () => {
-      const offset = parseInt(identity.timezone.replace('UTC', '')) || 0;
+      const offsetValue = identity.timezone ? parseInt(identity.timezone.replace('UTC', '')) : 0;
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const cityTime = new Date(utc + (3600000 * offset));
+      const cityTime = new Date(utc + (3600000 * offsetValue));
       setLocalTime(cityTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     };
     updateTime();

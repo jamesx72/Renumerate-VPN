@@ -102,11 +102,12 @@ export const IdentityAssistant: React.FC<Props> = ({ mode, isConnected, security
             scriptProcessor.connect(audioContextRef.current!.destination);
           },
           onmessage: async (message: LiveServerMessage) => {
-            if (message.serverContent?.outputTranscription) {
-              setTranscription(prev => (prev + ' ' + message.serverContent?.outputTranscription?.text).slice(-200));
+            const sc = message.serverContent;
+            if (sc?.outputTranscription) {
+              setTranscription(prev => (prev + ' ' + sc.outputTranscription?.text).slice(-200));
             }
             
-            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            const base64Audio = sc?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio) {
               setIsModelSpeaking(true);
               const ctx = outAudioContextRef.current!;
@@ -124,8 +125,8 @@ export const IdentityAssistant: React.FC<Props> = ({ mode, isConnected, security
               sourcesRef.current.add(source);
             }
 
-            if (message.serverContent?.interrupted) {
-              sourcesRef.current.forEach(s => s.stop());
+            if (sc?.interrupted) {
+              sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
               sourcesRef.current.clear();
               nextStartTimeRef.current = 0;
               setIsModelSpeaking(false);

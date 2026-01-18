@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Search, Grid, List, Save, Trash2, Filter, Settings2, CheckCircle2, 
+  Search, Grid, List, Save, Trash2, Filter, Settings2, CircleCheck, 
   ChevronDown, Signal, Activity, Smartphone, Monitor, Server, Cpu, 
   Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil, RotateCcw,
   ArrowRightLeft, ChevronUp, AlertTriangle, Info, Terminal, Download, ClipboardList
@@ -742,7 +742,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                 >
                      <div className="flex items-center gap-3">
                          <div className={`p-2 rounded-xl transition-all ${transferState.status === 'completed' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-brand-500/20 text-brand-500 group-hover:scale-110'}`}>
-                             {transferState.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> : <Activity className="w-5 h-5 animate-pulse" />}
+                             {transferState.status === 'completed' ? <CircleCheck className="w-5 h-5" /> : <Activity className="w-5 h-5 animate-pulse" />}
                          </div>
                          <div className="flex flex-col">
                              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
@@ -814,7 +814,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                                         <div className="flex items-center justify-between mb-1">
                                              <div className="flex items-center gap-1.5">
                                                  {log.type === 'info' && <Info className="w-3 h-3 text-blue-500" />}
-                                                 {log.type === 'success' && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                                 {log.type === 'success' && <CircleCheck className="w-3 h-3 text-emerald-500" />}
                                                  {log.type === 'warning' && <AlertTriangle className="w-3 h-3 text-amber-500" />}
                                                  {log.type === 'error' && <X className="w-3 h-3 text-red-500" />}
                                                  <span className={`font-black uppercase tracking-tighter text-[9px] ${
