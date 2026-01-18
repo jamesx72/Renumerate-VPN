@@ -1,5 +1,7 @@
 {
   "name": "Renumerate VPN",
   "description": "Une interface VPN avancée axée sur la re-numérotation dynamique de l'identité numérique et l'analyse de sécurité par IA.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

@@ -10,6 +10,7 @@ import { SystemLogs } from './components/SystemLogs';
 import { SecurityAudit } from './components/SecurityAudit';
 import { AuthScreen } from './components/AuthScreen';
 import { VerificationModal } from './components/VerificationModal';
+import { IdentityAssistant } from './components/IdentityAssistant';
 import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac, MOCK_NODES } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, DeviceNode } from './types';
 import { analyzeSecurity } from './services/geminiService';
@@ -79,7 +80,6 @@ function App() {
     addLog(`Démarrage du tunnel Renumerate (${appSettings.protocol})...`, 'info');
     if (mode === ConnectionMode.ONION_VORTEX) {
         addLog(`Initialisation du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info');
-        if (appSettings.vortexBridge !== 'none') addLog(`Utilisation du bridge: ${appSettings.vortexBridge}`, 'info');
     }
     setTimeout(async () => {
       setIsConnected(true);
@@ -100,24 +100,13 @@ function App() {
     }, 800);
   };
 
-  // Fixed: handleProcessPayment now explicitly returns a type including 'redirect' to satisfy TypeScript.
-  /**
-   * Gère l'authentification des paiements avant activation
-   */
   const handleProcessPayment = async (plan: PlanTier, method: 'card' | 'paypal' | 'crypto'): Promise<{ success: boolean; redirect: boolean }> => {
     if (method === 'crypto') {
-      addLog(`Redirection vers la passerelle Crypto pour le plan ${plan.toUpperCase()}...`, 'info');
-      // Redirection simulée vers une plateforme externe (Coinbase Commerce / BitPay)
       window.open('https://commerce.coinbase.com/checkout/renumerate-elite', '_blank');
       return { success: true, redirect: true };
     }
-
-    addLog(`Authentification du paiement ${method.toUpperCase()} en cours...`, 'info');
-    
-    // Simulation d'une vérification 3D Secure ou Token PayPal
     return new Promise((resolve) => {
       setTimeout(() => {
-        addLog(`Authentification réussie via ${method.toUpperCase()}. Plan ${plan.toUpperCase()} activé.`, 'success');
         setUserPlan(plan);
         resolve({ success: true, redirect: false });
       }, 3000);
@@ -133,20 +122,19 @@ function App() {
       setCurrentIdentity(prev => ({ ...prev, mac: newMac, userAgentShort: newUA.short }));
       setIsMasking(false);
       addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
-      addLog(`Spoofing UA réussi : ${newUA.browser}`, 'success');
     }, 1500);
   };
 
   const handleScrambleMac = () => {
     const newMac = generateRandomMac(appSettings.macScramblingMode, appSettings.macFormat);
     setCurrentIdentity(prev => ({ ...prev, mac: newMac }));
-    addLog(`Re-numérotation MAC (${appSettings.macFormat}) : ${newMac}`, 'success');
+    addLog(`Re-numérotation MAC réussi`, 'success');
   };
 
   const handleScrambleUA = () => {
     const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
     setCurrentIdentity(prev => ({ ...prev, userAgentShort: newUA.short }));
-    addLog(`Spoofing UA : ${newUA.browser}`, 'success');
+    addLog(`Spoofing UA réussi`, 'success');
   };
 
   if (!user) return <AuthScreen onLogin={(e) => setUser({email: e})} />;
@@ -165,8 +153,8 @@ function App() {
               <span className="font-black text-2xl tracking-tighter">Renumerate<span className="text-cyan-500">VPN</span></span>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={() => setShowPricing(true)} className="hidden md:flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-[10px] font-black border uppercase tracking-widest bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-cyan-500"><Crown className="w-4 h-4" /> {userPlan} Plan</button>
-            <button onClick={() => setShowSettings(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"><SlidersVertical className="w-5 h-5" /></button>
+            <button onClick={() => setShowPricing(true)} className="hidden md:flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-[10px] font-black border uppercase tracking-widest bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-cyan-500 hover:scale-105 transition-transform"><Crown className="w-4 h-4 text-amber-500" /> {userPlan.toUpperCase()} Plan</button>
+            <button onClick={() => setShowSettings(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:rotate-90 duration-500"><SlidersVertical className="w-5 h-5" /></button>
             <button onClick={() => setIsDark(!isDark)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">{isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
             <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-3 rounded-2xl text-slate-500 hover:bg-red-500/10 hover:text-red-500 transition-all"><LogOut className="w-5 h-5" /></button>
           </div>
@@ -203,10 +191,6 @@ function App() {
                   macFormat={appSettings.macFormat}
                   onFormatChange={(fmt) => {
                     setAppSettings(prev => ({...prev, macFormat: fmt}));
-                    // Optionnel: On rescramble directement avec le nouveau format pour feedback immédiat
-                    const newMac = generateRandomMac(appSettings.macScramblingMode, fmt);
-                    setCurrentIdentity(prev => ({ ...prev, mac: newMac }));
-                    addLog(`Format MAC mis à jour : ${fmt}`, 'info');
                   }}
                 />
             </div>
@@ -218,6 +202,13 @@ function App() {
         </div>
       </main>
 
+      {/* Identity AI Assistant Component */}
+      <IdentityAssistant 
+        mode={mode} 
+        isConnected={isConnected} 
+        securityScore={securityReport?.score || 0} 
+      />
+
       <div className="fixed bottom-0 left-0 right-0 z-[60] p-6 flex justify-center pointer-events-none">
           <div className="w-full max-w-lg glass-card p-2 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl pointer-events-auto">
               <button
@@ -226,7 +217,7 @@ function App() {
                 className={`w-full h-16 rounded-[2rem] font-black text-lg text-white shadow-2xl transition-all duration-500 flex items-center justify-center gap-4 active:scale-95 group overflow-hidden relative ${isConnected ? 'bg-slate-900' : 'bg-cyan-600 hover:bg-cyan-700'}`}
               >
                 {isDisconnecting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Power className={`w-6 h-6 ${isConnected ? 'rotate-180' : ''}`} />}
-                <span className="tracking-[0.1em]">{isConnected ? 'DÉCONNECTER' : 'SÉCURISER LA CONNEXION'}</span>
+                <span className="tracking-[0.1em] font-black">{isConnected ? 'DÉCONNECTER' : 'SÉCURISER LE TUNNEL'}</span>
               </button>
           </div>
       </div>
@@ -236,10 +227,7 @@ function App() {
           currentPlan={userPlan} 
           onUpgrade={async (plan, method) => {
             const result = await handleProcessPayment(plan, method as any);
-            if (result.success && !result.redirect) {
-              return true; // Informe le modal que c'est ok
-            }
-            return false;
+            return result.success && !result.redirect;
           }} 
           onClose={() => setShowPricing(false)} 
         />
