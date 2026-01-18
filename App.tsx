@@ -178,6 +178,9 @@ function App() {
     if (user?.id) {
       dbService.saveSettings(user.id, newSettings).catch(console.error);
     }
+    if (key === 'ipv6LeakProtection') {
+      addLog(`Protection IPv6 ${value ? 'activée' : 'désactivée'}`, value ? 'success' : 'warning');
+    }
   };
 
   const handleGlobalScramble = () => {
@@ -264,6 +267,8 @@ function App() {
                   onFormatChange={(fmt) => {
                     updateAppSettings('macFormat', fmt);
                   }}
+                  ipv6LeakProtection={appSettings.ipv6LeakProtection}
+                  onIpv6Toggle={(enabled) => updateAppSettings('ipv6LeakProtection', enabled)}
                 />
             </div>
             <div className="lg:col-span-4 space-y-8">
