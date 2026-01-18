@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Activity, Shield, Ghost, Layers, Globe, Share2, Server, MapPin, Search, Gauge, Sparkles, ChevronDown, Check, X, Zap, Smartphone, Orbit, Terminal, Lock, EyeOff, Globe2, Loader2, ArrowRight, ShieldAlert, Link2, ExternalLink, ShieldCheck, Tv, Radio, PlayCircle, ZapOff, Info } from 'lucide-react';
+import { Activity, Shield, Ghost, Layers, Globe, Share2, Server, MapPin, Search, Gauge, Sparkles, ChevronDown, Check, X, Zap, Smartphone, Orbit, Terminal, Lock, EyeOff, Globe2, Loader2, ArrowRight, ShieldAlert, Link2, ExternalLink, ShieldCheck, Tv, Radio, PlayCircle, ZapOff, Info, Cpu, Database, CloudLightning, Rocket } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { SecurityReport, PlanTier, ConnectionMode, DeviceNode, AppSettings } from '../types';
 
@@ -54,6 +54,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isOnionResolving, setIsOnionResolving] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState('us');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Filtrage intelligent des nœuds
+  const filteredNodes = useMemo(() => {
+    return nodes.filter(node => {
+      const matchesCountry = countryFilter === 'Tous' || node.country === countryFilter;
+      const matchesSearch = node.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            node.ip.includes(searchQuery);
+      return matchesCountry && matchesSearch;
+    });
+  }, [nodes, countryFilter, searchQuery]);
 
   const activeNode = useMemo(() => {
     return nodes.find(n => n.ip === currentIp);
@@ -183,6 +193,44 @@ export const Dashboard: React.FC<DashboardProps> = ({
               score={isOnionMode && isConnected ? 100 : (isEmergency ? 15 : (securityReport?.score || (isConnected ? (userPlan === 'free' ? 70 : 95) : 0)))} 
               isDark={isDark} 
            />
+        </div>
+      </div>
+
+      {/* Neon Database Section */}
+      <div className="glass-card p-8 rounded-[3rem] border border-cyan-500/20 bg-cyan-500/5 relative overflow-hidden group">
+        <div className="absolute inset-0 cyber-grid opacity-10 pointer-events-none"></div>
+        <div className="absolute -right-20 -top-20 w-64 h-64 bg-cyan-500/10 blur-[100px] rounded-full"></div>
+        
+        <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+            <div className="p-6 bg-cyan-600 text-white rounded-[2rem] shadow-2xl shadow-cyan-500/40">
+                <Database className="w-10 h-10 animate-pulse" />
+            </div>
+            <div className="flex-1">
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-4">Neon Database : Identity Vault</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-cyan-500">
+                            <Zap className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Effortless setup</span>
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed">Get a fully functional database without writing a line of backend code.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-cyan-400">
+                            <CloudLightning className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">All in one place</span>
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed">Your code, deploys, and database managed through Netlify, no context switching.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-brand-400">
+                            <Rocket className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Built to scale</span>
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed">Start small and grow without changing your stack or setup.</p>
+                    </div>
+                </div>
+            </div>
         </div>
       </div>
 
@@ -404,7 +452,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
       )}
 
-      {/* Standard Global Network View (Hidden in specialized modes if needed, but here we keep it for reference) */}
+      {/* Cartographie des Nœuds interactive */}
       {!isOnionMode && !isSmartDNS && (
           <div className="glass-card p-8 rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-xl relative group overflow-hidden">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-10 relative z-10">
@@ -414,7 +462,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <Share2 className="w-5 h-5 text-cyan-500" /> Cartographie des Nœuds
                   </h3>
                   <div className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-[10px] font-mono font-black text-slate-500">
-                    {nodes.length} NŒUDS RÉFÉRENCÉS
+                    {filteredNodes.length} NŒUDS FILTRÉS
                   </div>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">Exploration des clusters de sortie mondiaux disponibles</p>
@@ -473,51 +521,98 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            <div className="relative h-96 bg-slate-50 dark:bg-slate-950/60 rounded-[3rem] border border-slate-100 dark:border-slate-800 flex items-center justify-center overflow-hidden transition-all duration-1000">
-              <div className="absolute inset-0 cyber-grid opacity-30"></div>
+            {/* Grille de nœuds filtrés */}
+            <div className="relative min-h-[400px] max-h-[600px] overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950/60 rounded-[3rem] border border-slate-100 dark:border-slate-800 p-8 transition-all duration-1000">
+              <div className="absolute inset-0 cyber-grid opacity-30 pointer-events-none"></div>
               
-              {/* Active connection ripple effect */}
-              {isConnected && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="absolute w-40 h-40 border-2 border-cyan-500/20 rounded-full animate-[ping_3s_linear_infinite]"></div>
-                  <div className="absolute w-60 h-60 border border-cyan-500/10 rounded-full animate-[ping_4s_linear_infinite] [animation-delay:1s]"></div>
-                  <div className="absolute w-80 h-80 border border-cyan-500/5 rounded-full animate-[ping_5s_linear_infinite] [animation-delay:2s]"></div>
+              {filteredNodes.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-4">
+                  <Search className="w-12 h-12 opacity-20" />
+                  <p className="text-sm font-black uppercase tracking-widest">Aucun nœud trouvé pour cette recherche</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                  {filteredNodes.map((node) => {
+                    const isActive = node.ip === currentIp && isConnected;
+                    return (
+                      <div 
+                        key={node.id} 
+                        className={`p-6 rounded-[2.5rem] border transition-all duration-500 flex flex-col justify-between group/node ${
+                          isActive 
+                          ? 'bg-cyan-500/10 border-cyan-500 shadow-xl shadow-cyan-500/10' 
+                          : 'bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 hover:shadow-lg'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-4">
+                            <div className="text-3xl">{countriesWithFlags[node.country] || '📍'}</div>
+                            <div>
+                               <h5 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">{node.name}</h5>
+                               <p className="text-[10px] font-mono font-bold text-slate-500">{node.ip}</p>
+                            </div>
+                          </div>
+                          {isActive && (
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-500/20 rounded-full border border-emerald-500/30">
+                              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
+                              <span className="text-[8px] font-black text-emerald-500 uppercase">ACTIVE</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-6 pt-4 border-t border-slate-100 dark:border-white/5">
+                           <div className="flex flex-col">
+                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Délai</span>
+                              <span className="text-xs font-mono font-black text-slate-700 dark:text-slate-300">{node.latency}ms</span>
+                           </div>
+                           <div className="flex flex-col items-end">
+                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Signal</span>
+                              <span className="text-xs font-mono font-black text-emerald-500">{node.signalStrength}%</span>
+                           </div>
+                        </div>
+
+                        <button
+                          onClick={() => onConnectNode(node.id)}
+                          disabled={isActive || isConnected}
+                          className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                            isActive 
+                            ? 'bg-cyan-500 text-white cursor-default' 
+                            : isConnected 
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                              : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:scale-[1.02] active:scale-95'
+                          }`}
+                        >
+                          {isActive ? 'NŒUD CONNECTÉ' : 'SÉLECTIONNER'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              <div className="relative z-10 flex flex-col items-center">
-                <div className={`w-24 h-24 rounded-[2rem] flex items-center justify-center border-4 transition-all duration-700 transform relative ${
-                    isConnected ? 'bg-cyan-500/10 border-cyan-500 shadow-[0_0_40px_rgba(6,182,212,0.3)] scale-110' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'
-                }`}>
-                  {isConnected && (
-                    <div className="absolute -inset-1 border-2 border-cyan-500/40 rounded-[2.2rem] animate-pulse"></div>
-                  )}
-                  <Smartphone className={`w-12 h-12 transition-all duration-500 ${isConnected ? 'text-cyan-500 animate-bounce' : 'text-slate-400'}`} />
-                </div>
-
-                {isConnected && activeNode && (
-                  <div className="mt-10 animate-in fade-in slide-in-from-bottom-6 duration-1000">
-                    <div className="px-8 py-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-cyan-500/50 rounded-[2.5rem] shadow-2xl shadow-cyan-500/20 flex items-center gap-6 group/active relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-500 to-transparent animate-shimmer"></div>
-                      <div className="relative w-4 h-4 shrink-0">
-                        <div className="absolute inset-0 bg-emerald-500 rounded-full"></div>
-                        <div className="absolute inset-0 bg-emerald-500 rounded-full animate-ping opacity-75"></div>
-                      </div>
-                      <div className="flex flex-col">
-                        <div className="text-[10px] font-black text-cyan-500 uppercase tracking-[0.3em] mb-1">Liaison Cyber-Link Active</div>
-                        <div className="flex items-center gap-3">
-                           <span className="text-xl">{countriesWithFlags[activeNode.country] || '📍'}</span>
-                           <span className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">{activeNode.name}</span>
+              {/* Central Connection Overlay if connected */}
+              {isConnected && activeNode && (
+                <div className="mt-12 sticky bottom-0 z-20 pointer-events-none">
+                    <div className="px-10 py-6 bg-white/80 dark:bg-slate-900/90 backdrop-blur-2xl border border-cyan-500/50 rounded-[3rem] shadow-2xl shadow-cyan-500/30 flex items-center justify-between group/active relative overflow-hidden max-w-2xl mx-auto pointer-events-auto">
+                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent animate-shimmer"></div>
+                      <div className="flex items-center gap-6">
+                        <div className="p-4 bg-cyan-600 text-white rounded-[1.5rem] shadow-xl">
+                          <Smartphone className="w-8 h-8 animate-bounce" />
+                        </div>
+                        <div className="flex flex-col">
+                          <div className="text-[10px] font-black text-cyan-500 uppercase tracking-[0.4em] mb-1">Cyber-Link Tunnel : ON</div>
+                          <div className="flex items-center gap-3">
+                             <span className="text-2xl">{countriesWithFlags[activeNode.country] || '📍'}</span>
+                             <span className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-wider">{activeNode.name}</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="ml-4 pl-6 border-l border-slate-200 dark:border-slate-800">
-                         <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Délai Sync</div>
-                         <div className="text-base font-mono font-black text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">{activeNode.latency}ms</div>
+                      <div className="ml-4 pl-8 border-l border-slate-200 dark:border-slate-800 text-right">
+                         <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Latence_Sync</div>
+                         <div className="text-2xl font-mono font-black text-emerald-500 drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]">{activeNode.latency}ms</div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
       )}
