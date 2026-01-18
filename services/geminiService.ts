@@ -1,5 +1,5 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { ConnectionMode, SecurityReport } from '../types';
 
 /**
@@ -10,9 +10,7 @@ export const analyzeSecurity = async (
   location: string,
   ip: string
 ): Promise<SecurityReport> => {
-  const apiKey = process.env.API_KEY;
-
-  if (!apiKey) {
+  if (!process.env.API_KEY) {
     return {
       score: 85,
       threatLevel: 'Faible',
@@ -24,7 +22,8 @@ export const analyzeSecurity = async (
     };
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  // Fixed: Use process.env.API_KEY directly in the named parameter.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const prompt = `
     Agis comme un expert en cybersécurité pour l'application "Renumerate VPN".
@@ -34,14 +33,6 @@ export const analyzeSecurity = async (
     Analyse brièvement (max 60 mots) le niveau de sécurité et d'anonymat.
     Donne un score de sécurité sur 100.
     Donne 3 recommandations très courtes et techniques.
-    
-    Réponds UNIQUEMENT au format JSON :
-    {
-      "score": number,
-      "threatLevel": "Faible" | "Moyen" | "Élevé" | "Critique",
-      "analysis": "string",
-      "recommendations": ["string", "string", "string"]
-    }
   `;
 
   try {
@@ -49,18 +40,43 @@ export const analyzeSecurity = async (
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        responseMimeType: 'application/json'
+        responseMimeType: 'application/json',
+        // Fixed: Use responseSchema for predictable structured output.
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            score: {
+              type: Type.NUMBER,
+              description: 'Score de sécurité global de 0 à 100.',
+            },
+            threatLevel: {
+              type: Type.STRING,
+              enum: ['Faible', 'Moyen', 'Élevé', 'Critique'],
+              description: 'Niveau de menace évalué par l\'IA.',
+            },
+            analysis: {
+              type: Type.STRING,
+              description: 'Brève analyse technique de la session.',
+            },
+            recommendations: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '3 recommandations concrètes pour améliorer l\'anonymat.',
+            }
+          },
+          required: ['score', 'threatLevel', 'analysis', 'recommendations']
+        }
       }
     });
 
-    const text = response.text;
+    const text = response.text; // Fixed: accessing text as a property.
     if (!text) throw new Error("No response from AI");
     return JSON.parse(text.trim()) as SecurityReport;
   } catch (error) {
     console.error("Gemini Error:", error);
     return {
       score: 0,
-      threatLevel: 'Critique' as any,
+      threatLevel: 'Critique',
       recommendations: ["Erreur de connexion AI", "Vérifiez vos paramètres"],
       analysis: "Impossible de générer le rapport de sécurité."
     };
@@ -75,10 +91,10 @@ export const performDeepAudit = async (ip: string, location: string): Promise<{
   sources: { title: string; uri: string }[];
   isBlacklisted: boolean;
 }> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key required for deep audit");
+  if (!process.env.API_KEY) throw new Error("API Key required for deep audit");
 
-  const ai = new GoogleGenAI({ apiKey });
+  // Fixed: Use process.env.API_KEY directly in the named parameter.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `Perform a security audit for a VPN exit node located in ${location} with simulated IP ${ip}. 
   Check if this IP range or location is currently associated with known blacklists, botnets, or high-risk ISP activities.

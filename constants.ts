@@ -55,76 +55,36 @@ export const REALISTIC_USER_AGENTS = [
     preciseVersion: '17.5.1 (21F90)',
     build: '21F90',
     engine: 'WebKit/605.1.15'
-  },
-  {
-    short: 'Opera 109 / Windows 11',
-    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 OPR/109.0.5097.68',
-    os: 'Windows 11 Home 23H2',
-    browser: 'Opera 109.0',
-    preciseVersion: '109.0.5097.68',
-    build: '22631.3447',
-    engine: 'Blink/Chromium 123'
-  },
-  {
-    short: 'Chrome 124 / Ubuntu',
-    full: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.60 Safari/537.36',
-    os: 'Ubuntu 24.04 LTS (Noble)',
-    browser: 'Chrome 124.0.6367',
-    preciseVersion: '124.0.6367.60',
-    build: '6.8.0-31-generic',
-    engine: 'Blink/124.0.0.0'
   }
 ];
 
-export const generateRandomMac = (forceLAA: boolean = false) => {
+export const generateRandomMac = (mode: 'vendor' | 'laa' | 'random' = 'random') => {
   const hex = "0123456789ABCDEF";
   const vendors = [
-    "00:05:02", // Apple
-    "00:0C:F1", // Intel
-    "00:16:3E", // Xen
-    "00:50:56", // VMware
-    "00:00:0C", // Cisco
-    "3C:5A:B4", // Samsung
-    "00:14:22", // Dell
-    "00:10:18", // Broadcom
-    "E0:D5:5E", // Giga-Byte
-    "52:54:00", // QEMU/KVM
-    "00:15:5D", // Microsoft (Hyper-V)
-    "08:00:27"  // Oracle (VirtualBox)
+    "00:05:02", "00:0C:F1", "00:16:3E", "00:50:56", "00:00:0C", 
+    "3C:5A:B4", "00:14:22", "00:10:18", "00:15:5D", "08:00:27"
   ];
 
-  const useVendor = forceLAA ? false : Math.random() > 0.4;
   let bytes: string[] = [];
-
-  if (useVendor) {
+  
+  if (mode === 'vendor') {
     const vendor = vendors[Math.floor(Math.random() * vendors.length)];
-    // Support potential dot/dash format in constant string
-    bytes = vendor.split(/[:.-]/);
-    while (bytes.length < 6) {
-      bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
-    }
-  } else {
-    // Generate LAA (Locally Administered Address)
-    // The second nibble of the first byte must be 2, 6, A, or E
+    bytes = vendor.split(':');
+    while (bytes.length < 6) bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+  } else if (mode === 'laa') {
     const b1_1 = hex[Math.floor(Math.random() * 16)];
     const b1_2 = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
     bytes.push(b1_1 + b1_2);
-    
-    for (let i = 1; i < 6; i++) {
-      bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
-    }
+    for (let i = 1; i < 6; i++) bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
+  } else {
+    for (let i = 0; i < 6; i++) bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
   }
 
   const formatRand = Math.random();
-  if (formatRand < 0.4) {
-    return bytes.join(':').toUpperCase(); // IEEE Standard
-  } else if (formatRand < 0.7) {
-    return bytes.join('-').toUpperCase(); // Windows Style
-  } else {
-    // Cisco Format: xxxx.xxxx.xxxx
-    const flat = bytes.join('').toLowerCase();
-    return `${flat.slice(0, 4)}.${flat.slice(4, 8)}.${flat.slice(8, 12)}`;
-  }
+  if (formatRand < 0.33) return bytes.join(':').toUpperCase();
+  if (formatRand < 0.66) return bytes.join('-').toUpperCase();
+  const flat = bytes.join('').toLowerCase();
+  return `${flat.slice(0, 4)}.${flat.slice(4, 8)}.${flat.slice(8, 12)}`; // Cisco
 };
 
 export const MOCK_IDENTITIES: VirtualIdentity[] = [
@@ -139,12 +99,9 @@ export const MOCK_NODES: DeviceNode[] = [
   { id: 'n3', name: 'CH-ZUR-01', type: 'server', status: 'active', signalStrength: 95, transferRate: 150, latency: 24, autonomyProfile: 'provider', tags: ['stealth'], ip: '45.33.22.11', country: 'Suisse' },
   { id: 'n4', name: 'CH-GEN-01', type: 'mobile', status: 'active', signalStrength: 70, transferRate: 20, latency: 32, autonomyProfile: 'consumer', tags: ['dynamic'], ip: '45.33.22.45', country: 'Suisse' },
   { id: 'n5', name: 'SG-CEN-01', type: 'server', status: 'active', signalStrength: 99, transferRate: 200, latency: 145, autonomyProfile: 'provider', tags: ['exit'], ip: '104.28.11.5', country: 'Singapour' },
-  { id: 'n6', name: 'IS-REY-01', type: 'server', status: 'active', signalStrength: 92, transferRate: 110, latency: 38, autonomyProfile: 'balanced', tags: ['arctic'], ip: '157.1.2.3', country: 'Islande' },
-  { id: 'n7', name: 'EE-TAL-01', type: 'desktop', status: 'active', signalStrength: 88, transferRate: 85, latency: 42, autonomyProfile: 'balanced', tags: ['secure'], ip: '193.40.5.1', country: 'Estonie' },
-  { id: 'n8', name: 'PA-PAN-01', type: 'server', status: 'active', signalStrength: 90, transferRate: 95, latency: 115, autonomyProfile: 'provider', tags: ['offshore'], ip: '190.1.2.3', country: 'Panama' },
 ];
 
 export const INITIAL_LOGS = [
-  { id: '1', timestamp: '10:00:01', timestampRaw: Date.now(), event: 'Système initialisé', type: 'info' as const },
-  { id: '2', timestamp: '10:00:02', timestampRaw: Date.now(), event: 'Module de cryptage chargé', type: 'success' as const },
+  { id: '1', timestamp: '10:00:01', timestampRaw: Date.now(), event: 'Système Renumerate initialisé', type: 'info' as const },
+  { id: '2', timestamp: '10:00:02', timestampRaw: Date.now(), event: 'Moteur de re-numérotation chargé', type: 'success' as const },
 ];

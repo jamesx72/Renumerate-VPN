@@ -34,27 +34,6 @@ export interface LogEntry {
 
 export type PlanTier = 'free' | 'pro' | 'elite';
 
-export interface Transaction {
-  id: string;
-  date: string;
-  amount: number;
-  method: 'crypto' | 'paypal' | 'bank_transfer';
-  status: 'pending' | 'completed';
-  address: string;
-}
-
-export interface ConnectionSession {
-  id: string;
-  startTime: number;
-  endTime: number;
-  durationString: string;
-  serverCountry: string;
-  serverIp: string;
-  protocol: string;
-  mode: ConnectionMode;
-  dataUsed?: string;
-}
-
 export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
   dns: 'cloudflare' | 'google' | 'quad9' | 'opendns' | 'custom';
@@ -65,9 +44,12 @@ export interface AppSettings {
   splitTunneling: boolean;
   adBlocker: boolean;
   autoConnect: boolean;
+  // Renumbering Config
   autoRotation: boolean;
-  rotationInterval: number;
+  rotationInterval: number; // en minutes
   obfuscationLevel: 'standard' | 'high' | 'ultra';
+  macScramblingMode: 'vendor' | 'laa' | 'random';
+  uaComplexity: 'standard' | 'diverse' | 'chaotic';
   // Earning Configurations
   miningIntensity: number; 
   yieldOptimizationIA: boolean;
@@ -94,11 +76,23 @@ export interface DeviceNode {
   country: string;
 }
 
-export interface PaymentMethod {
+// Fixed: Added missing Transaction interface
+export interface Transaction {
   id: string;
-  type: 'card' | 'paypal';
-  name: string;
-  last4?: string;
-  expiry?: string;
-  isDefault: boolean;
+  method: 'crypto' | 'paypal' | 'bank_transfer';
+  amount: number;
+  status: 'completed' | 'processing';
+  address: string;
+  date: string;
+}
+
+// Fixed: Added missing ConnectionSession interface
+export interface ConnectionSession {
+  id: string;
+  serverCountry: string;
+  serverIp: string;
+  startTime: number;
+  protocol: string;
+  mode: string;
+  durationString: string;
 }

@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { Settings, Shield, Globe, Zap, ToggleLeft, ToggleRight, X, RefreshCw, Lock, Crown, Network, Clock, Smartphone, Monitor, Tv, RotateCcw, Wifi, Eye, EyeOff, Ghost, Users, Activity, Sliders, Languages, Palette, Server, BoxSelect, Cpu, Power, WifiOff, Timer, CreditCard, Receipt, Plus, Trash2, CheckCircle, AlertTriangle, ShieldAlert, ShieldCheck, Wallet, TrendingUp, Landmark, ArrowRight, Sparkles, Gauge, Info, Unplug } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -11,366 +11,102 @@ interface Props {
   onShowPricing: () => void;
 }
 
-type TabId = 'general' | 'connection' | 'privacy' | 'billing';
+type TabId = 'general' | 'renumbering' | 'security' | 'earnings';
 
-export const SettingsPanel: React.FC<Props> = ({ 
-    settings, 
-    updateSettings, 
-    onClose, 
-    userPlan, 
-    onShowPricing
-}) => {
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose, userPlan, onShowPricing }) => {
+  const [activeTab, setActiveTab] = useState<TabId>('renumbering');
   
   const tabs = [
+    { id: 'renumbering', label: 'Re-Numérotation', icon: RefreshCw },
+    { id: 'security', label: 'Sécurité', icon: Shield },
+    { id: 'earnings', label: 'Gains RNC', icon: Wallet },
     { id: 'general', label: 'Général', icon: Sliders },
-    { id: 'connection', label: 'Connexion', icon: Activity },
-    { id: 'privacy', label: 'Sécurité', icon: Shield },
-    { id: 'billing', label: 'Compte & Gains', icon: Wallet },
   ];
-
-  const multipliers = {
-    passive: 1.0,
-    relay: 1.15,
-    exit: 1.30
-  };
-
-  const planMultiplier = userPlan === 'elite' ? 2.5 : userPlan === 'pro' ? 1.8 : 1.0;
-  const intensityMultiplier = 0.5 + (settings.miningIntensity / 100);
-  const iaMultiplier = settings.yieldOptimizationIA ? 1.2 : 1.0;
-  const typeMultiplier = multipliers[settings.contributionType];
-  const finalMultiplier = planMultiplier * intensityMultiplier * iaMultiplier * typeMultiplier;
-
-  const potentialDailyGain = useMemo(() => {
-    const baseDaily = userPlan === 'elite' ? 5.2 : 1.8;
-    return (baseDaily * intensityMultiplier * iaMultiplier * typeMultiplier).toFixed(2);
-  }, [userPlan, intensityMultiplier, iaMultiplier, typeMultiplier]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      
-      <div className="relative w-full max-w-4xl h-[650px] bg-white dark:bg-slate-950 rounded-3xl shadow-2xl flex overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
-        
-        {/* Sidebar */}
+      <div className="relative w-full max-w-4xl h-[650px] bg-white dark:bg-slate-950 rounded-3xl shadow-2xl flex overflow-hidden border border-slate-200 dark:border-slate-800">
         <div className="w-64 bg-slate-50 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 flex flex-col">
-            <div className="p-6">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900 dark:text-white">
-                    <Settings className="w-6 h-6 text-brand-500" />
-                    Paramètres
-                </h2>
-            </div>
-
+            <div className="p-6"><h2 className="text-xl font-bold flex items-center gap-2"><Settings className="w-6 h-6 text-brand-500" /> Paramètres</h2></div>
             <nav className="flex-1 p-4 space-y-1">
                 {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id as TabId)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                            activeTab === tab.id 
-                                ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-700' 
-                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
-                        }`}
-                    >
-                        <tab.icon className="w-4 h-4" />
-                        {tab.label}
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id as TabId)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'}`}>
+                        <tab.icon className="w-4 h-4" /> {tab.label}
                     </button>
                 ))}
             </nav>
-            
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800">
-                <div className="p-3 bg-brand-500/10 rounded-xl border border-brand-500/20">
-                    <p className="text-[10px] font-bold text-brand-500 uppercase mb-1">Status Abonnement</p>
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200 capitalize">{userPlan}</span>
-                        {userPlan === 'free' && (
-                            <button onClick={onShowPricing} className="text-[10px] font-black text-brand-500 underline">UPGRADE</button>
-                        )}
-                    </div>
-                </div>
-            </div>
         </div>
 
-        {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50 dark:bg-slate-950 relative">
-            <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500">
-                <X className="w-5 h-5" />
-            </button>
+            <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-500"><X className="w-5 h-5" /></button>
 
-            {activeTab === 'privacy' && (
-                <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sécurité & Confidentialité</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Verrouillez votre tunnel de connexion et protégez votre identité réelle.</p>
-                    </div>
-
-                    {/* DNS Leak Protection */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                                <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500 group-hover:scale-110 transition-transform">
-                                    <Globe className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Protection contre les fuites DNS</h4>
-                                    <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed">
-                                        Empêche votre système d'envoyer des requêtes DNS en dehors du tunnel VPN. 
-                                        Sans cette protection, votre FAI peut voir les noms de domaine que vous consultez, même si le trafic est chiffré.
-                                    </p>
-                                    <div className="mt-3 flex items-center gap-2 text-[10px] font-bold text-emerald-500 bg-emerald-500/5 px-2 py-1 rounded-lg w-fit">
-                                        <ShieldCheck className="w-3 h-3" /> CRITIQUE POUR L'ANONYMAT
-                                    </div>
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => updateSettings('dnsLeakProtection', !settings.dnsLeakProtection)}
-                                className="focus:outline-none"
-                            >
-                                {settings.dnsLeakProtection ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Kill Switch */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 group hover:border-red-500/30 transition-colors">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                                <div className="p-3 bg-red-500/10 rounded-2xl text-red-500 group-hover:scale-110 transition-transform">
-                                    <Unplug className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Kill Switch Réseau</h4>
-                                    <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed">
-                                        Coupe instantanément tout accès à Internet si la connexion VPN est interrompue, évitant ainsi toute exposition de votre IP réelle.
-                                    </p>
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => updateSettings('killSwitch', !settings.killSwitch)}
-                                className="focus:outline-none"
-                            >
-                                {settings.killSwitch ? <ToggleRight className="w-10 h-10 text-red-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* IPv6 Protection */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-4">
-                                <div className="p-3 bg-purple-500/10 rounded-2xl text-purple-500 group-hover:scale-110 transition-transform">
-                                    <WifiOff className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Protection contre les fuites IPv6</h4>
-                                    <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed">
-                                        Désactive le trafic IPv6 pour s'assurer qu'aucun paquet ne transite en dehors de l'IPv4 chiffré.
-                                    </p>
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => updateSettings('ipv6LeakProtection', !settings.ipv6LeakProtection)}
-                                className="focus:outline-none"
-                            >
-                                {settings.ipv6LeakProtection ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {activeTab === 'connection' && (
-                <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Paramètres de Connexion</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Optimisez les protocoles et les DNS pour la vitesse.</p>
-                    </div>
-
-                    {/* Protocol Selection */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
-                        <h4 className="text-xs font-bold uppercase text-slate-500 mb-4 tracking-widest flex items-center gap-2">
-                             <Zap className="w-3.5 h-3.5" /> Protocole Tunneling
-                        </h4>
-                        <div className="grid grid-cols-3 gap-3">
-                            {(['wireguard', 'openvpn', 'ikev2'] as const).map((proto) => (
-                                <button
-                                    key={proto}
-                                    onClick={() => updateSettings('protocol', proto)}
-                                    className={`p-4 rounded-xl border text-center transition-all ${
-                                        settings.protocol === proto
-                                            ? 'bg-brand-500 border-brand-500 text-white shadow-lg'
-                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-brand-500/50'
-                                    }`}
-                                >
-                                    <span className="text-xs font-black uppercase tracking-widest">{proto}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* DNS Selection */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
-                        <h4 className="text-xs font-bold uppercase text-slate-500 mb-4 tracking-widest flex items-center gap-2">
-                             <Globe className="w-3.5 h-3.5" /> Serveurs DNS Personnalisés
-                        </h4>
-                        <div className="grid grid-cols-2 gap-3">
-                            {(['cloudflare', 'google', 'quad9', 'opendns'] as const).map((dns) => (
-                                <button
-                                    key={dns}
-                                    onClick={() => updateSettings('dns', dns)}
-                                    className={`p-3 rounded-xl border flex items-center justify-between px-4 transition-all ${
-                                        settings.dns === dns
-                                            ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white'
-                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-brand-500/50'
-                                    }`}
-                                >
-                                    <span className="text-xs font-bold capitalize">{dns}</span>
-                                    {settings.dns === dns && <CheckCircle className="w-4 h-4" />}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {activeTab === 'billing' && (
+            {activeTab === 'renumbering' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Configuration des Gains</h3>
-                            <p className="text-sm text-slate-500 dark:text-slate-400">Gérez vos préférences de monétisation et optimisez votre participation au réseau Renumerate.</p>
-                        </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white uppercase tracking-widest">Moteur de Re-Numérotation</h3>
+                        <p className="text-sm text-slate-500">Configurez l'automatisme de changement de votre identité numérique.</p>
                     </div>
 
-                    {/* Breakdown and Potential Gain */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 shadow-xl relative overflow-hidden">
-                            <div className="absolute -top-10 -right-10 w-32 h-32 bg-brand-500/10 blur-3xl rounded-full"></div>
-                            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
-                                <Zap className="w-3 h-3 text-brand-500" /> Simulateur de Rendement
-                            </h4>
-                            <div className="flex items-baseline gap-2 mb-1">
-                                <span className="text-4xl font-mono font-black text-brand-400 tracking-tighter">{potentialDailyGain}</span>
-                                <span className="text-sm font-bold text-slate-400">RNC / 24h</span>
-                            </div>
-                            <p className="text-[9px] text-slate-500">Basé sur une connexion 24/7 stable.</p>
-                        </div>
-
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
-                             <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
-                                <TrendingUp className="w-3 h-3 text-emerald-500" /> Multiplicateur Actif
-                            </h4>
-                            <div className="text-3xl font-black text-slate-900 dark:text-white mb-2">x{finalMultiplier.toFixed(2)}</div>
-                            <div className="flex flex-wrap gap-1.5">
-                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">PLAN: x{planMultiplier}</span>
-                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">INT: x{intensityMultiplier.toFixed(1)}</span>
-                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">IA: x{iaMultiplier}</span>
-                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">TYPE: x{typeMultiplier}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Yield Optimization AI */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 group hover:border-brand-500/30 transition-colors">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-500 group-hover:scale-110 transition-transform">
-                                    <Sparkles className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Optimisation IA des rendements</h4>
-                                    <p className="text-xs text-slate-500">Ajuste le routage en temps réel vers les zones à forte demande pour maximiser les profits.</p>
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => updateSettings('yieldOptimizationIA', !settings.yieldOptimizationIA)}
-                                className="focus:outline-none"
-                            >
-                                {settings.yieldOptimizationIA ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Intensity Slider */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500">
-                                    <Gauge className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Intensité du minage</h4>
-                                    <p className="text-xs text-slate-500">Définit la part de ressources allouée à la contribution réseau.</p>
-                                </div>
+                                <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500"><RefreshCw className="w-5 h-5" /></div>
+                                <div><h4 className="font-bold text-sm">Rotation Automatique d'IP</h4><p className="text-xs text-slate-500">Change de nœud de sortie à intervalles réguliers.</p></div>
                             </div>
-                            <div className="text-lg font-mono font-black text-brand-500">{settings.miningIntensity}%</div>
+                            <button onClick={() => updateSettings('autoRotation', !settings.autoRotation)}>{settings.autoRotation ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300" />}</button>
                         </div>
-                        
-                        <input 
-                            type="range" 
-                            min="10" 
-                            max="100" 
-                            step="10"
-                            value={settings.miningIntensity}
-                            onChange={(e) => updateSettings('miningIntensity', parseInt(e.target.value))}
-                            className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-500"
-                        />
-                        <div className="flex justify-between mt-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                            <span className={settings.miningIntensity <= 30 ? 'text-brand-500' : ''}>Économe</span>
-                            <span className={settings.miningIntensity > 30 && settings.miningIntensity <= 70 ? 'text-brand-500' : ''}>Équilibré</span>
-                            <span className={settings.miningIntensity > 70 ? 'text-brand-500' : ''}>Maximum</span>
-                        </div>
+                        {settings.autoRotation && (
+                            <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                <div className="flex justify-between text-xs font-bold text-slate-500 uppercase"><span>Intervalle</span><span className="text-brand-500">{settings.rotationInterval} min</span></div>
+                                <input type="range" min="5" max="60" step="5" value={settings.rotationInterval} onChange={(e)=>updateSettings('rotationInterval', parseInt(e.target.value))} className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none accent-brand-500" />
+                            </div>
+                        )}
                     </div>
 
-                    {/* Auto-Withdraw Toggle */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-500">
-                                    <CreditCard className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white">Retrait Automatique</h4>
-                                    <p className="text-xs text-slate-500">Retire vos gains vers votre wallet dès 10 RNC accumulés.</p>
-                                </div>
-                            </div>
-                            <button onClick={() => updateSettings('autoWithdraw', !settings.autoWithdraw)}>
-                                {settings.autoWithdraw ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300 dark:text-slate-600" />}
-                            </button>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                            <h4 className="text-xs font-black uppercase text-slate-500 mb-4 flex items-center gap-2"><Fingerprint className="w-4 h-4" /> Mode MAC</h4>
+                            <select value={settings.macScramblingMode} onChange={(e)=>updateSettings('macScramblingMode', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl py-2 text-xs font-bold px-3">
+                                <option value="random">Aléatoire Total</option>
+                                <option value="vendor">Vendeur Réel (Spoof)</option>
+                                <option value="laa">Forcer LAA (Local)</option>
+                            </select>
                         </div>
-                    </div>
-
-                    {/* Contribution Mode Selection */}
-                    <div className="space-y-4">
-                        <label className="text-xs font-bold uppercase text-slate-500 ml-1">Type de contribution (Rôle)</label>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {(['passive', 'relay', 'exit'] as const).map((type) => (
-                                <button
-                                    key={type}
-                                    onClick={() => updateSettings('contributionType', type)}
-                                    className={`p-4 rounded-2xl border text-left transition-all group ${
-                                        settings.contributionType === type
-                                            ? 'bg-brand-500 border-brand-500 text-white shadow-lg shadow-brand-500/20 scale-[1.02]'
-                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-brand-500/50'
-                                    }`}
-                                >
-                                    <div className={`text-xs font-black uppercase mb-1 ${settings.contributionType === type ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
-                                        {type === 'passive' ? 'Utilisateur' : type === 'relay' ? 'Relais' : 'Point de Sortie'}
-                                    </div>
-                                    <div className={`text-[10px] font-bold ${settings.contributionType === type ? 'text-brand-100' : 'text-slate-400'}`}>
-                                        Boost : x{multipliers[type].toFixed(2)}
-                                    </div>
-                                </button>
-                            ))}
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                            <h4 className="text-xs font-black uppercase text-slate-500 mb-4 flex items-center gap-2"><Chrome className="w-4 h-4" /> Complexité UA</h4>
+                            <select value={settings.uaComplexity} onChange={(e)=>updateSettings('uaComplexity', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl py-2 text-xs font-bold px-3">
+                                <option value="standard">Standard (OS Actuel)</option>
+                                <option value="diverse">Diversifié (Multi-Plateforme)</option>
+                                <option value="chaotic">Chaotique (IA Driven)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
             )}
 
-            {activeTab === 'general' && (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                    <Sliders className="w-12 h-12 mb-4 opacity-10" />
-                    <p className="text-sm font-medium">Paramètres Généraux (Langue, Thème, Notifications) à venir.</p>
+            {activeTab === 'security' && (
+                <div className="space-y-6">
+                    <h3 className="text-lg font-bold">Sécurité & Protocoles</h3>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center justify-between">
+                            <div><h4 className="font-bold text-sm">Kill Switch Réseau</h4><p className="text-xs text-slate-500">Coupe Internet si le VPN se déconnecte.</p></div>
+                            <button onClick={() => updateSettings('killSwitch', !settings.killSwitch)}>{settings.killSwitch ? <ToggleRight className="w-10 h-10 text-red-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300" />}</button>
+                        </div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center justify-between">
+                            <div><h4 className="font-bold text-sm">DNS Leak Protection</h4><p className="text-xs text-slate-500">Force les requêtes DNS dans le tunnel.</p></div>
+                            <button onClick={() => updateSettings('dnsLeakProtection', !settings.dnsLeakProtection)}>{settings.dnsLeakProtection ? <ToggleRight className="w-10 h-10 text-brand-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300" />}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {(activeTab === 'earnings' || activeTab === 'general') && (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-50">
+                    <Settings className="w-12 h-12 mb-4" />
+                    <p className="text-sm">Paramètres en cours d'optimisation...</p>
                 </div>
             )}
         </div>
