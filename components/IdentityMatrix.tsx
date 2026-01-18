@@ -56,6 +56,10 @@ export const IdentityMatrix: React.FC<Props> = ({
   const isOnion = mode === ConnectionMode.ONION_VORTEX;
   const isSmartDNS = mode === ConnectionMode.SMART_DNS;
 
+  const networkDelay = useMemo(() => {
+    return identity.latency + Math.floor(Math.random() * 12) + 4;
+  }, [identity.latency, identity.ip]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       setEntropy((Math.random() * 0.4 + 9.6).toFixed(2));
@@ -184,6 +188,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                  <div className="flex flex-col">
                     <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Network_Lag</span>
                     <span className="text-xs font-mono font-black text-slate-400">{identity.latency}ms</span>
+                    <span className="text-[9px] font-black text-slate-600 uppercase mt-1 tracking-tighter">Délai Réseau : {networkDelay}ms</span>
                  </div>
                  <div className="flex flex-col">
                     <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Entropy_H</span>
@@ -395,7 +400,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                         </div>
                       ) : identity.mac}
                       {!isMasking && isConnected && (
-                         <div className="absolute -right-14 opacity-0 group-hover/card:opacity-100 p-2 text-brand-500 hover:scale-125 transition-all drop-shadow-[0_0_80px_rgba(6,182,212,0.4)]">
+                         <div className="absolute -right-14 opacity-0 group-hover/card:opacity-100 p-2 text-brand-500 hover:scale-125 transition-all drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]">
                             <RefreshCw className="w-6 h-6" />
                          </div>
                       )}

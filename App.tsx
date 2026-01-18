@@ -223,7 +223,12 @@ function App() {
             <div className="lg:col-span-4 space-y-8">
                 <EarningsCard isConnected={isConnected} plan={userPlan} isVerified={isVerified} balance={0.4215} onUpgrade={() => setShowPricing(true)} onVerify={() => setShowVerification(true)} onWithdraw={() => {}} settings={appSettings} />
                 <SecurityAudit currentIp={currentIdentity.ip} location={currentIdentity.country} />
-                <SystemLogs logs={logs} onClear={() => setLogs([])} />
+                <SystemLogs 
+                  logs={logs} 
+                  onClear={() => setLogs([])} 
+                  retentionHours={appSettings.logRetentionHours}
+                  onRetentionChange={(hours) => setAppSettings(prev => ({...prev, logRetentionHours: hours}))}
+                />
             </div>
         </div>
       </main>

@@ -344,7 +344,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                   </div>
                               </div>
                               <div>
-                                 <h5 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">{node.name}</h5>
+                                 <h5 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                                   {node.name}
+                                   {isActive && (
+                                     <span className="relative flex h-2 w-2">
+                                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                                     </span>
+                                   )}
+                                 </h5>
                                  <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">UDP:443</span>
                                     <div className="w-1 h-1 rounded-full bg-slate-600"></div>
@@ -423,7 +431,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                      </>
                                    )}
                                </div>
-                               <span className={`text-[10px] font-black uppercase tracking-widest ${isNodeActive ? 'text-cyan-400 scale-110' : 'text-slate-300'}`}>{node.name}</span>
+                               <span className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isNodeActive ? 'text-cyan-400 scale-110' : 'text-slate-300'}`}>
+                                 {node.name}
+                                 {isNodeActive && (
+                                    <span className="flex h-1.5 w-1.5">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                    </span>
+                                 )}
+                               </span>
                                <span className="text-[8px] font-mono text-slate-500">{node.latency}ms</span>
                                {isNodeActive && (
                                  <div className="mt-1 px-2 py-0.5 bg-cyan-600 rounded text-[6px] font-black text-white uppercase tracking-widest animate-pulse">CONNECTED</div>
@@ -451,7 +467,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <div className="text-[10px] font-black text-cyan-500 uppercase tracking-[0.4em] mb-1">Liaison_Chiffrée_Active</div>
                           <div className="flex items-center gap-3">
                              <span className="text-2xl">{countriesWithFlags[activeNode.country] || '📍'}</span>
-                             <span className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-wider">{activeNode.name}</span>
+                             <span className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                               {activeNode.name}
+                               <span className="relative flex h-2.5 w-2.5">
+                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]"></span>
+                               </span>
+                             </span>
                           </div>
                           {/* Live handshaking feed simulation */}
                           <div className="text-[8px] font-mono text-slate-500 mt-1 uppercase flex gap-2">

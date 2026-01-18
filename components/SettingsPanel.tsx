@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert } from 'lucide-react';
+import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert, Clock } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -258,7 +258,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                         className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all text-center relative overflow-hidden group ${
                                             settings.contributionType === type.id 
                                             ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500' 
-                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-400'
+                                            : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-400'
                                         }`}
                                     >
                                         <type.icon className="w-6 h-6 mb-1" />
@@ -291,11 +291,51 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
 
             {activeTab === 'security' && (
                 <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-                    <h3 className="text-lg font-bold">Sécurité & Protocoles</h3>
+                    <div>
+                        <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-widest">Sécurité & Protocoles</h3>
+                        <p className="text-sm text-slate-500">Configurez les barrières de protection de votre tunnel.</p>
+                    </div>
+
                     <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
                         <div className="flex items-center justify-between">
-                            <div><h4 className="font-bold text-sm">Kill Switch Réseau</h4><p className="text-xs text-slate-500">Coupe Internet si le VPN se déconnecte.</p></div>
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-red-500/10 rounded-xl text-red-500"><ShieldAlert className="w-5 h-5" /></div>
+                                <div>
+                                    <h4 className="font-bold text-sm">Kill Switch Réseau</h4>
+                                    <p className="text-xs text-slate-500">Coupe Internet si le VPN se déconnecte.</p>
+                                </div>
+                            </div>
                             <button onClick={() => updateSettings('killSwitch', !settings.killSwitch)}>{settings.killSwitch ? <ToggleRight className="w-10 h-10 text-red-500" /> : <ToggleLeft className="w-10 h-10 text-slate-300" />}</button>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-500"><Clock className="w-5 h-5" /></div>
+                                <div>
+                                    <h4 className="font-bold text-sm">Rétention des Journaux</h4>
+                                    <p className="text-xs text-slate-500">Durée de conservation locale des logs système.</p>
+                                </div>
+                            </div>
+                            <span className="text-[10px] font-black font-mono text-brand-500 bg-brand-500/5 px-2 py-1 rounded">
+                                {settings.logRetentionHours === 0 ? 'ILLIMITÉE' : `${settings.logRetentionHours >= 168 ? settings.logRetentionHours / 168 + ' SEMAINES' : settings.logRetentionHours / 24 + ' JOURS'}`}
+                            </span>
+                        </div>
+                        <div className="flex bg-slate-50 dark:bg-slate-800 p-1 rounded-xl gap-1 border border-slate-100 dark:border-slate-700">
+                            {[24, 168, 720, 0].map((hours) => (
+                                <button
+                                    key={hours}
+                                    onClick={() => updateSettings('logRetentionHours', hours)}
+                                    className={`flex-1 py-2 rounded-lg text-[10px] font-black transition-all uppercase tracking-tighter ${
+                                        settings.logRetentionHours === hours 
+                                        ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm ring-1 ring-black/5' 
+                                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                                    }`}
+                                >
+                                    {hours === 24 ? '24h' : hours === 168 ? '7j' : hours === 720 ? '30j' : 'Infini'}
+                                </button>
+                            ))}
                         </div>
                     </div>
                 </div>
