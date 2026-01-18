@@ -106,7 +106,7 @@ export const dbService = {
   /**
    * Crée une demande de retrait
    */
-  async createWithdrawal(userId: string, amount: number, method: string, address: string) {
+  async createWithdrawal(userId: string, amount: number, method: 'crypto' | 'paypal' | 'bank_transfer', address: string) {
     const { error } = await supabase
       .from('transactions')
       .insert([{
