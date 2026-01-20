@@ -10,7 +10,7 @@ import {
   ShieldAlert, Laptop, Monitor, Smartphone, Binary, 
   Lock, Shield, Scan, Target, Radio, Brain, 
   ChevronDown, ListChecks, ShieldHalf, Cpu as CpuIcon,
-  HelpCircle, Sparkles, Wand2, History as HistoryIcon
+  HelpCircle, Sparkles, Wand2, History as LucideHistory
 } from 'lucide-react';
 
 interface Props {
@@ -289,7 +289,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                     <div className={`p-2.5 rounded-2xl ${theme.accent} border border-white/10`}><MapPin className={`w-5 h-5 ${theme.primary}`} /></div>
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active_Node</span>
                   </div>
-                  <HistoryIcon className="w-4 h-4 text-slate-600 hover:text-slate-400 cursor-pointer transition-colors" />
+                  <LucideHistory className="w-4 h-4 text-slate-600 hover:text-slate-400 cursor-pointer transition-colors" />
               </div>
               
               <div className="flex items-center gap-6 mb-10 relative z-10">
