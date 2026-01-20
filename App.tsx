@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck, History } from 'lucide-react';
+import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck, History, Activity, Wifi, Lock } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { PricingModal } from './components/PricingModal';
@@ -12,6 +12,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { VerificationModal } from './components/VerificationModal';
 import { IdentityAssistant } from './components/IdentityAssistant';
 import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
+import { SecureFileTransfer } from './components/SecureFileTransfer';
 import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac, MOCK_NODES } from './constants';
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, DeviceNode, ConnectionSession } from './types';
 import { analyzeSecurity } from './services/geminiService';
@@ -41,6 +42,7 @@ function App() {
   const [showVerification, setShowVerification] = useState(false);
   const [showConnectionHistory, setShowConnectionHistory] = useState(false);
   const [connectionHistory, setConnectionHistory] = useState<ConnectionSession[]>([]);
+  const [throughput, setThroughput] = useState({ up: 0, down: 0 });
   
   const [appSettings, setAppSettings] = useState<AppSettings>({
     protocol: 'wireguard',
@@ -75,6 +77,21 @@ function App() {
     logRetentionHours: 168
   });
 
+  // Simulated real-time stats
+  useEffect(() => {
+    if (isConnected) {
+      const interval = setInterval(() => {
+        setThroughput({
+          up: parseFloat((Math.random() * 2.5).toFixed(2)),
+          down: parseFloat((Math.random() * 45).toFixed(2))
+        });
+      }, 2000);
+      return () => clearInterval(interval);
+    } else {
+      setThroughput({ up: 0, down: 0 });
+    }
+  }, [isConnected]);
+
   // --- Backend Sync Effect ---
   useEffect(() => {
     if (user?.id) {
@@ -106,12 +123,47 @@ function App() {
     setLogs(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), timestamp: new Date().toLocaleTimeString('fr-FR'), timestampRaw: Date.now(), event, type, ip }].slice(-500));
   }, []);
 
+  const handleConnectNode = (nodeId: string) => {
+    const node = MOCK_NODES.find(n => n.id === nodeId);
+    if (!node) return;
+
+    if (isConnected) {
+        addLog(`Transition vers le nœud ${node.name} lancée...`, 'info');
+        disconnectVPN();
+        setTimeout(() => {
+            setCurrentIdentity(prev => ({
+                ...prev,
+                ip: node.ip,
+                country: node.country,
+                city: node.country === 'France' ? 'Lyon' : node.country === 'Suisse' ? 'Genève' : 'Central',
+                latency: node.latency
+            }));
+            connectVPN();
+        }, 1000);
+    } else {
+        setCurrentIdentity(prev => ({
+            ...prev,
+            ip: node.ip,
+            country: node.country,
+            city: node.country === 'France' ? 'Lyon' : node.country === 'Suisse' ? 'Genève' : 'Central',
+            latency: node.latency
+        }));
+        connectVPN();
+    }
+  };
+
   const connectVPN = async () => {
     setIsDisconnecting(false);
     addLog(`Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()})...`, 'info', currentIdentity.ip);
+    
     if (mode === ConnectionMode.ONION_VORTEX) {
-        addLog(`Initialisation du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info', currentIdentity.ip);
+        addLog(`Construction du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info');
+        await new Promise(r => setTimeout(r, 600));
+        addLog(`Nœud d'entrée ${appSettings.vortexEntryNodeCountry} sécurisé.`, 'success');
+        await new Promise(r => setTimeout(r, 400));
+        addLog(`Triple-chiffrement appliqué aux couches de transport.`, 'info');
     }
+
     setTimeout(async () => {
       setIsConnected(true);
       addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success', currentIdentity.ip);
@@ -227,8 +279,26 @@ function App() {
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
               <div className="p-2.5 bg-cyan-600 rounded-2xl shadow-lg shadow-cyan-500/20"><Shield className="w-7 h-7 text-white" /></div>
-              <span className="font-black text-2xl tracking-tighter">Renumerate<span className="text-cyan-500">VPN</span></span>
+              <div className="flex flex-col -gap-1">
+                <span className="font-black text-xl tracking-tighter">Renumerate<span className="text-cyan-500">VPN</span></span>
+                <div className="flex items-center gap-2 opacity-50">
+                   <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                   <span className="text-[8px] font-black uppercase tracking-widest">{isConnected ? 'UPLINK_STABLE' : 'OFFLINE_MODE'}</span>
+                </div>
+              </div>
           </div>
+
+          <div className="hidden lg:flex items-center gap-8 px-8 border-x border-slate-200 dark:border-slate-800 h-full">
+              <div className="flex flex-col">
+                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Activity className="w-3 h-3 text-cyan-500" /> BPS_DN</span>
+                 <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">{throughput.down} Mb/s</span>
+              </div>
+              <div className="flex flex-col">
+                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><Wifi className="w-3 h-3 text-purple-500" /> BPS_UP</span>
+                 <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">{throughput.up} Mb/s</span>
+              </div>
+          </div>
+
           <div className="flex items-center gap-4">
             <button onClick={() => setShowPricing(true)} className="hidden md:flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-[10px] font-black border uppercase tracking-widest bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-cyan-500 hover:scale-105 transition-transform"><Crown className="w-4 h-4 text-amber-500" /> {userPlan.toUpperCase()} Plan</button>
             <button onClick={() => setShowConnectionHistory(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:scale-110" title="Historique de connexion"><History className="w-5 h-5" /></button>
@@ -252,7 +322,7 @@ function App() {
                     mode={mode} 
                     onModeChange={(m) => setMode(m)} 
                     nodes={MOCK_NODES} 
-                    onConnectNode={()=>{}} 
+                    onConnectNode={handleConnectNode} 
                     currentIp={currentIdentity.ip}
                     settings={appSettings}
                     addLog={addLog}
@@ -277,6 +347,7 @@ function App() {
             </div>
             <div className="lg:col-span-4 space-y-8">
                 <EarningsCard isConnected={isConnected} plan={userPlan} isVerified={isVerified} balance={balance} onUpgrade={() => setShowPricing(true)} onVerify={() => setShowVerification(true)} onWithdraw={() => {}} settings={appSettings} />
+                <SecureFileTransfer isConnected={isConnected} addLog={addLog} />
                 <SecurityAudit currentIp={currentIdentity.ip} location={currentIdentity.country} />
                 <SystemLogs 
                   logs={logs} 

@@ -7,8 +7,6 @@ export const REALISTIC_USER_AGENTS = [
     full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.118 Safari/537.36',
     os: 'Windows 11 Pro 23H2',
     browser: 'Chrome 124.0.6367',
-    preciseVersion: '124.0.6367.118',
-    build: '22631.3527',
     engine: 'Blink (V8 12.4.254)'
   },
   {
@@ -16,45 +14,63 @@ export const REALISTIC_USER_AGENTS = [
     full: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
     os: 'macOS Sonoma 14.5.0',
     browser: 'Safari 17.5',
-    preciseVersion: '17.5 (19618.2.12.11.6)',
-    build: '23F79',
     engine: 'WebKit/605.1.15'
-  },
-  {
-    short: 'Edge 124 / Windows 10',
-    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.2478.80',
-    os: 'Windows 10 Enterprise 22H2',
-    browser: 'Edge 124.0.2478',
-    preciseVersion: '124.0.2478.80',
-    build: '19045.4291',
-    engine: 'Blink (Chromium 124)'
   },
   {
     short: 'Firefox 126 / Fedora',
     full: 'Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0',
-    os: 'Fedora Linux 40 (Workstation)',
+    os: 'Fedora Linux 40',
     browser: 'Firefox 126.0',
-    preciseVersion: '126.0.1',
-    build: 'fc40.x86_64',
-    engine: 'Gecko/20240514'
+    engine: 'Gecko/126.0'
+  },
+  {
+    short: 'Edge 124 / Windows 10',
+    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.2478.80',
+    os: 'Windows 10 Enterprise',
+    browser: 'Edge 124.0.2478',
+    engine: 'Blink (Chromium 124)'
   },
   {
     short: 'Chrome 125 / Android 14',
     full: 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro Build/AP1A.240405.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.52 Mobile Safari/537.36',
-    os: 'Android 14 (UPS1.231105.002)',
+    os: 'Android 14 (Upside Down Cake)',
     browser: 'Chrome Mobile 125',
-    preciseVersion: '125.0.6422.52',
-    build: 'AP1A.240405.002',
     engine: 'Blink/125.0.0.0'
   },
   {
     short: 'Safari / iPhone iOS 17.5',
     full: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-    os: 'iOS 17.5.1 (stable)',
+    os: 'iOS 17.5.1',
     browser: 'Mobile Safari 17.5',
-    preciseVersion: '17.5.1 (21F90)',
-    build: '21F90',
     engine: 'WebKit/605.1.15'
+  },
+  {
+    short: 'Vivaldi 6.7 / macOS',
+    full: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Vivaldi/6.7.3329.21',
+    os: 'macOS Catalina 10.15.7',
+    browser: 'Vivaldi 6.7',
+    engine: 'Blink (V8 12.4)'
+  },
+  {
+    short: 'Brave 1.66 / Windows 11',
+    full: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Brave/1.66.110',
+    os: 'Windows 11 Home',
+    browser: 'Brave 1.66',
+    engine: 'Blink (Chromium 125)'
+  },
+  {
+    short: 'Arc Browser / macOS',
+    full: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    os: 'macOS Sonoma 14.2',
+    browser: 'Arc 1.44',
+    engine: 'Blink (Chromium 125)'
+  },
+  {
+    short: 'Firefox 125 / Android',
+    full: 'Mozilla/5.0 (Android 14; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0',
+    os: 'Android 14 (One UI 6.1)',
+    browser: 'Firefox Mobile 125',
+    engine: 'Gecko/125.0'
   }
 ];
 
@@ -64,22 +80,8 @@ export const generateRandomMac = (
 ) => {
   const hex = "0123456789ABCDEF";
   const vendors = [
-    "00:00:0C", // Cisco
-    "00:05:02", // Apple
-    "00:0C:F1", // Intel
-    "00:16:3E", // Xen (VM)
-    "00:50:56", // VMware
-    "3C:5A:B4", // Samsung
-    "00:14:22", // Dell
-    "00:10:18", // Broadcom
-    "E0:D5:5E", // Giga-Byte
-    "52:54:00", // QEMU/KVM
-    "00:15:5D", // Microsoft (Hyper-V)
-    "08:00:27", // VirtualBox
-    "00:25:90", // Supermicro
-    "74:83:C2", // HP
-    "FC:EC:DA", // Ubiquiti
-    "D4:04:FF", // Netgear
+    "00:00:0C", "00:05:02", "00:0C:F1", "00:16:3E", "00:50:56", "3C:5A:B4",
+    "00:14:22", "00:10:18", "E0:D5:5E", "52:54:00", "00:15:5D", "08:00:27"
   ];
 
   let bytes: string[] = [];
@@ -91,8 +93,6 @@ export const generateRandomMac = (
       bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   } else if (mode === 'laa') {
-    // LAA requires the second-least significant bit of the first byte to be 1.
-    // In hex terms: x2, x6, xA, or xE for the first byte's second digit.
     const b1_1 = hex[Math.floor(Math.random() * 16)];
     const b1_2 = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
     bytes.push(b1_1 + b1_2);
@@ -100,13 +100,11 @@ export const generateRandomMac = (
       bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   } else {
-    // Pure Random
     for (let i = 0; i < 6; i++) {
       bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   }
 
-  // Resolve random format if requested
   let finalFormat = format;
   if (format === 'random') {
     const r = Math.random();
@@ -120,7 +118,6 @@ export const generateRandomMac = (
   } else if (finalFormat === 'hyphen') {
     return bytes.join('-').toUpperCase();
   } else {
-    // Cisco format: xxxx.xxxx.xxxx
     const flat = bytes.join('').toLowerCase();
     return `${flat.slice(0, 4)}.${flat.slice(4, 8)}.${flat.slice(8, 12)}`;
   }
