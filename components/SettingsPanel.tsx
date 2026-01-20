@@ -1,6 +1,5 @@
 
 import React, { useState } from 'react';
-/* Added ChevronRight and ShieldCheck to fixed imports */
 import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert, Clock, Cpu, Wifi, Server, Terminal, Target, Search, MousePointer2, Ghost, Rocket, ZapOff, Info, ChevronRight, ShieldCheck } from 'lucide-react';
 import { AppSettings, PlanTier, ConfigurationPreset } from '../types';
 
