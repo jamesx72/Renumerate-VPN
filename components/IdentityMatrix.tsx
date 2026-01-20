@@ -9,7 +9,8 @@ import {
   Zap, ChevronRight, MapPin, Users, Cloud, X, 
   ShieldAlert, Laptop, Monitor, Smartphone, Binary, 
   Lock, Shield, Scan, Target, Radio, Brain, 
-  ChevronDown, ListChecks, ShieldHalf, Cpu as CpuIcon
+  ChevronDown, ListChecks, ShieldHalf, Cpu as CpuIcon,
+  HelpCircle
 } from 'lucide-react';
 
 interface Props {
@@ -183,14 +184,14 @@ export const IdentityMatrix: React.FC<Props> = ({
                 </div>
                 <div className="space-y-1">
                    <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Latency_Sync</span>
-                   <div className="flex items-center gap-2">
+                   <div className="flex items-center gap-3">
                       <Radio className="w-4 h-4 text-emerald-500 animate-pulse" />
                       <span className="text-lg font-mono font-black text-slate-800 dark:text-emerald-400">{identity.latency}ms</span>
                    </div>
                 </div>
                 <div className="space-y-1">
                    <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Cipher_Tech</span>
-                   <div className="flex items-center gap-2">
+                   <div className="flex items-center gap-3">
                       <Lock className="w-4 h-4 text-purple-500" />
                       <span className="text-lg font-mono font-black text-slate-800 dark:text-purple-400">CHACHA20</span>
                    </div>
@@ -354,10 +355,22 @@ export const IdentityMatrix: React.FC<Props> = ({
             <div className="flex-1 space-y-6 mb-8 relative z-10">
                 <div className="p-6 bg-black/60 rounded-[2.5rem] border border-white/5 space-y-6 shadow-inner">
                     <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3">
-                            {getOSIcon(currentUAData.os)}
-                            OS_SYSTEM
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3">
+                              {getOSIcon(currentUAData.os)}
+                              OS_SYSTEM
+                          </span>
+                          <div className="relative group/info">
+                            <HelpCircle className="w-3 h-3 text-slate-600 hover:text-cyan-500 cursor-help transition-colors" />
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-56 p-4 bg-slate-900/95 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl invisible group-hover/info:visible opacity-0 group-hover/info:opacity-100 transition-all duration-300 z-50 pointer-events-none">
+                              <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-2 border-b border-white/5 pb-1">Data_Fingerprint_Info</div>
+                              <p className="text-[10px] text-slate-300 leading-relaxed font-medium italic">
+                                L'User Agent est une signature envoyée par votre navigateur révélant votre OS et version logicielle. Le masquer prévient le "fingerprinting", empêchant les sites de vous identifier de manière unique sans cookies.
+                              </p>
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-3 border-l border-t border-white/10 bg-slate-900/95 rotate-[225deg] -mt-1.5"></div>
+                            </div>
+                          </div>
+                        </div>
                         <span className="text-[11px] font-mono font-black text-white">{isMasking ? 'SYNCHING...' : currentUAData.os}</span>
                     </div>
                     <div className="flex items-center justify-between">
