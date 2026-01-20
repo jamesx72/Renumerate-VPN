@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck, History, Activity, Wifi, Lock } from 'lucide-react';
+import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck, History, Activity, Wifi, Lock, Terminal, X } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { PricingModal } from './components/PricingModal';
@@ -40,6 +40,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
   const [showConnectionHistory, setShowConnectionHistory] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [connectionHistory, setConnectionHistory] = useState<ConnectionSession[]>([]);
   const [throughput, setThroughput] = useState({ up: 0, down: 0 });
   
@@ -64,7 +65,6 @@ function App() {
     vortexCircuitLength: 3,
     vortexEntryNodeCountry: 'auto',
     vortexExitNodeCountry: 'auto',
-    // Fixed: Removed 'boolean' type reference which was causing a value-level error.
     vortexNoScript: false,
     miningIntensity: 50,
     yieldOptimizationIA: true,
@@ -171,6 +171,10 @@ function App() {
           e.preventDefault();
           addLog('Raccourci détecté : Masquer empreinte [Ctrl+M]', 'info');
           handleScrambleUA();
+        }
+        else if (key === 'l') {
+          e.preventDefault();
+          setShowLogs(prev => !prev);
         }
       }
     };
@@ -324,7 +328,8 @@ function App() {
           <div className="flex items-center gap-4">
             <button onClick={() => setShowPricing(true)} className="hidden md:flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-[10px] font-black border uppercase tracking-widest bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-cyan-500 hover:scale-105 transition-transform"><Crown className="w-4 h-4 text-amber-500" /> {userPlan.toUpperCase()} Plan</button>
             <button onClick={() => setShowConnectionHistory(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:scale-110" title="Historique de connexion"><History className="w-5 h-5" /></button>
-            <button onClick={() => setShowSettings(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:rotate-90 duration-500"><SlidersVertical className="w-5 h-5" /></button>
+            <button onClick={() => setShowLogs(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:scale-110" title="Journal système (Ctrl+L)"><Terminal className="w-5 h-5" /></button>
+            <button onClick={() => setShowSettings(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:rotate-90 duration-500" title="Paramètres"><SlidersVertical className="w-5 h-5" /></button>
             <button onClick={() => setIsDark(!isDark)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">{isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
             <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-3 rounded-2xl text-slate-500 hover:bg-red-500/10 hover:text-red-500 transition-all"><LogOut className="w-5 h-5" /></button>
           </div>
@@ -413,6 +418,36 @@ function App() {
       {showVerification && <VerificationModal onClose={() => setShowVerification(false)} onSuccess={()=>{setIsVerified(true); setShowVerification(false)}} />}
       {showSettings && <SettingsPanel settings={appSettings} updateSettings={updateAppSettings} onClose={() => setShowSettings(false)} userPlan={userPlan} onShowPricing={() => { setShowSettings(false); setShowPricing(true); }} />}
       {showConnectionHistory && <ConnectionHistoryModal history={connectionHistory} onClose={() => setShowConnectionHistory(false)} onClear={() => setConnectionHistory([])} />}
+      
+      {showLogs && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" onClick={() => setShowLogs(false)} />
+          <div className="relative w-full max-w-3xl bg-slate-950 rounded-[3rem] shadow-[0_0_100px_rgba(0,0,0,0.8)] border border-slate-800 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 h-[600px]">
+             <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                <div className="flex items-center gap-4">
+                   <div className="p-2.5 bg-brand-500/10 rounded-xl border border-brand-500/20">
+                      <Terminal className="w-6 h-6 text-brand-500" />
+                   </div>
+                   <div>
+                      <h2 className="text-xl font-black text-white uppercase tracking-widest">Console_Système</h2>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">Uplink_Realtime_Output</p>
+                   </div>
+                </div>
+                <button onClick={() => setShowLogs(false)} className="p-3 hover:bg-slate-800 rounded-2xl text-slate-400 transition-all border border-slate-800 hover:rotate-90">
+                   <X className="w-6 h-6" />
+                </button>
+             </div>
+             <div className="flex-1 overflow-hidden p-6">
+                <SystemLogs 
+                  logs={logs} 
+                  onClear={() => setLogs([])} 
+                  retentionHours={appSettings.logRetentionHours}
+                  onRetentionChange={(hours) => updateAppSettings('logRetentionHours', hours)}
+                />
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert, Clock, Cpu, Wifi, Server, Terminal, Target } from 'lucide-react';
+import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert, Clock, Cpu, Wifi, Server, Terminal, Target, Search } from 'lucide-react';
 import { AppSettings, PlanTier } from '../types';
 
 interface Props {
@@ -25,6 +25,14 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
   ];
 
   const isPremium = userPlan !== 'free';
+
+  const dnsProviders = [
+    { id: 'cloudflare', label: 'Cloudflare', ip: '1.1.1.1' },
+    { id: 'google', label: 'Google', ip: '8.8.8.8' },
+    { id: 'quad9', label: 'Quad9', ip: '9.9.9.9' },
+    { id: 'opendns', label: 'OpenDNS', ip: '208.67.222.222' },
+    { id: 'custom', label: 'Personnalisé', ip: '---' },
+  ];
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -150,7 +158,6 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                 </div>
             )}
 
-            {/* Autres onglets bénéficiant de la même refonte structurelle... */}
             {activeTab === 'renumbering' && (
                  <div className="space-y-10 animate-in slide-in-from-right-8 duration-500">
                     <div className="space-y-2">
@@ -190,6 +197,106 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                         )}
                     </div>
                  </div>
+            )}
+
+            {activeTab === 'security' && (
+                <div className="space-y-10 animate-in slide-in-from-right-8 duration-500">
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-4">
+                            <h3 className="text-3xl font-black text-white uppercase tracking-tighter">Security_Vie_Privée</h3>
+                            <div className="px-3 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded-full border border-emerald-500/20 uppercase tracking-widest">Hardened</div>
+                        </div>
+                        <p className="text-sm text-slate-400 font-medium italic">Gérez vos boucliers DNS et protocoles d'étanchéité.</p>
+                    </div>
+
+                    {/* Section DNS - Demandée par l'utilisateur */}
+                    <div className="bg-slate-900/60 p-8 rounded-[3.5rem] border border-white/10 relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+                        
+                        <div className="flex items-center gap-6 mb-8">
+                            <div className="p-4 bg-brand-500/10 rounded-2xl text-brand-500">
+                                <Globe2 className="w-7 h-7" />
+                            </div>
+                            <div>
+                                <h4 className="font-black text-white uppercase tracking-widest text-lg">Système DNS Sentinel</h4>
+                                <p className="text-xs text-slate-500 mt-0.5">Prévention des fuites DNS et interception de requêtes.</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-8">
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 flex items-center gap-3">
+                                    <Server className="w-4 h-4 text-brand-500" /> DNS_Provider_Select
+                                </label>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-black/40 p-2 rounded-[2.5rem] border border-white/5">
+                                    {dnsProviders.map((provider) => (
+                                        <button
+                                            key={provider.id}
+                                            onClick={() => updateSettings('dns', provider.id)}
+                                            className={`py-3 rounded-2xl text-[9px] font-black transition-all uppercase tracking-widest flex flex-col items-center gap-1 ${
+                                                settings.dns === provider.id 
+                                                ? 'bg-brand-600 text-white shadow-lg' 
+                                                : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+                                            }`}
+                                        >
+                                            {provider.label}
+                                            <span className="opacity-40 text-[7px] font-mono">{provider.ip}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Option DNS Personnalisé - Conditionnelle */}
+                            {settings.dns === 'custom' && (
+                                <div className="space-y-4 animate-in slide-in-from-top-4 duration-500">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-500 flex items-center gap-3">
+                                        <Target className="w-4 h-4" /> DNS_Custom_Uplink
+                                    </label>
+                                    <div className="relative group/input">
+                                        <input 
+                                            type="text" 
+                                            value={settings.customDnsServer} 
+                                            onChange={(e) => updateSettings('customDnsServer', e.target.value)}
+                                            placeholder="EX: 1.1.1.1, 8.8.4.4..."
+                                            className="w-full bg-black/60 border border-brand-500/20 rounded-[2rem] py-5 px-8 text-sm font-mono font-black text-brand-400 outline-none focus:border-brand-500 transition-all shadow-inner"
+                                        />
+                                        <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                            <span className="text-[9px] font-black text-brand-500/60 uppercase tracking-widest">A_RECORD_ONLY</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="pt-8 border-t border-white/5 space-y-4">
+                                <div className="flex items-center justify-between p-6 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt">
+                                    <div className="flex items-center gap-6">
+                                        <div className="p-4 bg-cyan-500/10 rounded-2xl text-cyan-500"><Lock className="w-6 h-6" /></div>
+                                        <div>
+                                            <h4 className="font-black text-white uppercase tracking-widest text-sm">DNS_Leak_Protection</h4>
+                                            <p className="text-xs text-slate-500 mt-1">Force le trafic DNS via le tunnel VPN exclusivement.</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => updateSettings('dnsLeakProtection', !settings.dnsLeakProtection)} className="active:scale-90 transition-transform">
+                                        {settings.dnsLeakProtection ? <ToggleRight className="w-14 h-14 text-cyan-500" /> : <ToggleLeft className="w-14 h-14 text-slate-700" />}
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center justify-between p-6 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt">
+                                    <div className="flex items-center gap-6">
+                                        <div className="p-4 bg-red-500/10 rounded-2xl text-red-500"><ShieldAlert className="w-6 h-6" /></div>
+                                        <div>
+                                            <h4 className="font-black text-white uppercase tracking-widest text-sm">Advanced_Kill_Switch</h4>
+                                            <p className="text-xs text-slate-500 mt-1">Coupe tout internet si le VPN se déconnecte.</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => updateSettings('killSwitch', !settings.killSwitch)} className="active:scale-90 transition-transform">
+                                        {settings.killSwitch ? <ToggleRight className="w-14 h-14 text-red-500" /> : <ToggleLeft className="w-14 h-14 text-slate-700" />}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
       </div>
