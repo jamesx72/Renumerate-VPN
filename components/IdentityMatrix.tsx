@@ -105,7 +105,8 @@ export const IdentityMatrix: React.FC<Props> = ({
     primaryBorder: isOnion ? 'border-purple-500/30' : isSmartDNS ? 'border-amber-500/30' : 'border-cyan-500/30',
     glow: isOnion ? 'shadow-purple-500/10' : isSmartDNS ? 'shadow-amber-500/10' : 'shadow-cyan-500/10',
     accent: isOnion ? 'bg-purple-500/10' : isSmartDNS ? 'bg-amber-500/10' : 'bg-cyan-500/10',
-    fill: isOnion ? 'fill-purple-500' : isSmartDNS ? 'fill-amber-500' : 'fill-cyan-500'
+    fill: isOnion ? 'fill-purple-500' : isSmartDNS ? 'fill-amber-500' : 'fill-cyan-500',
+    cardBase: 'glass-card dark:bg-slate-900/90 dark:bg-brand-500/5'
   };
 
   const handleCopyIp = () => {
@@ -127,7 +128,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       {showCityModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md" onClick={() => setShowCityModal(false)} />
-          <div className={`relative w-full max-w-sm glass-card border-2 ${theme.primaryBorder} rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden`}>
+          <div className={`relative w-full max-w-sm ${theme.cardBase} border-2 ${theme.primaryBorder} rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden`}>
              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
              <button onClick={() => setShowCityModal(false)} className="absolute top-6 right-6 p-2 rounded-xl bg-slate-800/50 text-slate-400 hover:text-white transition-colors border border-white/5"><X className="w-5 h-5" /></button>
              <div className="flex flex-col items-center text-center">
@@ -155,7 +156,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       {/* Rangée Principale IP & Security */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Carte IP - Look "Terminal Dashboard" */}
-        <div className={`glass-card p-8 rounded-[3rem] border ${theme.primaryBorder} relative overflow-hidden transition-all duration-500 ${theme.glow} bracket-corner group`}>
+        <div className={`${theme.cardBase} p-8 rounded-[3rem] border ${theme.primaryBorder} relative overflow-hidden transition-all duration-500 ${theme.glow} bracket-corner group`}>
           <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <Radar className="w-32 h-32 animate-spin-slow" />
@@ -209,7 +210,7 @@ export const IdentityMatrix: React.FC<Props> = ({
         </div>
 
         {/* Carte IPv6 & Leak Protection - Design Alerte/Sécurité */}
-        <div className={`glass-card p-8 rounded-[3rem] border-2 ${ipv6LeakProtection ? 'border-emerald-500/20' : 'border-red-500/40'} relative overflow-hidden transition-all duration-500 group`}>
+        <div className={`${theme.cardBase} p-8 rounded-[3rem] border-2 ${ipv6LeakProtection ? 'border-emerald-500/20' : 'border-red-500/40'} relative overflow-hidden transition-all duration-500 group`}>
             <div className={`absolute inset-0 opacity-[0.03] transition-colors ${ipv6LeakProtection ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></div>
             
             <div className="flex flex-col h-full justify-between relative z-10">
@@ -257,7 +258,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       {/* Grille Triple : Géo, HW et SW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Geo_Anchor */}
-        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 bracket-corner`}>
+        <div className={`${theme.cardBase} p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 bracket-corner`}>
             <div className="flex items-center gap-3 mb-6">
                 <div className={`p-2 rounded-xl ${theme.accent}`}><Globe className={`w-4 h-4 ${theme.primary}`} /></div>
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Geo_Anchor_v4</span>
@@ -297,7 +298,7 @@ export const IdentityMatrix: React.FC<Props> = ({
         </div>
 
         {/* HW_Signature - Spoofing MAC */}
-        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
+        <div className={`${theme.cardBase} p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
             <div className="flex items-center gap-3 mb-6">
                 <div className={`p-2 rounded-xl ${theme.accent}`}><Fingerprint className={`w-4 h-4 ${theme.primary}`} /></div>
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Hardware_Spoof</span>
@@ -332,7 +333,7 @@ export const IdentityMatrix: React.FC<Props> = ({
         </div>
 
         {/* SW_Profile - Spoofing UA */}
-        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
+        <div className={`${theme.cardBase} p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-xl ${theme.accent}`}><Chrome className={`w-4 h-4 ${theme.primary}`} /></div>
