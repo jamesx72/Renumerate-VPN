@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert, Clock, Cpu, Wifi, Server, Terminal, Target, Search, MousePointer2, Ghost, Rocket, ZapOff, Info, ChevronRight, ShieldCheck } from 'lucide-react';
+import { Settings, Shield, Zap, ToggleLeft, ToggleRight, X, Lock, Crown, Sliders, Activity, Wallet, Sparkles, Gauge, Fingerprint, Chrome, RefreshCw, Orbit, Layers, Globe, Globe2, Brain, Network, ArrowRightLeft, ShieldAlert, Clock, Cpu, Wifi, Server, Terminal, Target, Search, MousePointer2, Ghost, Rocket, ZapOff, Info, ChevronRight, ShieldCheck, Wand2, Check } from 'lucide-react';
 import { AppSettings, PlanTier, ConfigurationPreset } from '../types';
 
 interface Props {
@@ -11,13 +11,15 @@ interface Props {
   onShowPricing: () => void;
 }
 
-type TabId = 'general' | 'renumbering' | 'vortex' | 'security' | 'earnings';
+type TabId = 'wizard' | 'general' | 'renumbering' | 'vortex' | 'security' | 'earnings';
 
 export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose, userPlan, onShowPricing }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+  const [activeTab, setActiveTab] = useState<TabId>('wizard');
+  const [wizardStep, setWizardStep] = useState(1);
   const [hoveredPreset, setHoveredPreset] = useState<string | null>(null);
   
   const tabs = [
+    { id: 'wizard', label: 'Setup_Wizard', icon: Wand2 },
     { id: 'general', label: 'Réseau', icon: Network },
     { id: 'vortex', label: 'Vortex', icon: Orbit },
     { id: 'renumbering', label: 'Identité', icon: Fingerprint },
@@ -147,6 +149,111 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                     <X className="w-7 h-7" />
                 </button>
             </div>
+
+            {activeTab === 'wizard' && (
+                <div className="space-y-12 animate-in slide-in-from-right-8 duration-500 max-w-3xl mx-auto">
+                    <div className="text-center space-y-4">
+                        <div className="inline-flex p-5 rounded-[2rem] bg-brand-500/10 border border-brand-500/20 shadow-2xl mb-4">
+                            <Wand2 className="w-12 h-12 text-brand-500 animate-pulse" />
+                        </div>
+                        <h3 className="text-4xl font-black text-white uppercase tracking-tighter">Configuration_Wizard</h3>
+                        <p className="text-sm text-slate-400 font-medium">Optimisons votre expérience Renumerate en {wizardStep}/3 étapes.</p>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-12 rounded-[4rem] border border-white/10 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+                        
+                        {wizardStep === 1 && (
+                            <div className="space-y-10 animate-in fade-in slide-in-from-right-4">
+                                <div className="space-y-2">
+                                    <span className="text-[10px] font-black text-brand-500 uppercase tracking-[0.4em]">Step_01</span>
+                                    <h4 className="text-2xl font-black text-white uppercase">Primary_Objective</h4>
+                                    <p className="text-xs text-slate-500">Quelle est votre priorité d'utilisation du tunnel ?</p>
+                                </div>
+                                <div className="grid grid-cols-1 gap-4">
+                                    {[
+                                        { id: 'speed_ultra', label: 'Vitesse & Gaming', desc: 'Protocol Wireguard, MTU optimisé', icon: Rocket, color: 'text-cyan-500' },
+                                        { id: 'stealth_max', label: 'Anonymat Total', desc: 'OpenVPN + Obfuscation Ultra', icon: Ghost, color: 'text-purple-500' },
+                                        { id: 'balanced', label: 'Usage Polyvalent', desc: 'Équilibre entre débit et sécurité', icon: Shield, color: 'text-emerald-500' }
+                                    ].map(obj => (
+                                        <button 
+                                            key={obj.id}
+                                            onClick={() => { applyPreset(obj.id as any); setWizardStep(2); }}
+                                            className="p-6 rounded-3xl bg-black/40 border border-white/5 hover:border-brand-500/50 transition-all flex items-center gap-6 group"
+                                        >
+                                            <div className={`p-4 rounded-2xl bg-white/5 ${obj.color} group-hover:scale-110 transition-transform`}>
+                                                <obj.icon className="w-8 h-8" />
+                                            </div>
+                                            <div className="text-left">
+                                                <h5 className="font-black text-white uppercase text-sm">{obj.label}</h5>
+                                                <p className="text-[10px] text-slate-500 mt-1">{obj.desc}</p>
+                                            </div>
+                                            <ChevronRight className="w-5 h-5 text-slate-700 ml-auto group-hover:text-brand-500 transition-colors" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {wizardStep === 2 && (
+                            <div className="space-y-10 animate-in fade-in slide-in-from-right-4">
+                                <div className="space-y-2">
+                                    <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.4em]">Step_02</span>
+                                    <h4 className="text-2xl font-black text-white uppercase">Monetization_Setup</h4>
+                                    <p className="text-xs text-slate-500">Souhaitez-vous monétiser votre connexion ?</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-6">
+                                    <button 
+                                        onClick={() => { updateSettings('miningIntensity', 0); setWizardStep(3); }}
+                                        className="p-10 rounded-[3rem] bg-black/40 border border-white/5 hover:border-slate-500 transition-all flex flex-col items-center text-center gap-6 group"
+                                    >
+                                        <div className="p-5 rounded-full bg-slate-500/10 text-slate-500"><ZapOff className="w-10 h-10" /></div>
+                                        <h5 className="font-black text-white uppercase">Mode Passif</h5>
+                                        <p className="text-[10px] text-slate-600">VPN Seul. Pas de gains RNC.</p>
+                                    </button>
+                                    <button 
+                                        onClick={() => { updateSettings('miningIntensity', 75); updateSettings('yieldOptimizationIA', true); setWizardStep(3); }}
+                                        className="p-10 rounded-[3rem] bg-amber-500/5 border border-amber-500/20 hover:border-amber-500 transition-all flex flex-col items-center text-center gap-6 group"
+                                    >
+                                        <div className="p-5 rounded-full bg-amber-500/10 text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)]"><Wallet className="w-10 h-10" /></div>
+                                        <h5 className="font-black text-white uppercase">Mode Nœud Actif</h5>
+                                        <p className="text-[10px] text-slate-600">Gagnez des RNC en relayant des paquets.</p>
+                                    </button>
+                                </div>
+                                <button onClick={() => setWizardStep(1)} className="text-[10px] font-black text-slate-600 uppercase tracking-widest hover:text-white transition-colors">Retour</button>
+                            </div>
+                        )}
+
+                        {wizardStep === 3 && (
+                            <div className="space-y-10 animate-in fade-in slide-in-from-right-4 text-center">
+                                <div className="space-y-4">
+                                    <div className="w-24 h-24 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto shadow-2xl">
+                                        <Check className="w-12 h-12 text-emerald-500 stroke-[4px]" />
+                                    </div>
+                                    <h4 className="text-3xl font-black text-white uppercase tracking-tighter">Cockpit_Ready</h4>
+                                    <p className="text-sm text-slate-400">Le profil neuronal de votre tunnel est synchronisé avec le réseau Renumerate.</p>
+                                </div>
+                                <div className="p-6 bg-black/60 rounded-3xl border border-white/5 grid grid-cols-2 gap-4 text-left">
+                                    <div className="space-y-1">
+                                        <span className="text-[9px] font-black text-slate-600 uppercase">Protocol</span>
+                                        <p className="text-xs font-mono font-bold text-brand-500">{settings.protocol.toUpperCase()}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <span className="text-[9px] font-black text-slate-600 uppercase">Intensity</span>
+                                        <p className="text-xs font-mono font-bold text-amber-500">{settings.miningIntensity}%</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={onClose}
+                                    className="w-full py-6 rounded-[2.5rem] bg-brand-600 hover:bg-brand-500 text-white font-black uppercase tracking-[0.4em] shadow-2xl shadow-brand-500/20 active:scale-95 transition-all"
+                                >
+                                    INITIALIZE_SESSION
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {activeTab === 'general' && (
                 <div className="space-y-12 animate-in slide-in-from-right-8 duration-500">

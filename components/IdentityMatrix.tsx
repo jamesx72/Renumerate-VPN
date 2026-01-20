@@ -10,7 +10,7 @@ import {
   ShieldAlert, Laptop, Monitor, Smartphone, Binary, 
   Lock, Shield, Scan, Target, Radio, Brain, 
   ChevronDown, ListChecks, ShieldHalf, Cpu as CpuIcon,
-  HelpCircle, Sparkles, Wand2
+  HelpCircle, Sparkles, Wand2, History as HistoryIcon
 } from 'lucide-react';
 
 interface Props {
@@ -88,8 +88,8 @@ export const IdentityMatrix: React.FC<Props> = ({
       // Warp progress animation
       setWarpProgress(0);
       const progressInterval = setInterval(() => {
-        setWarpProgress(prev => Math.min(100, prev + 10));
-      }, 150);
+        setWarpProgress(prev => Math.min(100, prev + (100 / 15))); // Match 1.5s duration from App.tsx
+      }, 100);
 
       return () => {
         clearInterval(interval);
@@ -142,7 +142,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   );
 
   return (
-    <div className="space-y-8">
+    <div className={`space-y-8 ${isMasking ? 'animate-matrix-shift' : ''}`}>
       {/* Grid Supérieure : IP & Global Warp Controller */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
@@ -213,7 +213,7 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Global Identity Scrambler (Warp Core) */}
+        {/* Global Identity Scrambler (Warp Core / Renumerate Reset) */}
         <div className={`lg:col-span-5 ${theme.cardBase} p-8 rounded-[3.5rem] border-2 border-brand-500/30 relative overflow-hidden group shadow-[0_0_40px_rgba(6,182,212,0.1)] bracket-corner`}>
             <div className="absolute inset-0 bg-brand-500/[0.02] pointer-events-none"></div>
             {isMasking && <div className="absolute inset-0 bg-brand-500/10 animate-pulse z-20"></div>}
@@ -222,10 +222,10 @@ export const IdentityMatrix: React.FC<Props> = ({
                 <div className="flex justify-between items-start mb-8">
                     <div className="space-y-1">
                         <div className="flex items-center gap-3">
-                          <h4 className="text-xl font-black text-white uppercase tracking-tighter">Identity_Warp_Core</h4>
+                          <h4 className="text-xl font-black text-white uppercase tracking-tighter">RE_NUM_CORE_V1</h4>
                           <div className="p-1 rounded-md bg-emerald-500/20 text-emerald-500"><Sparkles className="w-3 h-3" /></div>
                         </div>
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Full_Redistribution_Engine</p>
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Full_Identity_Renumerate_Reset</p>
                     </div>
                     <div className={`p-4 rounded-2xl bg-black/40 border border-white/10 transition-all duration-500 ${isMasking ? 'animate-spin-slow text-brand-500 border-brand-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'text-slate-600'}`}>
                         <Orbit className="w-7 h-7" />
@@ -233,13 +233,24 @@ export const IdentityMatrix: React.FC<Props> = ({
                 </div>
 
                 <div className="flex-1 space-y-6 mb-8">
-                    <p className="text-[10px] text-slate-400 font-medium leading-relaxed italic border-l-2 border-brand-500/30 pl-4 py-1">
-                       Le protocole "Warp" synchronise instantanément une nouvelle adresse MAC et un User Agent simulé pour briser tout tracking persistant.
-                    </p>
+                    <div className="p-4 bg-black/60 rounded-2xl border border-white/5 space-y-3 shadow-inner">
+                      <div className="flex items-center justify-between text-[8px] font-black text-slate-600 uppercase tracking-widest">
+                        <span>MAC_SCRAMBLE</span>
+                        <span className={isMasking ? 'text-cyan-500 animate-pulse' : 'text-emerald-500'}>{isMasking ? 'CHANGING...' : 'SYNCED'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[8px] font-black text-slate-600 uppercase tracking-widest">
+                        <span>UA_ROTATION</span>
+                        <span className={isMasking ? 'text-cyan-500 animate-pulse' : 'text-emerald-500'}>{isMasking ? 'CHANGING...' : 'SYNCED'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[8px] font-black text-slate-600 uppercase tracking-widest">
+                        <span>HASH_FINGERPRINT</span>
+                        <span className={isMasking ? 'text-cyan-500 animate-pulse' : 'text-emerald-500'}>{isMasking ? 'CHANGING...' : 'SYNCED'}</span>
+                      </div>
+                    </div>
                     
                     <div className="space-y-2">
                         <div className="flex justify-between text-[8px] font-black text-slate-600 uppercase tracking-widest">
-                            <span>Sync_Progress</span>
+                            <span>Process_Load</span>
                             <span>{Math.round(warpProgress)}%</span>
                         </div>
                         <div className="h-1.5 bg-black/60 rounded-full border border-white/5 overflow-hidden">
@@ -261,8 +272,8 @@ export const IdentityMatrix: React.FC<Props> = ({
                     }`}
                 >
                     <div className="absolute inset-0 bg-scanline opacity-0 group-hover/warp:opacity-10 pointer-events-none"></div>
-                    {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5 group-hover:scale-125 transition-transform" />}
-                    {isMasking ? 'SYNCHRONIZING...' : 'EXECUTE_IDENTITY_WARP'}
+                    {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-700" />}
+                    {isMasking ? 'RE-NUMERATING...' : 'EXECUTE_RE_NUMERATION'}
                 </button>
             </div>
         </div>
@@ -276,9 +287,14 @@ export const IdentityMatrix: React.FC<Props> = ({
             <div className="absolute -top-4 -right-4 p-6 opacity-[0.03] group-hover:opacity-10 group-hover:scale-125 transition-all duration-1000">
                 <Globe className="w-40 h-40" />
             </div>
-            <div className="flex items-center gap-4 mb-10 relative z-10">
-                <div className={`p-3 rounded-2xl ${theme.accent} border border-white/5`}><MapPin className={`w-5 h-5 ${theme.primary}`} /></div>
-                <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Geo_Anchor_Node</span>
+            <div className="flex items-center justify-between mb-10 relative z-10">
+                <div className="flex items-center gap-4">
+                  <div className={`p-3 rounded-2xl ${theme.accent} border border-white/5`}><MapPin className={`w-5 h-5 ${theme.primary}`} /></div>
+                  <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Geo_Anchor_Node</span>
+                </div>
+                <button className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-white transition-colors">
+                  <HistoryIcon className="w-4 h-4" />
+                </button>
             </div>
             
             <div className="flex items-center gap-8 mb-10 relative z-10">
@@ -350,7 +366,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                 }`}
             >
                 {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Fingerprint className="w-5 h-5 group-hover:rotate-180 transition-transform duration-1000" />}
-                MORPH_MAC_ADDRESS
+                MORPH_MAC_ONLY
             </button>
         </div>
 
@@ -380,13 +396,13 @@ export const IdentityMatrix: React.FC<Props> = ({
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-56 p-4 bg-slate-900/95 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl invisible group-hover/info:visible opacity-0 group-hover/info:opacity-100 transition-all duration-300 z-50 pointer-events-none">
                               <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-2 border-b border-white/5 pb-1">Data_Fingerprint_Info</div>
                               <p className="text-[10px] text-slate-300 leading-relaxed font-medium italic">
-                                L'User Agent est une signature envoyée par votre navigateur révélant votre OS et version logicielle. Le masquer prévient le "fingerprinting", empêchant les sites de vous identifier de manière unique sans cookies.
+                                L'User Agent est une signature envoyée par votre navigateur révélant votre OS et version logicielle. Le masquer prévient le "fingerprinting".
                               </p>
                               <div className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-3 border-l border-t border-white/10 bg-slate-900/95 rotate-[225deg] -mt-1.5"></div>
                             </div>
                           </div>
                         </div>
-                        <span className="text-[11px] font-mono font-black text-white uppercase">{isMasking ? 'RE-BUILDING...' : currentUAData.os.split(' ')[0]}</span>
+                        <span className="text-[11px] font-mono font-black text-white uppercase">{isMasking ? 'BUILDING...' : currentUAData.os.split(' ')[0]}</span>
                     </div>
                     <div className="flex items-center justify-between">
                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3">
@@ -414,7 +430,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                 }`}
             >
                 {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Scan className="w-5 h-5 group-hover:scale-125 transition-transform" />}
-                RE-INITIALIZE_HASH
+                MORPH_UA_ONLY
             </button>
         </div>
       </div>

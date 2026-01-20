@@ -56,6 +56,11 @@
                 '0%, 100%': { opacity: '1' },
                 '50%': { opacity: '0.8' },
                 '80%': { opacity: '0.95' },
+              },
+              matrixShift: {
+                '0%': { opacity: '0.3', transform: 'scale(0.98)' },
+                '50%': { opacity: '0.6', transform: 'scale(1.02)' },
+                '100%': { opacity: '1', transform: 'scale(1)' }
               }
             },
             animation: {
@@ -66,6 +71,7 @@
               'glitch': 'glitch 0.3s infinite linear',
               'cyber-scan': 'cyberScan 3s linear infinite',
               'flicker': 'flicker 0.1s infinite alternate',
+              'matrix-shift': 'matrixShift 0.5s ease-out'
             }
           }
         }
