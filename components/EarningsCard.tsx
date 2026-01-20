@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { Coins, TrendingUp, Lock, Wallet, Zap, ArrowUpRight, History, CheckCircle, CreditCard, ChevronRight, Gauge, Sparkles, Activity, ShieldCheck, ShieldAlert, UserCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Coins, TrendingUp, Lock, Wallet, Zap, ArrowUpRight, History, CheckCircle, CreditCard, ChevronRight, Gauge, Sparkles, Activity, ShieldCheck, ShieldAlert, UserCheck, BarChart3, Database, Globe, ArrowRight } from 'lucide-react';
 import { PlanTier, Transaction, AppSettings } from '../types';
 
 interface Props {
@@ -17,137 +17,171 @@ interface Props {
 }
 
 export const EarningsCard: React.FC<Props> = ({ isConnected, plan, isVerified, balance, reputation = 100, onUpgrade, onVerify, onWithdraw, transactions = [], settings }) => {
+  const [networkLoad, setNetworkLoad] = useState(42);
   const isPremium = plan !== 'free';
   const isEarning = isConnected && isPremium && isVerified;
 
+  useEffect(() => {
+    if (isConnected) {
+        const interval = setInterval(() => {
+            setNetworkLoad(prev => Math.max(10, Math.min(100, prev + (Math.random() * 10 - 5))));
+        }, 3000);
+        return () => clearInterval(interval);
+    }
+  }, [isConnected]);
+
   const getRate = () => {
-      if (!isPremium || !isVerified) return "0.000";
-      const base = plan === 'elite' ? 0.00012 : 0.00004;
+      if (!isPremium || !isVerified || !isConnected) return "0.0000";
+      const base = plan === 'elite' ? 0.00018 : 0.00006;
       const intensityMult = 0.5 + ((settings?.miningIntensity || 50) / 100);
-      const iaMult = settings?.yieldOptimizationIA ? 1.2 : 1.0;
-      const typeMult = settings?.contributionType === 'exit' ? 1.3 : settings?.contributionType === 'relay' ? 1.15 : 1.0;
-      const reputationBonus = 0.8 + (reputation / 100) * 0.4;
+      const iaMult = settings?.yieldOptimizationIA ? 1.25 : 1.0;
+      const typeMult = settings?.contributionType === 'exit' ? 1.5 : settings?.contributionType === 'relay' ? 1.25 : 1.0;
+      const loadBonus = 1 + (networkLoad / 200);
       
-      return (base * intensityMult * iaMult * typeMult * reputationBonus * 10).toFixed(4); 
+      return (base * intensityMult * iaMult * typeMult * loadBonus).toFixed(6); 
   };
 
   const potentialDailyGain = () => {
-    const ratePerSec = parseFloat(getRate()) / 10;
+    const ratePerSec = parseFloat(getRate());
     return (ratePerSec * 86400).toFixed(2);
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 relative overflow-hidden group flex flex-col h-full shadow-sm">
-      {/* Background Glow */}
-      <div className={`absolute -top-10 -right-10 w-32 h-32 blur-3xl rounded-full transition-colors ${isEarning ? 'bg-emerald-500/10' : 'bg-slate-500/5'}`}></div>
-
-      <div className="flex items-center justify-between mb-6 relative z-10">
+    <div className="bg-slate-950 dark:bg-slate-900 rounded-[2.5rem] p-8 border-2 border-brand-500/20 relative overflow-hidden group flex flex-col h-full shadow-2xl transition-all duration-500 hover:border-brand-500/40">
+      <div className="absolute inset-0 bg-scanline opacity-[0.03] pointer-events-none"></div>
+      
+      <div className="flex items-center justify-between mb-8 relative z-10">
         <div className="flex flex-col">
-            <h3 className="font-bold text-lg flex items-center gap-2 text-slate-900 dark:text-white">
-                <Wallet className={`w-5 h-5 ${isEarning ? 'text-amber-500' : 'text-slate-400'}`} />
-                Rendement RNC
+            <h3 className="font-black text-xl flex items-center gap-3 text-white uppercase tracking-tighter">
+                <Wallet className={`w-6 h-6 ${isEarning ? 'text-amber-500 animate-pulse' : 'text-slate-600'}`} />
+                RNC_TERMINAL
             </h3>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-1">Algorithme V4.5 Active</p>
+            <div className="flex items-center gap-2 mt-1">
+                <div className={`w-2 h-2 rounded-full ${isEarning ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-slate-700'}`}></div>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">Node_Contribution_Protocol v5.0</p>
+            </div>
         </div>
         {isEarning && (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 animate-pulse">
+          <div className="flex items-center gap-2 px-4 py-1.5 rounded-xl text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner">
             <Sparkles className="w-3 h-3" />
-            LIVE YIELD
+            LIVE_MINING
           </div>
         )}
       </div>
 
-      <div className="relative z-10 mb-8">
-        <div className="flex flex-wrap items-end gap-x-3 gap-y-1 mb-6">
-          <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-mono font-black text-slate-900 dark:text-white tracking-tighter">
-              {balance.toFixed(4)}
-            </span>
-            <span className="text-lg font-black text-amber-500">RNC</span>
-          </div>
+      <div className="relative z-10 flex-1 flex flex-col">
+        <div className="bg-black/40 p-6 rounded-[2rem] border border-white/5 mb-8 group-hover:border-brand-500/20 transition-all shadow-inner">
+            <div className="flex items-baseline gap-3 mb-2">
+                <span className="text-5xl font-mono font-black text-white tracking-tighter">
+                    {balance.toFixed(4)}
+                </span>
+                <span className="text-xl font-black text-amber-500 uppercase">RNC</span>
+            </div>
+            <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Available_Asset_Balance</span>
+                <div className="flex items-center gap-1.5 text-emerald-500">
+                    <TrendingUp className="w-3 h-3" />
+                    <span className="text-[10px] font-black font-mono">+{getRate()}/s</span>
+                </div>
+            </div>
         </div>
 
         {isPremium ? (
           isVerified ? (
             <div className="space-y-6">
-               {/* Node Health / Reputation */}
-               <div className="space-y-2">
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      <span className="flex items-center gap-1.5"><ShieldCheck className="w-3 h-3 text-emerald-500" /> Santé du Nœud (Vérifié)</span>
-                      <span className={reputation > 80 ? 'text-emerald-500' : 'text-amber-500'}>{Math.round(reputation)}%</span>
+               {/* Network Load Indicator */}
+               <div className="space-y-3">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
+                      <span className="flex items-center gap-2"><Globe className="w-3 h-3 text-cyan-500" /> Network_Load</span>
+                      <span className="text-cyan-400">{Math.round(networkLoad)}%</span>
                   </div>
-                  <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div 
-                          className={`h-full transition-all duration-500 ${reputation > 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                          style={{ width: `${reputation}%` }}
-                      ></div>
+                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden flex gap-0.5 p-0.5">
+                      {[...Array(10)].map((_, i) => (
+                          <div 
+                            key={i}
+                            className={`flex-1 h-full rounded-sm transition-all duration-700 ${
+                                (i+1) * 10 <= networkLoad 
+                                ? 'bg-brand-500 shadow-[0_0_5px_rgba(6,182,212,0.5)]' 
+                                : 'bg-slate-900'
+                            }`}
+                          ></div>
+                      ))}
                   </div>
+                  <p className="text-[8px] text-slate-600 font-bold italic">>> Plus la charge réseau est élevée, plus vos gains RNC s'accélèrent.</p>
                </div>
 
-               <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                      <span className="text-[9px] text-slate-500 uppercase font-bold">Flux actuel</span>
-                      <div className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 mt-1">+{getRate()} /sec</div>
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-2 group/tile hover:border-brand-500/30 transition-all">
+                      <span className="text-[8px] text-slate-500 uppercase font-black tracking-widest block">Est. Daily Gain</span>
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-brand-500/10 rounded-lg text-brand-500"><Coins className="w-3.5 h-3.5" /></div>
+                        <div className="text-sm font-mono font-black text-white">+{potentialDailyGain()} <span className="text-[10px] text-amber-500">RNC</span></div>
+                      </div>
                   </div>
-                  <div className="p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                      <span className="text-[9px] text-slate-500 uppercase font-bold">Est. 24h</span>
-                      <div className="text-xs font-mono font-bold text-brand-500 mt-1">+{potentialDailyGain()} RNC</div>
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 space-y-2 group/tile hover:border-emerald-500/30 transition-all">
+                      <span className="text-[8px] text-slate-500 uppercase font-black tracking-widest block">Reputation Bonus</span>
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-500"><ShieldCheck className="w-3.5 h-3.5" /></div>
+                        <div className="text-sm font-mono font-black text-white">X1.42</div>
+                      </div>
                   </div>
                </div>
 
                <button
                 onClick={onWithdraw}
                 disabled={balance < 1}
-                className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all ${
+                className={`w-full py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] flex items-center justify-center gap-3 transition-all relative overflow-hidden group/withdraw ${
                   balance >= 1 
-                    ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xl shadow-amber-500/20 active:scale-95'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-2xl shadow-amber-900/40 active:scale-95'
+                    : 'bg-slate-800 text-slate-600 cursor-not-allowed border border-white/5'
                 }`}
               >
-                <ArrowUpRight className="w-4 h-4" />
-                Retirer mes Gains
+                <ArrowRight className="w-4 h-4 transition-transform group-hover/withdraw:translate-x-2" />
+                EXECUTE_WITHDRAWAL
               </button>
             </div>
           ) : (
-            <div className="mt-4 p-6 bg-amber-500/5 rounded-2xl border-2 border-dashed border-amber-500/30 flex flex-col items-center text-center">
-              <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center mb-4">
-                <ShieldAlert className="w-6 h-6 text-amber-500" />
+            <div className="mt-4 p-8 bg-amber-500/5 rounded-[2.5rem] border-2 border-dashed border-amber-500/20 flex flex-col items-center text-center group/verify transition-all hover:bg-amber-500/10">
+              <div className="w-20 h-20 bg-amber-500/10 rounded-[2rem] flex items-center justify-center mb-6 border border-amber-500/30 group-hover/verify:scale-110 transition-transform">
+                <ShieldAlert className="w-8 h-8 text-amber-500 animate-pulse" />
               </div>
-              <h4 className="text-sm font-black text-slate-900 dark:text-white mb-2 uppercase tracking-widest">Action Requise</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
-                Votre identité doit être vérifiée avant de pouvoir générer et retirer des RNC.
+              <h4 className="text-base font-black text-white mb-2 uppercase tracking-tighter">Auth_Required</h4>
+              <p className="text-[10px] text-slate-500 mb-8 uppercase tracking-widest leading-relaxed">
+                Le protocole de preuve d'identité (KYC) doit être validé pour débloquer le wallet.
               </p>
               <button 
                 onClick={onVerify}
-                className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg transition-transform hover:scale-105"
+                className="w-full bg-amber-600 hover:bg-amber-500 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] shadow-2xl shadow-amber-900/40 transition-all hover:scale-105"
               >
-                Vérifier mon identité
+                INITIATE_VÉRIFICATION
               </button>
             </div>
           )
         ) : (
-          <div className="mt-4 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center text-center">
-            <div className="w-12 h-12 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center mb-4">
-              <Lock className="w-6 h-6 text-slate-400" />
+          <div className="mt-4 p-8 bg-slate-900/40 rounded-[2.5rem] border-2 border-dashed border-slate-800 flex flex-col items-center text-center group/upgrade transition-all hover:bg-white/[0.02]">
+            <div className="w-20 h-20 bg-slate-800 rounded-[2rem] flex items-center justify-center mb-6 border border-white/5 group-hover/upgrade:rotate-12 transition-transform">
+              <Lock className="w-8 h-8 text-slate-600" />
             </div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-2 uppercase tracking-widest">Gains Désactivés</h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
-              Monétisez votre connexion en devenant un nœud premium du réseau.
+            <h4 className="text-base font-black text-slate-300 mb-2 uppercase tracking-tighter">Mining_Locked</h4>
+            <p className="text-[10px] text-slate-600 mb-8 uppercase tracking-widest leading-relaxed">
+              Monétisez votre bande passante inutilisée en devenant un nœud du réseau Renumerate.
             </p>
             <button 
               onClick={onUpgrade}
-              className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg transition-transform hover:scale-105"
+              className="w-full bg-white text-slate-950 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] shadow-2xl transition-all hover:scale-105 active:scale-95"
             >
-              Activer monétisation
+              UPGRADE_TO_PREMIUM
             </button>
           </div>
         )}
       </div>
 
       {!isEarning && isPremium && isVerified && (
-          <div className="mt-auto flex items-center gap-2 p-3 bg-red-500/5 rounded-xl border border-red-500/10">
-              <Activity className="w-4 h-4 text-red-500 shrink-0" />
-              <p className="text-[10px] text-red-500 font-medium">Connectez le VPN pour commencer l'accumulation.</p>
+          <div className="mt-8 flex items-center gap-4 p-4 bg-red-500/5 rounded-2xl border border-red-500/20 group/alert">
+              <Activity className="w-5 h-5 text-red-500 shrink-0 animate-pulse" />
+              <p className="text-[9px] text-red-500 font-black uppercase tracking-widest leading-relaxed">
+                Connectez le tunnel VPN pour synchroniser votre puissance de contribution.
+              </p>
           </div>
       )}
     </div>

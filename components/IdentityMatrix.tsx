@@ -10,7 +10,7 @@ import {
   ShieldAlert, Laptop, Monitor, Smartphone, Binary, 
   Lock, Shield, Scan, Target, Radio, Brain, 
   ChevronDown, ListChecks, ShieldHalf, Cpu as CpuIcon,
-  HelpCircle
+  HelpCircle, Sparkles, Wand2
 } from 'lucide-react';
 
 interface Props {
@@ -60,6 +60,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [entropy, setEntropy] = useState('0.00');
   const [showCityModal, setShowCityModal] = useState(false);
   const [showRecs, setShowRecs] = useState(false);
+  const [warpProgress, setWarpProgress] = useState(0);
 
   const isOnion = mode === ConnectionMode.ONION_VORTEX;
   const isSmartDNS = mode === ConnectionMode.SMART_DNS;
@@ -83,7 +84,19 @@ export const IdentityMatrix: React.FC<Props> = ({
         for (let i = 0; i < 20; i++) result += chars[Math.floor(Math.random() * chars.length)];
         setScrambleText(result);
       }, 60);
-      return () => clearInterval(interval);
+
+      // Warp progress animation
+      setWarpProgress(0);
+      const progressInterval = setInterval(() => {
+        setWarpProgress(prev => Math.min(100, prev + 10));
+      }, 150);
+
+      return () => {
+        clearInterval(interval);
+        clearInterval(progressInterval);
+      };
+    } else {
+        setWarpProgress(0);
     }
   }, [isMasking, isRotating]);
 
@@ -123,14 +136,14 @@ export const IdentityMatrix: React.FC<Props> = ({
   };
 
   const CyberScanOverlay = () => (
-    <div className="absolute inset-0 pointer-events-none z-20">
-      <div className="absolute w-full h-0.5 bg-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.5)] animate-cyber-scan"></div>
+    <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
+      <div className="absolute w-full h-0.5 bg-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.8)] animate-cyber-scan"></div>
     </div>
   );
 
   return (
     <div className="space-y-8">
-      {/* Grid Supérieure : IP & Security Profile */}
+      {/* Grid Supérieure : IP & Global Warp Controller */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Gateway Card IP */}
@@ -143,15 +156,15 @@ export const IdentityMatrix: React.FC<Props> = ({
               <div className="flex items-center gap-4">
                 <div className={`w-2 h-8 ${theme.primaryBg} rounded-full animate-pulse`}></div>
                 <div>
-                  <h3 className="text-[11px] font-black text-white uppercase tracking-[0.4em]">Node_Uplink_Identity</h3>
+                  <h3 className="text-[11px] font-black text-white uppercase tracking-[0.4em]">Identity_Nexus_Core</h3>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                    <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Protocol: Encrypted_Tunnel</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                    <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Tunnel_Status: {isConnected ? 'UPLINK_OK' : 'DISCONNECTED'}</span>
                   </div>
                 </div>
               </div>
               <div className="px-4 py-1.5 rounded-xl bg-black/40 border border-white/5 font-mono text-[10px] text-slate-400">
-                AUTH_KEY: <span className="text-white">RNC-{Math.random().toString(36).substr(2, 6).toUpperCase()}</span>
+                AUTH_UID: <span className="text-white">RNC-{Math.random().toString(36).substr(2, 6).toUpperCase()}</span>
               </div>
             </div>
 
@@ -176,21 +189,21 @@ export const IdentityMatrix: React.FC<Props> = ({
 
             <div className="mt-12 pt-8 border-t border-white/5 grid grid-cols-3 gap-8">
                 <div className="space-y-1">
-                   <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Entropy_Index</span>
+                   <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Anonymity_Entropy</span>
                    <div className="flex items-center gap-3">
                       <div className={`w-1.5 h-4 ${theme.primaryBg} rounded-sm`}></div>
                       <span className="text-lg font-mono font-black text-slate-800 dark:text-cyan-400">{entropy}%</span>
                    </div>
                 </div>
                 <div className="space-y-1">
-                   <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Latency_Sync</span>
+                   <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Ping_Response</span>
                    <div className="flex items-center gap-3">
                       <Radio className="w-4 h-4 text-emerald-500 animate-pulse" />
                       <span className="text-lg font-mono font-black text-slate-800 dark:text-emerald-400">{identity.latency}ms</span>
                    </div>
                 </div>
                 <div className="space-y-1">
-                   <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Cipher_Tech</span>
+                   <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest block">Security_Tunnel</span>
                    <div className="flex items-center gap-3">
                       <Lock className="w-4 h-4 text-purple-500" />
                       <span className="text-lg font-mono font-black text-slate-800 dark:text-purple-400">CHACHA20</span>
@@ -200,54 +213,56 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Leak Protection Sentinel */}
-        <div className={`lg:col-span-5 ${theme.cardBase} p-8 rounded-[3.5rem] border-2 ${ipv6LeakProtection ? 'border-emerald-500/20' : 'border-red-500/30'} relative overflow-hidden group bracket-corner`}>
-            <CyberScanOverlay />
-            {isMasking && <div className="absolute inset-0 bg-brand-500/5 animate-pulse z-20"></div>}
-            <div className="absolute -bottom-10 -right-10 p-4 opacity-5 group-hover:opacity-20 transition-all duration-1000 group-hover:scale-110">
-                <Shield className="w-56 h-56" />
-            </div>
-
-            <div className="relative z-10 h-full flex flex-col">
+        {/* Global Identity Scrambler (Warp Core) */}
+        <div className={`lg:col-span-5 ${theme.cardBase} p-8 rounded-[3.5rem] border-2 border-brand-500/30 relative overflow-hidden group shadow-[0_0_40px_rgba(6,182,212,0.1)] bracket-corner`}>
+            <div className="absolute inset-0 bg-brand-500/[0.02] pointer-events-none"></div>
+            {isMasking && <div className="absolute inset-0 bg-brand-500/10 animate-pulse z-20"></div>}
+            
+            <div className="relative z-30 h-full flex flex-col">
                 <div className="flex justify-between items-start mb-8">
                     <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xl font-black text-white uppercase tracking-tighter">Sentinel_v4</h4>
-                          <span className="px-2 py-0.5 bg-brand-500 text-[8px] font-black rounded text-black">BETA</span>
+                        <div className="flex items-center gap-3">
+                          <h4 className="text-xl font-black text-white uppercase tracking-tighter">Identity_Warp_Core</h4>
+                          <div className="p-1 rounded-md bg-emerald-500/20 text-emerald-500"><Sparkles className="w-3 h-3" /></div>
                         </div>
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Leak_Prevention_Sys</p>
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Full_Redistribution_Engine</p>
                     </div>
-                    <div className={`p-4 rounded-[1.5rem] border-2 transition-all duration-500 ${ipv6LeakProtection ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/10' : 'border-red-500/30 text-red-500 bg-red-500/10 animate-flicker'}`}>
-                        {ipv6LeakProtection ? <ShieldCheck className="w-8 h-8" /> : <ShieldAlert className="w-8 h-8" />}
+                    <div className={`p-4 rounded-2xl bg-black/40 border border-white/10 transition-all duration-500 ${isMasking ? 'animate-spin-slow text-brand-500 border-brand-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'text-slate-600'}`}>
+                        <Orbit className="w-7 h-7" />
                     </div>
                 </div>
 
-                <div className="flex-1 bg-black/40 p-6 rounded-[2rem] border border-white/5 mb-8 relative overflow-hidden">
-                    <div className="absolute inset-0 cyber-grid opacity-10"></div>
-                    <div className="relative z-10">
-                      <div className="flex items-center gap-3 mb-3">
-                          <div className={`w-2 h-2 rounded-full ${ipv6LeakProtection ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.8)]'}`}></div>
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Network_Integrity</span>
-                      </div>
-                      <p className="text-xs font-mono font-bold text-slate-300 leading-relaxed italic">
-                          {ipv6LeakProtection 
-                              ? ">> STATUS: NOMINAL. IPV6 TUNNEL ACTIVE. NO LEAK VECTORS DETECTED IN ACTIVE STACK." 
-                              : ">> CRITICAL: IPV6 LEAK DETECTED. REAL GEOLOCATION PARTIALLY EXPOSED. ROTATE IDENTITY IMMEDIATELY."}
-                      </p>
+                <div className="flex-1 space-y-6 mb-8">
+                    <p className="text-[10px] text-slate-400 font-medium leading-relaxed italic border-l-2 border-brand-500/30 pl-4 py-1">
+                       Le protocole "Warp" synchronise instantanément une nouvelle adresse MAC et un User Agent simulé pour briser tout tracking persistant.
+                    </p>
+                    
+                    <div className="space-y-2">
+                        <div className="flex justify-between text-[8px] font-black text-slate-600 uppercase tracking-widest">
+                            <span>Sync_Progress</span>
+                            <span>{Math.round(warpProgress)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-black/60 rounded-full border border-white/5 overflow-hidden">
+                            <div 
+                                className="h-full bg-brand-500 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300"
+                                style={{ width: `${warpProgress}%` }}
+                            ></div>
+                        </div>
                     </div>
                 </div>
 
                 <button 
-                    onClick={() => onIpv6Toggle?.(!ipv6LeakProtection)}
-                    className={`w-full py-6 rounded-[2.2rem] flex items-center justify-center gap-4 font-black text-[11px] uppercase tracking-[0.3em] transition-all active:scale-95 shadow-2xl relative overflow-hidden group/btn ${
-                        ipv6LeakProtection 
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40' 
-                        : 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/40'
+                    onClick={onMask}
+                    disabled={isMasking}
+                    className={`w-full py-6 rounded-[2.2rem] flex items-center justify-center gap-4 font-black text-[11px] uppercase tracking-[0.4em] transition-all active:scale-95 shadow-2xl relative overflow-hidden group/warp ${
+                        isMasking 
+                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                        : 'bg-brand-600 hover:bg-brand-500 text-white shadow-brand-500/40'
                     }`}
                 >
-                    <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/btn:opacity-100 transition-opacity"></div>
-                    {ipv6LeakProtection ? <Lock className="w-4 h-4" /> : <Zap className="w-4 h-4 animate-pulse" />}
-                    {ipv6LeakProtection ? 'DISABLE_GUARD' : 'FORCE_RE-ENGAGE'}
+                    <div className="absolute inset-0 bg-scanline opacity-0 group-hover/warp:opacity-10 pointer-events-none"></div>
+                    {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5 group-hover:scale-125 transition-transform" />}
+                    {isMasking ? 'SYNCHRONIZING...' : 'EXECUTE_IDENTITY_WARP'}
                 </button>
             </div>
         </div>
@@ -300,7 +315,7 @@ export const IdentityMatrix: React.FC<Props> = ({
             </button>
         </div>
 
-        {/* Hardware Scrambler Matrix */}
+        {/* Hardware Scrambler Card */}
         <div className={`${theme.cardBase} p-8 rounded-[3.5rem] border ${theme.primaryBorder} group hover:shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:translate-y-[-8px] transition-all duration-700 flex flex-col relative overflow-hidden bracket-corner`}>
             <div className="absolute -top-4 -right-4 p-6 opacity-[0.03] group-hover:opacity-10 group-hover:rotate-12 transition-all duration-1000">
                 <Fingerprint className="w-40 h-40" />
@@ -327,14 +342,14 @@ export const IdentityMatrix: React.FC<Props> = ({
 
             <button 
                 onClick={onScrambleMac}
-                disabled={!isConnected || isMasking}
+                disabled={isMasking}
                 className={`w-full py-6 rounded-[2.5rem] flex items-center justify-center gap-4 font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-2xl relative overflow-hidden ${
-                    isConnected 
+                    !isMasking
                     ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border border-white/10' 
                     : 'bg-slate-900/50 text-slate-600 cursor-not-allowed opacity-50 border border-transparent'
                 }`}
             >
-                {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-1000" />}
+                {isMasking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Fingerprint className="w-5 h-5 group-hover:rotate-180 transition-transform duration-1000" />}
                 MORPH_MAC_ADDRESS
             </button>
         </div>
@@ -371,7 +386,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                             </div>
                           </div>
                         </div>
-                        <span className="text-[11px] font-mono font-black text-white">{isMasking ? 'SYNCHING...' : currentUAData.os}</span>
+                        <span className="text-[11px] font-mono font-black text-white uppercase">{isMasking ? 'RE-BUILDING...' : currentUAData.os.split(' ')[0]}</span>
                     </div>
                     <div className="flex items-center justify-between">
                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3">
@@ -382,7 +397,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                     </div>
                     <div className="pt-5 border-t border-white/10">
                         <span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em] mb-3 block">UA_HASH_FINGERPRINT</span>
-                        <div className="text-[10px] font-mono text-slate-500 leading-relaxed italic line-clamp-2 break-all group-hover:text-slate-300 transition-colors bg-black/20 p-3 rounded-xl border border-white/5">
+                        <div className="text-[10px] font-mono text-slate-500 leading-relaxed italic line-clamp-2 break-all group-hover:text-slate-300 transition-colors bg-black/20 p-3 rounded-xl border border-white/5 min-h-[44px]">
                             {isMasking ? scrambleText.repeat(3).slice(0, 100) : currentUAData.full}
                         </div>
                     </div>
@@ -391,9 +406,9 @@ export const IdentityMatrix: React.FC<Props> = ({
 
             <button 
                 onClick={onScrambleUA}
-                disabled={!isConnected || isMasking}
+                disabled={isMasking}
                 className={`w-full py-6 rounded-[2.5rem] flex items-center justify-center gap-4 font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-2xl relative overflow-hidden ${
-                    isConnected 
+                    !isMasking 
                     ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/40 border border-cyan-400/20' 
                     : 'bg-slate-900/50 text-slate-600 cursor-not-allowed opacity-50 border border-transparent'
                 }`}
@@ -480,50 +495,6 @@ export const IdentityMatrix: React.FC<Props> = ({
                  </div>
              )}
           </div>
-      )}
-
-      {/* Global Scramble Hero Action */}
-      {isConnected && (
-         <div className="flex justify-center mt-12 pb-12">
-            <div className="relative group">
-              {/* Ultra Glow Effect */}
-              <div className={`absolute inset-0 rounded-[5rem] blur-[80px] opacity-30 transition-all duration-1000 group-hover:opacity-60 ${isOnion ? 'bg-purple-600' : 'bg-brand-500'}`}></div>
-              
-              <button 
-                  onClick={onMask}
-                  disabled={isMasking}
-                  className={`group relative flex items-center gap-10 px-20 py-10 rounded-[5rem] font-black text-base uppercase tracking-[0.6em] transition-all duration-700 hover:scale-105 active:scale-95 shadow-[0_40px_80px_rgba(0,0,0,0.6)] border-2 ${theme.primaryBorder} overflow-hidden ${
-                      isOnion 
-                      ? 'bg-purple-600 text-white' 
-                      : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
-                  }`}
-              >
-                  <div className="absolute inset-0 bg-scanline opacity-10 pointer-events-none animate-scanline"></div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
-                  
-                  <div className="relative z-10 flex items-center gap-10">
-                    <div className={`p-6 rounded-[2rem] ${isOnion ? 'bg-white/10' : 'bg-brand-500/10'} border border-white/20 group-hover:rotate-[360deg] transition-transform duration-[2000ms] shadow-inner`}>
-                      {isMasking ? (
-                          <Loader2 className="w-12 h-12 animate-spin text-white" />
-                      ) : (
-                          <Orbit className={`w-12 h-12 ${isOnion ? 'text-white' : 'text-cyan-500'} animate-spin-slow`} />
-                      )}
-                    </div>
-                    
-                    <div className="flex flex-col items-start text-left">
-                        <span className="text-[11px] opacity-50 font-black tracking-[0.4em] mb-1.5">Deep_Scramble_Protocol</span>
-                        <span className="relative text-2xl tracking-[0.3em] font-black">
-                            {isMasking ? 'SYNCHRONIZING...' : 'GLOBAL_RE-NUMBERING'}
-                        </span>
-                    </div>
-                    
-                    <div className="ml-6 opacity-0 group-hover:opacity-100 group-hover:translate-x-6 transition-all duration-700">
-                        <ChevronRight className={`w-10 h-10 ${isOnion ? 'text-white' : 'text-cyan-500'}`} />
-                    </div>
-                  </div>
-              </button>
-            </div>
-         </div>
       )}
 
       {/* Geo Detail Modal */}

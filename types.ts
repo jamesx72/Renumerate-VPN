@@ -30,10 +30,12 @@ export interface LogEntry {
   timestampRaw: number;
   event: string;
   type: 'info' | 'warning' | 'success' | 'error';
-  ip?: string; // Nouveau champ pour le filtrage par IP
+  ip?: string;
 }
 
 export type PlanTier = 'free' | 'pro' | 'elite';
+
+export type ConfigurationPreset = 'balanced' | 'stealth_max' | 'speed_ultra' | 'vortex_deep';
 
 export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
