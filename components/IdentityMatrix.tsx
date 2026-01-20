@@ -10,7 +10,7 @@ import {
   Zap, ChevronRight,
   MapPin, Users, Cloud, X, ShieldAlert, ToggleLeft, ToggleRight,
   ShieldHalf, Laptop, Monitor, Smartphone, Binary, Eye, Lock, Shield,
-  Scan, Target, ShieldQuestion, Radar
+  Scan, Target, ShieldQuestion, Radar, Database
 } from 'lucide-react';
 
 interface Props {
@@ -106,7 +106,7 @@ export const IdentityMatrix: React.FC<Props> = ({
     glow: isOnion ? 'shadow-purple-500/10' : isSmartDNS ? 'shadow-amber-500/10' : 'shadow-cyan-500/10',
     accent: isOnion ? 'bg-purple-500/10' : isSmartDNS ? 'bg-amber-500/10' : 'bg-cyan-500/10',
     fill: isOnion ? 'fill-purple-500' : isSmartDNS ? 'fill-amber-500' : 'fill-cyan-500',
-    cardBase: 'glass-card dark:bg-slate-900/90 dark:bg-brand-500/5'
+    cardBase: 'glass-card dark:bg-slate-900/40 dark:bg-brand-500/5 backdrop-blur-3xl'
   };
 
   const handleCopyIp = () => {
@@ -137,12 +137,12 @@ export const IdentityMatrix: React.FC<Props> = ({
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mt-1">{identity.country}</p>
               
               <div className="grid grid-cols-2 gap-3 w-full mt-8">
-                <div className="p-4 bg-slate-900/50 border border-white/5 rounded-2xl flex flex-col items-center">
+                <div className="p-4 bg-slate-900/80 border border-white/5 rounded-2xl flex flex-col items-center">
                     <Users className="w-4 h-4 text-slate-500 mb-2" />
                     <span className="text-[9px] font-black text-slate-500 uppercase block tracking-widest">Population</span>
                     <span className="text-sm font-mono font-bold text-white">{CITY_METADATA[identity.city]?.population || 'N/A'}</span>
                 </div>
-                <div className="p-4 bg-slate-900/50 border border-white/5 rounded-2xl flex flex-col items-center">
+                <div className="p-4 bg-slate-900/80 border border-white/5 rounded-2xl flex flex-col items-center">
                     <Cloud className="w-4 h-4 text-slate-500 mb-2" />
                     <span className="text-[9px] font-black text-slate-500 uppercase block tracking-widest">Atmosphere</span>
                     <span className="text-sm font-bold text-white">{CITY_METADATA[identity.city]?.weather || 'Stable'}</span>
@@ -157,15 +157,15 @@ export const IdentityMatrix: React.FC<Props> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Carte IP - Look "Terminal Dashboard" */}
         <div className={`${theme.cardBase} p-8 rounded-[3rem] border ${theme.primaryBorder} relative overflow-hidden transition-all duration-500 ${theme.glow} bracket-corner group`}>
-          <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+          <div className="absolute inset-0 bg-scanline opacity-[0.03] pointer-events-none"></div>
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
             <Radar className="w-32 h-32 animate-spin-slow" />
           </div>
           
           <div className="relative z-10 flex flex-col h-full">
             <div className="flex items-center gap-3 mb-4">
-              <div className={`w-2 h-4 ${theme.primaryBg} rounded-sm animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.5)]`}></div>
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Identity_Uplink_Node</span>
+              <div className={`w-2 h-4 ${theme.primaryBg} rounded-sm animate-pulse shadow-[0_0_12px_rgba(6,182,212,0.6)]`}></div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Identity_Uplink_Node</span>
             </div>
             
             <div className="flex-1 flex flex-col justify-center">
@@ -175,7 +175,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                   {!isRotating && (
                     <button 
                         onClick={handleCopyIp} 
-                        className={`p-2.5 rounded-xl transition-all active:scale-90 ${copiedIp ? 'text-emerald-500 bg-emerald-500/10' : 'text-slate-400 hover:text-cyan-500 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-white/5'}`}
+                        className={`p-2.5 rounded-xl transition-all active:scale-90 ${copiedIp ? 'text-emerald-500 bg-emerald-500/10' : 'text-slate-500 hover:text-cyan-500 hover:bg-white/5 dark:hover:bg-brand-500/10 border border-transparent hover:border-white/10'}`}
                         title="Copier l'IP"
                     >
                         <Copy className="w-5 h-5" />
@@ -184,25 +184,25 @@ export const IdentityMatrix: React.FC<Props> = ({
                 </div>
             </div>
 
-            <div className="mt-8 pt-4 border-t border-slate-200 dark:border-slate-800/50 flex items-center justify-between">
+            <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-6">
                     <div className="flex flex-col">
                         <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Entropy_Lvl</span>
                         <div className="flex items-center gap-2">
                           <Activity className={`w-3 h-3 ${theme.primary}`} />
-                          <span className="text-xs font-mono font-black text-slate-900 dark:text-white">{entropy}%</span>
+                          <span className="text-xs font-mono font-black text-slate-900 dark:text-cyan-400">{entropy}%</span>
                         </div>
                     </div>
-                    <div className="w-[1px] h-8 bg-slate-200 dark:bg-slate-800/50"></div>
+                    <div className="w-[1px] h-8 bg-white/5"></div>
                     <div className="flex flex-col">
                         <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Sync_Delay</span>
                         <div className="flex items-center gap-2">
                           <Target className="w-3 h-3 text-emerald-500" />
-                          <span className="text-xs font-mono font-black text-slate-900 dark:text-white">{identity.latency}ms</span>
+                          <span className="text-xs font-mono font-black text-slate-900 dark:text-emerald-400">{identity.latency}ms</span>
                         </div>
                     </div>
                 </div>
-                <div className={`px-4 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-sm ${isOnion ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' : 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'}`}>
+                <div className={`px-4 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-sm ${isOnion ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'}`}>
                     PROTO: {mode}
                 </div>
             </div>
@@ -210,8 +210,8 @@ export const IdentityMatrix: React.FC<Props> = ({
         </div>
 
         {/* Carte IPv6 & Leak Protection - Design Alerte/Sécurité */}
-        <div className={`${theme.cardBase} p-8 rounded-[3rem] border-2 ${ipv6LeakProtection ? 'border-emerald-500/20' : 'border-red-500/40'} relative overflow-hidden transition-all duration-500 group`}>
-            <div className={`absolute inset-0 opacity-[0.03] transition-colors ${ipv6LeakProtection ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></div>
+        <div className={`${theme.cardBase} p-8 rounded-[3rem] border-2 ${ipv6LeakProtection ? 'border-emerald-500/20' : 'border-red-500/40'} relative overflow-hidden transition-all duration-500 group shadow-2xl shadow-black/50`}>
+            <div className={`absolute inset-0 opacity-[0.05] transition-colors ${ipv6LeakProtection ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></div>
             
             <div className="flex flex-col h-full justify-between relative z-10">
                 <div className="flex items-start justify-between">
@@ -222,17 +222,17 @@ export const IdentityMatrix: React.FC<Props> = ({
                         </h4>
                         <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">Protocol_Security_v4.1</p>
                     </div>
-                    <div className={`p-4 rounded-2xl border transition-all shadow-lg ${ipv6LeakProtection ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-red-500/10 border-red-500/30 text-red-500'}`}>
+                    <div className={`p-4 rounded-2xl border transition-all shadow-xl bg-black/40 ${ipv6LeakProtection ? 'border-emerald-500/30 text-emerald-500' : 'border-red-500/30 text-red-500'}`}>
                         {ipv6LeakProtection ? <Lock className="w-8 h-8" /> : <ShieldQuestion className="w-8 h-8 animate-pulse" />}
                     </div>
                 </div>
 
-                <div className="bg-slate-900/40 p-5 rounded-[2rem] border border-white/5 my-6">
+                <div className="bg-black/40 p-5 rounded-[2rem] border border-white/5 my-6">
                     <div className="flex items-center gap-3 mb-2">
                         <div className={`w-1.5 h-1.5 rounded-full ${ipv6LeakProtection ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Real_Time_Audit</span>
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Real_Time_Audit</span>
                     </div>
-                    <p className="text-xs font-medium text-slate-300 leading-relaxed font-mono">
+                    <p className="text-xs font-medium text-slate-400 leading-relaxed font-mono italic">
                         {ipv6LeakProtection 
                             ? ">>> SHIELD_STATUS: ACTIVE. IPV6 TUNNELING ESTABLISHED. ZERO ISP LEAK DETECTED." 
                             : ">>> CRITICAL: IPV6 TRAFFIC IS EXPOSED. LOCALIZATION DE-ANONYMIZATION RISK DETECTED."}
@@ -243,8 +243,8 @@ export const IdentityMatrix: React.FC<Props> = ({
                     onClick={() => onIpv6Toggle?.(!ipv6LeakProtection)}
                     className={`w-full py-5 rounded-[2rem] flex items-center justify-center gap-4 font-black text-xs uppercase tracking-[0.3em] transition-all active:scale-95 shadow-2xl relative overflow-hidden group/btn ${
                         ipv6LeakProtection 
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20' 
-                        : 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20'
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30' 
+                        : 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/30'
                     }`}
                 >
                     <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/btn:opacity-100 transition-opacity"></div>
@@ -260,19 +260,19 @@ export const IdentityMatrix: React.FC<Props> = ({
         {/* Geo_Anchor */}
         <div className={`${theme.cardBase} p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 bracket-corner`}>
             <div className="flex items-center gap-3 mb-6">
-                <div className={`p-2 rounded-xl ${theme.accent}`}><Globe className={`w-4 h-4 ${theme.primary}`} /></div>
+                <div className={`p-2 rounded-xl ${theme.accent} bg-black/40 border border-white/5`}><Globe className={`w-4 h-4 ${theme.primary}`} /></div>
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Geo_Anchor_v4</span>
             </div>
             
             <div className="flex items-center gap-5 mb-6 pl-2">
                 <div className="relative">
                   <span className="text-5xl filter drop-shadow-2xl group-hover:scale-110 transition-transform block">{COUNTRIES_WITH_FLAGS[identity.country] || '📍'}</span>
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900 shadow-lg"></div>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-slate-900 shadow-lg shadow-emerald-500/20"></div>
                 </div>
                 <div>
                     <span className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">{identity.country}</span>
                     <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded">Réseau_Cluster_02</span>
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-black/40 px-2 py-0.5 rounded border border-white/5">Réseau_Cluster_02</span>
                     </div>
                 </div>
             </div>
@@ -282,17 +282,17 @@ export const IdentityMatrix: React.FC<Props> = ({
                 disabled={!isConnected}
                 className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between group/city ${
                     isConnected 
-                    ? 'bg-slate-50 dark:bg-black/30 border-slate-200 dark:border-white/5 hover:border-cyan-500 hover:shadow-lg' 
-                    : 'bg-slate-50/50 dark:bg-slate-900/50 border-transparent grayscale'
+                    ? 'bg-black/30 border-white/5 hover:border-cyan-500/50 hover:bg-black/50' 
+                    : 'bg-black/10 border-transparent grayscale'
                 }`}
             >
                 <div className="flex flex-col items-start">
                     <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Exit_Node</span>
-                    <span className={`text-xl font-mono font-black tracking-tight ${isConnected ? theme.primary : 'text-slate-400'}`}>{identity.city}</span>
+                    <span className={`text-xl font-mono font-black tracking-tight ${isConnected ? theme.primary : 'text-slate-600'}`}>{identity.city}</span>
                 </div>
                 <div className="text-right">
                     <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Local_Time</span>
-                    <span className="text-xs font-mono font-bold text-slate-400">{localTime}</span>
+                    <span className="text-xs font-mono font-bold text-slate-500">{localTime}</span>
                 </div>
             </button>
         </div>
@@ -300,20 +300,20 @@ export const IdentityMatrix: React.FC<Props> = ({
         {/* HW_Signature - Spoofing MAC */}
         <div className={`${theme.cardBase} p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
             <div className="flex items-center gap-3 mb-6">
-                <div className={`p-2 rounded-xl ${theme.accent}`}><Fingerprint className={`w-4 h-4 ${theme.primary}`} /></div>
+                <div className={`p-2 rounded-xl ${theme.accent} bg-black/40 border border-white/5`}><Fingerprint className={`w-4 h-4 ${theme.primary}`} /></div>
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Hardware_Spoof</span>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center bg-slate-900/40 rounded-2xl p-5 border border-white/5 mb-6 relative overflow-hidden">
+            <div className="flex-1 flex flex-col justify-center bg-black/60 rounded-2xl p-5 border border-white/5 mb-6 relative overflow-hidden">
                 <div className="absolute inset-0 bg-scanline opacity-5 pointer-events-none"></div>
-                <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.4em] mb-3 text-center block">MAC_VIRTUALIZATION</span>
-                <div className="font-mono text-xl font-black text-slate-900 dark:text-white tracking-[0.3em] text-center mb-4">
+                <span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em] mb-3 text-center block">MAC_VIRTUALIZATION</span>
+                <div className="font-mono text-xl font-black text-slate-900 dark:text-cyan-400 tracking-[0.3em] text-center mb-4">
                     {isMasking ? (
                         <span className="text-cyan-500 animate-pulse">{scrambleText.slice(0, 17)}</span>
                     ) : identity.mac}
                 </div>
-                <div className="h-1 bg-slate-800 rounded-full overflow-hidden flex">
-                    <div className={`h-full ${theme.primaryBg} animate-shimmer`} style={{ width: '100%' }}></div>
+                <div className="h-1 bg-slate-900 rounded-full overflow-hidden flex">
+                    <div className={`h-full ${theme.primaryBg} animate-shimmer shadow-[0_0_10px_rgba(6,182,212,0.5)]`} style={{ width: '100%' }}></div>
                 </div>
             </div>
 
@@ -322,8 +322,8 @@ export const IdentityMatrix: React.FC<Props> = ({
                 disabled={!isConnected || isMasking}
                 className={`w-full py-4 rounded-2xl flex items-center justify-center gap-4 font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 group/scramble relative overflow-hidden ${
                     isConnected 
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl' 
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl border border-white/10' 
+                    : 'bg-slate-900/50 text-slate-600 cursor-not-allowed opacity-50 border border-transparent'
                 }`}
             >
                 <div className="absolute inset-0 bg-cyan-500/10 opacity-0 group-hover/scramble:opacity-100 transition-opacity"></div>
@@ -336,14 +336,14 @@ export const IdentityMatrix: React.FC<Props> = ({
         <div className={`${theme.cardBase} p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl ${theme.accent}`}><Chrome className={`w-4 h-4 ${theme.primary}`} /></div>
+                    <div className={`p-2 rounded-xl ${theme.accent} bg-black/40 border border-white/5`}><Chrome className={`w-4 h-4 ${theme.primary}`} /></div>
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Browser_Profile</span>
                 </div>
-                <div className="px-3 py-1 bg-emerald-500/10 rounded-full text-[8px] font-black text-emerald-500 border border-emerald-500/20 shadow-sm shadow-emerald-500/5">AI_STEALTH</div>
+                <div className="px-3 py-1 bg-emerald-500/10 rounded-full text-[8px] font-black text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/5">AI_STEALTH</div>
             </div>
 
             <div className="flex-1 space-y-3 mb-6">
-                <div className="p-5 bg-slate-900/40 rounded-2xl border border-white/5 space-y-4">
+                <div className="p-5 bg-black/60 rounded-2xl border border-white/5 space-y-4">
                     <div className="flex items-center justify-between">
                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                             {getOSIcon(currentUAData.os)}
@@ -360,7 +360,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                     </div>
                     <div className="pt-3 border-t border-white/10 flex flex-col gap-1.5">
                         <span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">FINGERPRINT_STRING</span>
-                        <div className="text-[9px] font-mono text-slate-400 leading-relaxed italic line-clamp-2 break-all opacity-80 group-hover:opacity-100 transition-opacity">
+                        <div className="text-[9px] font-mono text-slate-500 leading-relaxed italic line-clamp-2 break-all opacity-80 group-hover:opacity-100 transition-opacity">
                             {isMasking ? scrambleText.slice(0, 60) : currentUAData.full}
                         </div>
                     </div>
@@ -372,8 +372,8 @@ export const IdentityMatrix: React.FC<Props> = ({
                 disabled={!isConnected || isMasking}
                 className={`w-full py-4 rounded-2xl flex items-center justify-center gap-4 font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-xl relative overflow-hidden group/ua ${
                     isConnected 
-                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-cyan-500/20' 
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                    ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-600/30 border border-cyan-400/20' 
+                    : 'bg-slate-900/50 text-slate-600 cursor-not-allowed opacity-50 border border-transparent'
                 }`}
             >
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/ua:opacity-100 transition-opacity"></div>
@@ -388,23 +388,23 @@ export const IdentityMatrix: React.FC<Props> = ({
          <div className="flex justify-center mt-12 mb-4">
             <div className="relative">
               {/* Lueur d'arrière-plan pulsée */}
-              <div className={`absolute inset-0 rounded-[4rem] blur-[60px] opacity-20 transition-all duration-1000 ${isOnion ? 'bg-purple-500' : 'bg-cyan-500'}`}></div>
+              <div className={`absolute inset-0 rounded-[4rem] blur-[80px] opacity-30 transition-all duration-1000 ${isOnion ? 'bg-purple-500' : 'bg-brand-500'}`}></div>
               
               <button 
                   onClick={onMask}
                   disabled={isMasking}
-                  className={`group relative flex items-center gap-8 px-16 py-7 rounded-[4rem] font-black text-sm uppercase tracking-[0.5em] transition-all duration-500 hover:scale-105 active:scale-95 shadow-2xl ${
+                  className={`group relative flex items-center gap-8 px-16 py-7 rounded-[4rem] font-black text-sm uppercase tracking-[0.5em] transition-all duration-500 hover:scale-105 active:scale-95 shadow-[0_20px_50px_rgba(0,0,0,0.4)] ${
                       isOnion 
-                      ? 'bg-purple-600 text-white shadow-purple-600/30' 
-                      : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                      ? 'bg-purple-600 text-white shadow-purple-600/40' 
+                      : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-brand-500/10'
                   } border-2 ${theme.primaryBorder} overflow-hidden`}
               >
                   {/* Effets visuels de fond */}
                   <div className="absolute inset-0 bg-scanline opacity-10 pointer-events-none"></div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
                   
                   <div className="relative z-10 flex items-center gap-6">
-                    <div className={`p-4 rounded-3xl ${isOnion ? 'bg-purple-500/20' : 'bg-cyan-500/10'} border border-white/10 group-hover:rotate-12 transition-transform duration-500`}>
+                    <div className={`p-4 rounded-3xl ${isOnion ? 'bg-purple-500/20' : 'bg-brand-500/10'} border border-white/10 group-hover:rotate-12 transition-transform duration-500 shadow-inner`}>
                       {isMasking ? (
                           <Loader2 className="w-8 h-8 animate-spin" />
                       ) : (
@@ -413,7 +413,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                     </div>
                     
                     <div className="flex flex-col items-start text-left">
-                        <span className="text-[10px] opacity-50 font-black tracking-widest mb-1">Total_Privacy_Engine</span>
+                        <span className="text-[10px] opacity-40 font-black tracking-widest mb-1">Total_Privacy_Engine</span>
                         <span className="relative">
                             {isMasking ? 'INITIALISING_SCRAMBLE...' : 'SCRAMBLE_GLOBAL_IDENTITY'}
                         </span>
