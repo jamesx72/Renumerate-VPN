@@ -9,7 +9,8 @@ import {
   Cpu, Activity, ShieldCheck, Orbit, 
   Zap, ChevronRight,
   MapPin, Users, Cloud, X, ShieldAlert, ToggleLeft, ToggleRight,
-  ShieldHalf, Laptop, Monitor, Smartphone, Binary, Eye, Lock, Shield
+  ShieldHalf, Laptop, Monitor, Smartphone, Binary, Eye, Lock, Shield,
+  Scan, Target, ShieldQuestion, Radar
 } from 'lucide-react';
 
 interface Props {
@@ -55,8 +56,6 @@ export const IdentityMatrix: React.FC<Props> = ({
 }) => {
   const [copiedIp, setCopiedIp] = useState(false);
   const [localTime, setLocalTime] = useState<string>('');
-  const [isScramblingUA, setIsScramblingUA] = useState(false);
-  const [isScramblingMac, setIsScramblingMac] = useState(false);
   const [scrambleText, setScrambleText] = useState('');
   const [entropy, setEntropy] = useState('0.00');
   const [showCityModal, setShowCityModal] = useState(false);
@@ -76,7 +75,7 @@ export const IdentityMatrix: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
-    if (isMasking || isScramblingUA || isScramblingMac) {
+    if (isMasking || isRotating) {
       const chars = "10101010ABCDEF";
       const interval = setInterval(() => {
         let result = "";
@@ -85,7 +84,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       }, 50);
       return () => clearInterval(interval);
     }
-  }, [isMasking, isScramblingUA, isScramblingMac]);
+  }, [isMasking, isRotating]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -105,7 +104,8 @@ export const IdentityMatrix: React.FC<Props> = ({
     primaryBg: isOnion ? 'bg-purple-500' : isSmartDNS ? 'bg-amber-500' : 'bg-cyan-500',
     primaryBorder: isOnion ? 'border-purple-500/30' : isSmartDNS ? 'border-amber-500/30' : 'border-cyan-500/30',
     glow: isOnion ? 'shadow-purple-500/10' : isSmartDNS ? 'shadow-amber-500/10' : 'shadow-cyan-500/10',
-    accent: isOnion ? 'bg-purple-500/10' : isSmartDNS ? 'bg-amber-500/10' : 'bg-cyan-500/10'
+    accent: isOnion ? 'bg-purple-500/10' : isSmartDNS ? 'bg-amber-500/10' : 'bg-cyan-500/10',
+    fill: isOnion ? 'fill-purple-500' : isSmartDNS ? 'fill-amber-500' : 'fill-cyan-500'
   };
 
   const handleCopyIp = () => {
@@ -126,23 +126,24 @@ export const IdentityMatrix: React.FC<Props> = ({
       {/* Modal Ville - Design Cyber-Clean */}
       {showCityModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" onClick={() => setShowCityModal(false)} />
-          <div className={`relative w-full max-w-sm glass-card border-2 ${theme.primaryBorder} rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300`}>
-             <button onClick={() => setShowCityModal(false)} className="absolute top-6 right-6 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+          <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md" onClick={() => setShowCityModal(false)} />
+          <div className={`relative w-full max-w-sm glass-card border-2 ${theme.primaryBorder} rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden`}>
+             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
+             <button onClick={() => setShowCityModal(false)} className="absolute top-6 right-6 p-2 rounded-xl bg-slate-800/50 text-slate-400 hover:text-white transition-colors border border-white/5"><X className="w-5 h-5" /></button>
              <div className="flex flex-col items-center text-center">
-              <div className={`w-20 h-20 rounded-[1.5rem] ${theme.accent} flex items-center justify-center mb-6 border border-white/5`}><MapPin className={`w-10 h-10 ${theme.primary}`} /></div>
+              <div className={`w-20 h-20 rounded-[1.5rem] ${theme.accent} flex items-center justify-center mb-6 border border-white/5 shadow-inner`}><MapPin className={`w-10 h-10 ${theme.primary}`} /></div>
               <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{identity.city}</h3>
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mt-1">{identity.country}</p>
               
               <div className="grid grid-cols-2 gap-3 w-full mt-8">
-                <div className="p-4 bg-slate-900/50 border border-white/5 rounded-2xl">
-                    <Users className="w-4 h-4 text-slate-500 mx-auto mb-2" />
-                    <span className="text-[10px] font-black text-slate-500 uppercase block">Population</span>
+                <div className="p-4 bg-slate-900/50 border border-white/5 rounded-2xl flex flex-col items-center">
+                    <Users className="w-4 h-4 text-slate-500 mb-2" />
+                    <span className="text-[9px] font-black text-slate-500 uppercase block tracking-widest">Population</span>
                     <span className="text-sm font-mono font-bold text-white">{CITY_METADATA[identity.city]?.population || 'N/A'}</span>
                 </div>
-                <div className="p-4 bg-slate-900/50 border border-white/5 rounded-2xl">
-                    <Cloud className="w-4 h-4 text-slate-500 mx-auto mb-2" />
-                    <span className="text-[10px] font-black text-slate-500 uppercase block">Climat</span>
+                <div className="p-4 bg-slate-900/50 border border-white/5 rounded-2xl flex flex-col items-center">
+                    <Cloud className="w-4 h-4 text-slate-500 mb-2" />
+                    <span className="text-[9px] font-black text-slate-500 uppercase block tracking-widest">Atmosphere</span>
                     <span className="text-sm font-bold text-white">{CITY_METADATA[identity.city]?.weather || 'Stable'}</span>
                 </div>
               </div>
@@ -154,24 +155,26 @@ export const IdentityMatrix: React.FC<Props> = ({
       {/* Rangée Principale IP & Security */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Carte IP - Look "Terminal Dashboard" */}
-        <div className={`glass-card p-8 rounded-[3rem] border ${theme.primaryBorder} relative overflow-hidden transition-all duration-500 ${theme.glow} bracket-corner`}>
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <Binary className="w-24 h-24" />
+        <div className={`glass-card p-8 rounded-[3rem] border ${theme.primaryBorder} relative overflow-hidden transition-all duration-500 ${theme.glow} bracket-corner group`}>
+          <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Radar className="w-32 h-32 animate-spin-slow" />
           </div>
+          
           <div className="relative z-10 flex flex-col h-full">
-            <div className="flex items-center gap-2 mb-4">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'} animate-pulse`}></div>
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tunnel_Status_Uplink</span>
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-2 h-4 ${theme.primaryBg} rounded-sm animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.5)]`}></div>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Identity_Uplink_Node</span>
             </div>
             
             <div className="flex-1 flex flex-col justify-center">
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Public_Gateway_IP</span>
-                <div className={`text-5xl font-mono font-black tracking-tighter flex items-center gap-3 transition-all ${isRotating ? 'animate-glitch text-red-500' : 'text-slate-900 dark:text-white'}`}>
-                  {isRotating ? 'RECONNECTING' : identity.ip}
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Virtual_Gateway_Address</span>
+                <div className={`text-5xl font-mono font-black tracking-tighter flex items-center gap-4 transition-all ${isRotating ? 'animate-glitch text-red-500' : 'text-slate-900 dark:text-white'}`}>
+                  {isRotating ? scrambleText.slice(0, 12) : identity.ip}
                   {!isRotating && (
                     <button 
                         onClick={handleCopyIp} 
-                        className={`p-2 rounded-lg transition-all ${copiedIp ? 'text-emerald-500 bg-emerald-500/10' : 'text-slate-400 hover:text-cyan-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                        className={`p-2.5 rounded-xl transition-all active:scale-90 ${copiedIp ? 'text-emerald-500 bg-emerald-500/10' : 'text-slate-400 hover:text-cyan-500 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-white/5'}`}
                         title="Copier l'IP"
                     >
                         <Copy className="w-5 h-5" />
@@ -180,59 +183,72 @@ export const IdentityMatrix: React.FC<Props> = ({
                 </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-4">
+            <div className="mt-8 pt-4 border-t border-slate-200 dark:border-slate-800/50 flex items-center justify-between">
+                <div className="flex items-center gap-6">
                     <div className="flex flex-col">
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Entropy</span>
-                        <span className="text-xs font-mono font-black text-slate-900 dark:text-white">{entropy}%</span>
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Entropy_Lvl</span>
+                        <div className="flex items-center gap-2">
+                          <Activity className={`w-3 h-3 ${theme.primary}`} />
+                          <span className="text-xs font-mono font-black text-slate-900 dark:text-white">{entropy}%</span>
+                        </div>
                     </div>
-                    <div className="w-[1px] h-6 bg-slate-200 dark:bg-slate-800"></div>
+                    <div className="w-[1px] h-8 bg-slate-200 dark:bg-slate-800/50"></div>
                     <div className="flex flex-col">
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Latency</span>
-                        <span className="text-xs font-mono font-black text-slate-900 dark:text-white">{identity.latency}ms</span>
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Sync_Delay</span>
+                        <div className="flex items-center gap-2">
+                          <Target className="w-3 h-3 text-emerald-500" />
+                          <span className="text-xs font-mono font-black text-slate-900 dark:text-white">{identity.latency}ms</span>
+                        </div>
                     </div>
                 </div>
-                <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${isOnion ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20' : 'bg-cyan-500/10 text-cyan-500 border border-cyan-500/20'}`}>
-                    {mode}
+                <div className={`px-4 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-sm ${isOnion ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' : 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'}`}>
+                    PROTO: {mode}
                 </div>
             </div>
           </div>
         </div>
 
-        {/* Carte IPv6 & Leak Protection */}
-        <div className={`glass-card p-8 rounded-[3rem] border ${theme.primaryBorder} relative overflow-hidden transition-all duration-500 ${theme.glow}`}>
-            <div className="flex flex-col h-full justify-between">
+        {/* Carte IPv6 & Leak Protection - Design Alerte/Sécurité */}
+        <div className={`glass-card p-8 rounded-[3rem] border-2 ${ipv6LeakProtection ? 'border-emerald-500/20' : 'border-red-500/40'} relative overflow-hidden transition-all duration-500 group`}>
+            <div className={`absolute inset-0 opacity-[0.03] transition-colors ${ipv6LeakProtection ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></div>
+            
+            <div className="flex flex-col h-full justify-between relative z-10">
                 <div className="flex items-start justify-between">
                     <div className="space-y-1">
-                        <h4 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tighter flex items-center gap-2">
-                           <Shield className={`w-5 h-5 ${ipv6LeakProtection ? 'text-emerald-500' : 'text-red-500'}`} />
-                           Protection de Fuite IPv6
+                        <h4 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tighter flex items-center gap-3">
+                           {ipv6LeakProtection ? <ShieldCheck className="w-6 h-6 text-emerald-500" /> : <ShieldAlert className="w-6 h-6 text-red-500 animate-bounce" />}
+                           IPv6 Sentinel Shield
                         </h4>
-                        <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Algorithme Sentinel v3.2_SEC</p>
+                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">Protocol_Security_v4.1</p>
                     </div>
-                    <div className={`p-3 rounded-2xl border transition-all ${ipv6LeakProtection ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}`}>
-                        {ipv6LeakProtection ? <ShieldCheck className="w-8 h-8" /> : <ShieldAlert className="w-8 h-8 animate-pulse" />}
+                    <div className={`p-4 rounded-2xl border transition-all shadow-lg ${ipv6LeakProtection ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-red-500/10 border-red-500/30 text-red-500'}`}>
+                        {ipv6LeakProtection ? <Lock className="w-8 h-8" /> : <ShieldQuestion className="w-8 h-8 animate-pulse" />}
                     </div>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 my-4">
-                    <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 leading-relaxed italic">
+                <div className="bg-slate-900/40 p-5 rounded-[2rem] border border-white/5 my-6">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${ipv6LeakProtection ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Real_Time_Audit</span>
+                    </div>
+                    <p className="text-xs font-medium text-slate-300 leading-relaxed font-mono">
                         {ipv6LeakProtection 
-                            ? "Le trafic IPv6 est tunnelisé avec succès vers l'adresse virtuelle. Aucune fuite ISP détectée." 
-                            : "Attention : Le trafic IPv6 risque d'exposer votre localisation réelle. Réactivation recommandée."}
+                            ? ">>> SHIELD_STATUS: ACTIVE. IPV6 TUNNELING ESTABLISHED. ZERO ISP LEAK DETECTED." 
+                            : ">>> CRITICAL: IPV6 TRAFFIC IS EXPOSED. LOCALIZATION DE-ANONYMIZATION RISK DETECTED."}
                     </p>
                 </div>
 
                 <button 
                     onClick={() => onIpv6Toggle?.(!ipv6LeakProtection)}
-                    className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 ${
+                    className={`w-full py-5 rounded-[2rem] flex items-center justify-center gap-4 font-black text-xs uppercase tracking-[0.3em] transition-all active:scale-95 shadow-2xl relative overflow-hidden group/btn ${
                         ipv6LeakProtection 
-                        ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
-                        : 'bg-red-600 text-white shadow-lg shadow-red-500/20'
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20' 
+                        : 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20'
                     }`}
                 >
-                    {ipv6LeakProtection ? <Lock className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
-                    {ipv6LeakProtection ? 'BOUTON_ARMÉ_SÉCURISÉ' : 'DANGER_RÉARMER_SENTINEL'}
+                    <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/btn:opacity-100 transition-opacity"></div>
+                    {ipv6LeakProtection ? <ShieldCheck className="w-5 h-5" /> : <Zap className="w-5 h-5 animate-pulse" />}
+                    <span>{ipv6LeakProtection ? 'PROTECTION_ARMÉE' : 'RÉARMER_SÉCURITÉ_VÉLOCE'}</span>
                 </button>
             </div>
         </div>
@@ -241,19 +257,21 @@ export const IdentityMatrix: React.FC<Props> = ({
       {/* Grille Triple : Géo, HW et SW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Geo_Anchor */}
-        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-xl transition-all duration-500`}>
+        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 bracket-corner`}>
             <div className="flex items-center gap-3 mb-6">
                 <div className={`p-2 rounded-xl ${theme.accent}`}><Globe className={`w-4 h-4 ${theme.primary}`} /></div>
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Geo_Anchor_v4</span>
             </div>
             
-            <div className="flex items-center gap-4 mb-6">
-                <span className="text-4xl filter drop-shadow-md">{COUNTRIES_WITH_FLAGS[identity.country] || '📍'}</span>
+            <div className="flex items-center gap-5 mb-6 pl-2">
+                <div className="relative">
+                  <span className="text-5xl filter drop-shadow-2xl group-hover:scale-110 transition-transform block">{COUNTRIES_WITH_FLAGS[identity.country] || '📍'}</span>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900 shadow-lg"></div>
+                </div>
                 <div>
-                    <span className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">{identity.country}</span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-500"></div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Zone_Europe_SCT</span>
+                    <span className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">{identity.country}</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded">Réseau_Cluster_02</span>
                     </div>
                 </div>
             </div>
@@ -263,13 +281,13 @@ export const IdentityMatrix: React.FC<Props> = ({
                 disabled={!isConnected}
                 className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between group/city ${
                     isConnected 
-                    ? 'bg-slate-50 dark:bg-black/20 border-slate-200 dark:border-white/5 hover:border-cyan-500' 
+                    ? 'bg-slate-50 dark:bg-black/30 border-slate-200 dark:border-white/5 hover:border-cyan-500 hover:shadow-lg' 
                     : 'bg-slate-50/50 dark:bg-slate-900/50 border-transparent grayscale'
                 }`}
             >
                 <div className="flex flex-col items-start">
-                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Node_Exit_City</span>
-                    <span className={`text-lg font-mono font-black ${isConnected ? theme.primary : 'text-slate-400'}`}>{identity.city}</span>
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Exit_Node</span>
+                    <span className={`text-xl font-mono font-black tracking-tight ${isConnected ? theme.primary : 'text-slate-400'}`}>{identity.city}</span>
                 </div>
                 <div className="text-right">
                     <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Local_Time</span>
@@ -279,68 +297,70 @@ export const IdentityMatrix: React.FC<Props> = ({
         </div>
 
         {/* HW_Signature - Spoofing MAC */}
-        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-xl transition-all duration-500 flex flex-col`}>
+        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
             <div className="flex items-center gap-3 mb-6">
                 <div className={`p-2 rounded-xl ${theme.accent}`}><Fingerprint className={`w-4 h-4 ${theme.primary}`} /></div>
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Hardware_Signature</span>
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Hardware_Spoof</span>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center bg-slate-50 dark:bg-black/30 rounded-2xl p-4 border border-slate-200 dark:border-white/5 mb-6">
-                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2 text-center">MAC_ADDRESS_VIRTUALIZED</span>
-                <div className="font-mono text-xl font-black text-slate-900 dark:text-white tracking-[0.2em] text-center">
-                    {isMasking || isScramblingMac ? (
+            <div className="flex-1 flex flex-col justify-center bg-slate-900/40 rounded-2xl p-5 border border-white/5 mb-6 relative overflow-hidden">
+                <div className="absolute inset-0 bg-scanline opacity-5 pointer-events-none"></div>
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.4em] mb-3 text-center block">MAC_VIRTUALIZATION</span>
+                <div className="font-mono text-xl font-black text-slate-900 dark:text-white tracking-[0.3em] text-center mb-4">
+                    {isMasking ? (
                         <span className="text-cyan-500 animate-pulse">{scrambleText.slice(0, 17)}</span>
                     ) : identity.mac}
                 </div>
-                <div className="mt-2 h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div className={`h-full ${theme.primaryBg} transition-all duration-500`} style={{ width: '100%' }}></div>
+                <div className="h-1 bg-slate-800 rounded-full overflow-hidden flex">
+                    <div className={`h-full ${theme.primaryBg} animate-shimmer`} style={{ width: '100%' }}></div>
                 </div>
             </div>
 
             <button 
                 onClick={onScrambleMac}
-                disabled={!isConnected || isMasking || isScramblingMac}
-                className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 ${
+                disabled={!isConnected || isMasking}
+                className={`w-full py-4 rounded-2xl flex items-center justify-center gap-4 font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 group/scramble relative overflow-hidden ${
                     isConnected 
                     ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl' 
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
                 }`}
             >
-                {isScramblingMac ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                RE_NUMÉROTER_HW_MAC
+                <div className="absolute inset-0 bg-cyan-500/10 opacity-0 group-hover/scramble:opacity-100 transition-opacity"></div>
+                {isMasking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 group-hover/scramble:rotate-180 transition-transform duration-700" />}
+                RE_NUMÉROTER_HW
             </button>
         </div>
 
         {/* SW_Profile - Spoofing UA */}
-        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-xl transition-all duration-500 flex flex-col`}>
+        <div className={`glass-card p-6 rounded-[2.5rem] border ${theme.primaryBorder} group hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-500 flex flex-col bracket-corner`}>
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-xl ${theme.accent}`}><Chrome className={`w-4 h-4 ${theme.primary}`} /></div>
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Software_Profile</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Browser_Profile</span>
                 </div>
-                <div className="px-2 py-0.5 bg-emerald-500/10 rounded text-[8px] font-black text-emerald-500 border border-emerald-500/20">V3.2_IA_OPTIM</div>
+                <div className="px-3 py-1 bg-emerald-500/10 rounded-full text-[8px] font-black text-emerald-500 border border-emerald-500/20 shadow-sm shadow-emerald-500/5">AI_STEALTH</div>
             </div>
 
             <div className="flex-1 space-y-3 mb-6">
-                <div className="p-4 bg-slate-50 dark:bg-black/30 rounded-2xl border border-slate-200 dark:border-white/5 space-y-3">
-                    <div className="flex items-center justify-between text-[10px]">
-                        <span className="font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <div className="p-5 bg-slate-900/40 rounded-2xl border border-white/5 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                             {getOSIcon(currentUAData.os)}
-                            Plateforme
+                            OS_System
                         </span>
-                        <span className="font-mono font-black text-slate-900 dark:text-white">{isMasking || isScramblingUA ? '...' : currentUAData.os}</span>
+                        <span className="text-[10px] font-mono font-black text-white">{isMasking ? 'SYNCHING...' : currentUAData.os}</span>
                     </div>
-                    <div className="flex items-center justify-between text-[10px]">
-                        <span className="font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                            <Globe2 className="w-3.5 h-3.5" />
-                            Navigateur
+                    <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <Globe2 className="w-4 h-4" />
+                            Engine
                         </span>
-                        <span className="font-mono font-black text-slate-900 dark:text-white">{isMasking || isScramblingUA ? '...' : currentUAData.browser}</span>
+                        <span className="text-[10px] font-mono font-black text-white">{isMasking ? 'SYNCHING...' : currentUAData.browser}</span>
                     </div>
-                    <div className="pt-2 border-t border-white/5 flex flex-col gap-1">
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Header_Fingerprint</span>
-                        <div className="text-[9px] font-mono text-slate-400 leading-tight italic line-clamp-2">
-                            {isMasking || isScramblingUA ? scrambleText.slice(0, 60) : currentUAData.full}
+                    <div className="pt-3 border-t border-white/10 flex flex-col gap-1.5">
+                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">FINGERPRINT_STRING</span>
+                        <div className="text-[9px] font-mono text-slate-400 leading-relaxed italic line-clamp-2 break-all opacity-80 group-hover:opacity-100 transition-opacity">
+                            {isMasking ? scrambleText.slice(0, 60) : currentUAData.full}
                         </div>
                     </div>
                 </div>
@@ -348,46 +368,62 @@ export const IdentityMatrix: React.FC<Props> = ({
 
             <button 
                 onClick={onScrambleUA}
-                disabled={!isConnected || isMasking || isScramblingUA}
-                className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 ${
+                disabled={!isConnected || isMasking}
+                className={`w-full py-4 rounded-2xl flex items-center justify-center gap-4 font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-xl relative overflow-hidden group/ua ${
                     isConnected 
-                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-xl shadow-cyan-500/20' 
+                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white shadow-cyan-500/20' 
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
                 }`}
             >
-                {isScramblingUA ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/ua:opacity-100 transition-opacity"></div>
+                {isMasking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scan className="w-4 h-4 group-hover/ua:scale-125 transition-transform" />}
                 SPOOF_UA_FINGERPRINT
             </button>
         </div>
       </div>
 
-      {/* Hero Button - Global Scramble */}
+      {/* Hero Button - Global Scramble - Design Centralisé & Immersif */}
       {isConnected && (
-         <div className="flex justify-center mt-10">
-            <button 
-                onClick={onMask}
-                disabled={isMasking}
-                className={`group relative flex items-center gap-6 px-12 py-6 rounded-[3rem] font-black text-sm uppercase tracking-[0.4em] transition-all hover:scale-105 active:scale-95 shadow-2xl ${
-                    isOnion 
-                    ? 'bg-purple-600 shadow-purple-600/30' 
-                    : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
-                } overflow-hidden`}
-            >
-                {/* Effet de scan permanent */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
-                
-                {isMasking ? (
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                    <ShieldHalf className={`w-6 h-6 ${isOnion ? 'text-white' : 'text-cyan-500'} group-hover:rotate-12 transition-transform`} />
-                )}
-                
-                <span className="relative z-10">
-                    {isMasking ? 'RE-NUMÉROTAGE_EN_COURS...' : 'SCRAMBLE_GLOBAL_IDENTITY'}
-                </span>
-                
-                <ChevronRight className="w-5 h-5 opacity-50 group-hover:translate-x-1 transition-transform" />
-            </button>
+         <div className="flex justify-center mt-12 mb-4">
+            <div className="relative">
+              {/* Lueur d'arrière-plan pulsée */}
+              <div className={`absolute inset-0 rounded-[4rem] blur-[60px] opacity-20 transition-all duration-1000 ${isOnion ? 'bg-purple-500' : 'bg-cyan-500'}`}></div>
+              
+              <button 
+                  onClick={onMask}
+                  disabled={isMasking}
+                  className={`group relative flex items-center gap-8 px-16 py-7 rounded-[4rem] font-black text-sm uppercase tracking-[0.5em] transition-all duration-500 hover:scale-105 active:scale-95 shadow-2xl ${
+                      isOnion 
+                      ? 'bg-purple-600 text-white shadow-purple-600/30' 
+                      : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                  } border-2 ${theme.primaryBorder} overflow-hidden`}
+              >
+                  {/* Effets visuels de fond */}
+                  <div className="absolute inset-0 bg-scanline opacity-10 pointer-events-none"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
+                  
+                  <div className="relative z-10 flex items-center gap-6">
+                    <div className={`p-4 rounded-3xl ${isOnion ? 'bg-purple-500/20' : 'bg-cyan-500/10'} border border-white/10 group-hover:rotate-12 transition-transform duration-500`}>
+                      {isMasking ? (
+                          <Loader2 className="w-8 h-8 animate-spin" />
+                      ) : (
+                          <ShieldHalf className={`w-8 h-8 ${isOnion ? 'text-white' : 'text-cyan-500'}`} />
+                      )}
+                    </div>
+                    
+                    <div className="flex flex-col items-start text-left">
+                        <span className="text-[10px] opacity-50 font-black tracking-widest mb-1">Total_Privacy_Engine</span>
+                        <span className="relative">
+                            {isMasking ? 'INITIALISING_SCRAMBLE...' : 'SCRAMBLE_GLOBAL_IDENTITY'}
+                        </span>
+                    </div>
+                    
+                    <div className="ml-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-500">
+                        <ChevronRight className={`w-6 h-6 ${theme.primary}`} />
+                    </div>
+                  </div>
+              </button>
+            </div>
          </div>
       )}
     </div>
