@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck, History, Activity, Wifi, Lock } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
@@ -65,6 +64,7 @@ function App() {
     vortexCircuitLength: 3,
     vortexEntryNodeCountry: 'auto',
     vortexExitNodeCountry: 'auto',
+    // Fixed: Removed 'boolean' type reference which was causing a value-level error.
     vortexNoScript: false,
     miningIntensity: 50,
     yieldOptimizationIA: true,
@@ -77,7 +77,108 @@ function App() {
     logRetentionHours: 168
   });
 
-  // Simulated real-time stats
+  const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info', ip?: string) => {
+    setLogs(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), timestamp: new Date().toLocaleTimeString('fr-FR'), timestampRaw: Date.now(), event, type, ip }].slice(-500));
+  }, []);
+
+  const connectVPN = useCallback(async () => {
+    if (isDisconnecting) return;
+    setIsDisconnecting(false);
+    addLog(`Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()})...`, 'info', currentIdentity.ip);
+    
+    if (mode === ConnectionMode.ONION_VORTEX) {
+        addLog(`Construction du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info');
+    }
+
+    setTimeout(async () => {
+      setIsConnected(true);
+      addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success', currentIdentity.ip);
+      
+      const newSession: ConnectionSession = {
+        id: Math.random().toString(36).substr(2, 9),
+        serverCountry: currentIdentity.country,
+        serverIp: currentIdentity.ip,
+        startTime: Date.now(),
+        protocol: appSettings.protocol,
+        mode: mode,
+        durationString: 'En cours...'
+      };
+
+      setConnectionHistory(prev => [newSession, ...prev]);
+      const report = await analyzeSecurity(mode, currentIdentity.country, currentIdentity.ip);
+      setSecurityReport(report);
+    }, 1200);
+  }, [appSettings.protocol, mode, currentIdentity, addLog, isDisconnecting]);
+
+  const disconnectVPN = useCallback(() => {
+    if (isDisconnecting) return;
+    setIsDisconnecting(true);
+    addLog('Fermeture sécurisée du tunnel...', 'warning', currentIdentity.ip);
+    setTimeout(() => {
+      setConnectionHistory(prev => {
+        if (prev.length === 0) return prev;
+        const last = { ...prev[0] };
+        const durationMin = Math.max(1, Math.round((Date.now() - last.startTime) / 60000));
+        last.durationString = `${durationMin} min`;
+        return [last, ...prev.slice(1)];
+      });
+
+      setIsConnected(false);
+      setIsDisconnecting(false);
+      setSecurityReport(null);
+      addLog('Session déconnectée', 'info', currentIdentity.ip);
+    }, 800);
+  }, [currentIdentity.ip, addLog, isDisconnecting]);
+
+  const handleGlobalScramble = useCallback(() => {
+    setIsMasking(true);
+    addLog('Initialisation du re-numérotage global...', 'info');
+    setTimeout(() => {
+      const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
+      const newMac = generateRandomMac(appSettings.macScramblingMode, appSettings.macFormat);
+      setCurrentIdentity(prev => ({ ...prev, mac: newMac, userAgentShort: newUA.short }));
+      setIsMasking(false);
+      addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
+    }, 1500);
+  }, [appSettings.macScramblingMode, appSettings.macFormat, addLog]);
+
+  const handleScrambleUA = useCallback(() => {
+    const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
+    setCurrentIdentity(prev => ({ ...prev, userAgentShort: newUA.short }));
+    addLog(`Spoofing UA réussi`, 'success');
+  }, [addLog]);
+
+  // --- Keyboard Shortcuts Implementation ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      
+      if (isCmdOrCtrl) {
+        const key = e.key.toLowerCase();
+        
+        if (key === 's') {
+          e.preventDefault();
+          addLog('Raccourci détecté : Basculer connexion [Ctrl+S]', 'info');
+          if (isConnected) disconnectVPN();
+          else connectVPN();
+        } 
+        else if (key === 'r') {
+          e.preventDefault();
+          addLog('Raccourci détecté : Re-numéroter identité [Ctrl+R]', 'info');
+          handleGlobalScramble();
+        }
+        else if (key === 'm') {
+          e.preventDefault();
+          addLog('Raccourci détecté : Masquer empreinte [Ctrl+M]', 'info');
+          handleScrambleUA();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isConnected, connectVPN, disconnectVPN, handleGlobalScramble, handleScrambleUA, addLog]);
+
   useEffect(() => {
     if (isConnected) {
       const interval = setInterval(() => {
@@ -92,7 +193,6 @@ function App() {
     }
   }, [isConnected]);
 
-  // --- Backend Sync Effect ---
   useEffect(() => {
     if (user?.id) {
       const syncData = async () => {
@@ -118,10 +218,6 @@ function App() {
     if (isDark) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [isDark]);
-
-  const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info', ip?: string) => {
-    setLogs(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), timestamp: new Date().toLocaleTimeString('fr-FR'), timestampRaw: Date.now(), event, type, ip }].slice(-500));
-  }, []);
 
   const handleConnectNode = (nodeId: string) => {
     const node = MOCK_NODES.find(n => n.id === nodeId);
@@ -150,62 +246,6 @@ function App() {
         }));
         connectVPN();
     }
-  };
-
-  const connectVPN = async () => {
-    setIsDisconnecting(false);
-    addLog(`Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()})...`, 'info', currentIdentity.ip);
-    
-    if (mode === ConnectionMode.ONION_VORTEX) {
-        addLog(`Construction du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info');
-        await new Promise(r => setTimeout(r, 600));
-        addLog(`Nœud d'entrée ${appSettings.vortexEntryNodeCountry} sécurisé.`, 'success');
-        await new Promise(r => setTimeout(r, 400));
-        addLog(`Triple-chiffrement appliqué aux couches de transport.`, 'info');
-    }
-
-    setTimeout(async () => {
-      setIsConnected(true);
-      addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success', currentIdentity.ip);
-      
-      const newSession: ConnectionSession = {
-        id: Math.random().toString(36).substr(2, 9),
-        serverCountry: currentIdentity.country,
-        serverIp: currentIdentity.ip,
-        startTime: Date.now(),
-        protocol: appSettings.protocol,
-        mode: mode,
-        durationString: 'En cours...'
-      };
-
-      setConnectionHistory(prev => [newSession, ...prev]);
-      
-      if (user?.id) {
-        dbService.logSession(user.id, newSession).catch(console.error);
-      }
-
-      const report = await analyzeSecurity(mode, currentIdentity.country, currentIdentity.ip);
-      setSecurityReport(report);
-    }, 1200);
-  };
-
-  const disconnectVPN = () => {
-    setIsDisconnecting(true);
-    addLog('Fermeture sécurisée du tunnel...', 'warning', currentIdentity.ip);
-    setTimeout(() => {
-      setConnectionHistory(prev => {
-        if (prev.length === 0) return prev;
-        const last = { ...prev[0] };
-        const durationMin = Math.max(1, Math.round((Date.now() - last.startTime) / 60000));
-        last.durationString = `${durationMin} min`;
-        return [last, ...prev.slice(1)];
-      });
-
-      setIsConnected(false);
-      setIsDisconnecting(false);
-      setSecurityReport(null);
-      addLog('Session déconnectée', 'info', currentIdentity.ip);
-    }, 800);
   };
 
   const handleProcessPayment = async (plan: PlanTier, method: 'card' | 'paypal' | 'crypto'): Promise<{ success: boolean; redirect: boolean }> => {
@@ -238,28 +278,10 @@ function App() {
     }
   };
 
-  const handleGlobalScramble = () => {
-    setIsMasking(true);
-    addLog('Initialisation du re-numérotage global...', 'info');
-    setTimeout(() => {
-      const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
-      const newMac = generateRandomMac(appSettings.macScramblingMode, appSettings.macFormat);
-      setCurrentIdentity(prev => ({ ...prev, mac: newMac, userAgentShort: newUA.short }));
-      setIsMasking(false);
-      addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
-    }, 1500);
-  };
-
   const handleScrambleMac = () => {
     const newMac = generateRandomMac(appSettings.macScramblingMode, appSettings.macFormat);
     setCurrentIdentity(prev => ({ ...prev, mac: newMac }));
     addLog(`Re-numérotation MAC réussi`, 'success');
-  };
-
-  const handleScrambleUA = () => {
-    const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
-    setCurrentIdentity(prev => ({ ...prev, userAgentShort: newUA.short }));
-    addLog(`Spoofing UA réussi`, 'success');
   };
 
   if (!user) return <AuthScreen onLogin={(e) => {

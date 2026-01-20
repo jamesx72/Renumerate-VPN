@@ -74,37 +74,61 @@ export const REALISTIC_USER_AGENTS = [
   }
 ];
 
+/**
+ * Génère une adresse MAC aléatoire réaliste.
+ * Respecte les standards OUI (Organizationally Unique Identifier) 
+ * et la logique LAA (Locally Administered Address).
+ */
 export const generateRandomMac = (
   mode: 'vendor' | 'laa' | 'random' = 'random',
   format: 'standard' | 'hyphen' | 'cisco' | 'random' = 'random'
 ) => {
   const hex = "0123456789ABCDEF";
+  
+  // Liste étendue d'OUIs de constructeurs majeurs
   const vendors = [
-    "00:00:0C", "00:05:02", "00:0C:F1", "00:16:3E", "00:50:56", "3C:5A:B4",
-    "00:14:22", "00:10:18", "E0:D5:5E", "52:54:00", "00:15:5D", "08:00:27"
+    "00:00:0C", // Cisco Systems
+    "00:05:02", // Apple
+    "00:0C:F1", // Intel
+    "00:16:3E", // XenSource (Virtualization)
+    "00:50:56", // VMware
+    "3C:5A:B4", // Google
+    "00:14:22", // Dell
+    "00:10:18", // Broadcom
+    "E0:D5:5E", // Samsung Electronics
+    "52:54:00", // QEMU (Virtualization)
+    "00:15:5D", // Microsoft (Hyper-V)
+    "08:00:27"  // Oracle (VirtualBox)
   ];
 
   let bytes: string[] = [];
   
   if (mode === 'vendor') {
+    // Utilise un préfixe de constructeur réel
     const vendor = vendors[Math.floor(Math.random() * vendors.length)];
     bytes = vendor.split(':');
     while (bytes.length < 6) {
       bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   } else if (mode === 'laa') {
-    const b1_1 = hex[Math.floor(Math.random() * 16)];
-    const b1_2 = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
-    bytes.push(b1_1 + b1_2);
+    /**
+     * Une adresse administrée localement (LAA) doit avoir le bit 1 du premier octet à 1.
+     * Cela signifie que le second chiffre hexadécimal doit être 2, 6, A ou E.
+     */
+    const firstDigit = hex[Math.floor(Math.random() * 16)];
+    const secondDigit = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
+    bytes.push(firstDigit + secondDigit);
     for (let i = 1; i < 6; i++) {
       bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   } else {
+    // Mode totalement aléatoire
     for (let i = 0; i < 6; i++) {
       bytes.push(hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)]);
     }
   }
 
+  // Détermination du format final
   let finalFormat = format;
   if (format === 'random') {
     const r = Math.random();
@@ -113,11 +137,15 @@ export const generateRandomMac = (
     else finalFormat = 'cisco';
   }
 
+  // Formatage de la chaîne finale
   if (finalFormat === 'standard') {
+    // Format: 00:11:22:33:44:55
     return bytes.join(':').toUpperCase();
   } else if (finalFormat === 'hyphen') {
+    // Format: 00-11-22-33-44-55
     return bytes.join('-').toUpperCase();
   } else {
+    // Format Cisco: 0011.2233.4455
     const flat = bytes.join('').toLowerCase();
     return `${flat.slice(0, 4)}.${flat.slice(4, 8)}.${flat.slice(8, 12)}`;
   }
