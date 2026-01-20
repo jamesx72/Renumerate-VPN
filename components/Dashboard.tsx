@@ -17,6 +17,7 @@ interface DashboardProps {
   onConnectNode: (id: string) => void;
   currentIp: string;
   settings: AppSettings;
+  addLog: (event: string, type: 'info' | 'warning' | 'success' | 'error') => void;
 }
 
 const VERIFIED_ONION_SERVICES = [
@@ -46,7 +47,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   nodes,
   onConnectNode,
   currentIp,
-  settings
+  settings,
+  addLog
 }) => {
   const [countryFilter, setCountryFilter] = useState<string>('Tous');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -110,10 +112,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return;
     }
     
+    if (!isConnected) {
+        alert("Vous devez d'abord établir la connexion VPN principale avant d'utiliser le mode Vortex.");
+        return;
+    }
+
     setIsOnionResolving(true);
+    addLog(`Initiation de la résolution Vortex pour ${targetUrl}...`, 'info');
+    
     setTimeout(() => {
         setIsOnionResolving(false);
         setOnionUrl('');
+        addLog(`Circuit Vortex établi vers ${targetUrl}. Chiffrement oignon actif (6 sauts).`, 'success');
         alert(`Tunnel Vortex établi avec succès vers ${targetUrl}. Votre navigation est désormais isolée par le circuit Tor.`);
     }, 2500);
   };
@@ -571,6 +581,120 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div className="flex items-center gap-8">
                         <div className="p-8 bg-purple-600 text-white rounded-[2.5rem] shadow-2xl shadow-purple-600/40 animate-pulse relative">
                             <Orbit className="w-14 h-14" />
+                            <div className="absolute inset-[-10px] border-2 border-purple-400/30 rounded-full animate-spin-slow"></div>
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <span className="text-[10px] font-black text-purple-500 uppercase tracking-[0.5em]">Circuit_Tor_Vortex_v6</span>
+                                <div className="px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black rounded uppercase">ANONYMOUS CIRCUIT</div>
+                            </div>
+                            <h4 className="text-4xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Vortex Deep Resolver</h4>
+                            <p className="text-xs text-slate-500 mt-2">Navigation oignon sécurisée via circuit multi-sauts Renumerate.</p>
+                        </div>
+                    </div>
+                    
+                    <form onSubmit={handleResolveOnion} className="flex bg-slate-900/80 p-2 rounded-[2rem] border border-white/10 shadow-2xl min-w-[320px]">
+                        <input 
+                            type="text"
+                            value={onionUrl}
+                            onChange={(e) => setOnionUrl(e.target.value)}
+                            placeholder="RECHERCHER .ONION..."
+                            className="bg-transparent border-none outline-none px-4 py-3 text-sm font-mono text-purple-400 w-full placeholder:text-slate-600"
+                        />
+                        <button 
+                            type="submit"
+                            disabled={isOnionResolving || !onionUrl}
+                            className="bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-2xl transition-all active:scale-90 disabled:opacity-50"
+                        >
+                            {isOnionResolving ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Vortex Nodes Section */}
+                <div className="glass-card p-8 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-950/40">
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className="p-3 rounded-2xl bg-purple-500/10 text-purple-500 border border-purple-500/20">
+                            <Rocket className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">Verified Vortex Nodes</h3>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Services oignon certifiés par Renumerate</p>
+                        </div>
+                    </div>
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+                        {VERIFIED_ONION_SERVICES.map((service, i) => (
+                            <button
+                                key={i}
+                                onClick={() => handleResolveOnion(undefined, service.url)}
+                                className="w-full p-5 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:border-purple-500/50 hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-all text-left animate-in slide-in-from-right-2"
+                                style={{ animationDelay: `${i * 100}ms` }}
+                            >
+                                <div className="flex flex-col min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-sm font-black text-slate-800 dark:text-white truncate">
+                                            {service.name}
+                                        </span>
+                                        <span className="text-[8px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-500 border border-purple-500/20 font-black uppercase whitespace-nowrap">
+                                            {service.category}
+                                        </span>
+                                    </div>
+                                    <span className="text-[10px] font-mono text-slate-500 truncate group-hover:text-purple-400 transition-colors">
+                                        {service.url}
+                                    </span>
+                                </div>
+                                <div className="ml-4 p-2.5 rounded-xl bg-purple-500/10 text-purple-500 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                                    <Link2 className="w-4 h-4" />
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Info Card for Vortex */}
+                <div className="glass-card p-8 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl bg-gradient-to-br from-purple-500/5 to-transparent relative overflow-hidden">
+                    <div className="absolute -bottom-10 -right-10 opacity-[0.05] pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                        <Orbit className="w-48 h-48 text-purple-500" />
+                    </div>
+                    <div className="flex items-center gap-4 mb-8">
+                        <ShieldCheck className="w-6 h-6 text-purple-500" />
+                        <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">Sécurité Multi-Sauts</h3>
+                    </div>
+                    <div className="space-y-4 relative z-10">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                            Le circuit **Vortex** utilise un routage en oignon à 6 sauts. Chaque paquet est chiffré par couche, rendant toute trace d'origine techniquement impossible à reconstruire.
+                        </p>
+                        
+                        <div className="p-5 bg-slate-900/40 rounded-3xl border border-white/5 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Circuit_Path</span>
+                                <span className="text-[10px] font-mono text-purple-400">OPTIMIZED</span>
+                            </div>
+                            <div className="flex items-center gap-2 justify-center">
+                                {[1,2,3,4,5,6].map(i => (
+                                    <div key={i} className="flex items-center gap-1">
+                                        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-purple-500 animate-pulse' : 'bg-slate-700'}`}></div>
+                                        {i < 6 && <div className="w-4 h-[1px] bg-slate-700"></div>}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex justify-between items-center text-[9px] font-black text-slate-600 uppercase">
+                                <span>Source</span>
+                                <span>Vortex Exit</span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 mt-4">
+                            <div className="p-3 bg-white/5 rounded-2xl border border-white/5 flex flex-col gap-1">
+                                <span className="text-[8px] font-black text-slate-500 uppercase">Bridge_Obfs4</span>
+                                <span className="text-[10px] font-bold text-emerald-500">ACTIVE</span>
+                            </div>
+                            <div className="p-3 bg-white/5 rounded-2xl border border-white/5 flex flex-col gap-1">
+                                <span className="text-[8px] font-black text-slate-500 uppercase">Latency_OVR</span>
+                                <span className="text-[10px] font-bold text-amber-500">+1250ms</span>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -255,6 +255,7 @@ function App() {
                     onConnectNode={()=>{}} 
                     currentIp={currentIdentity.ip}
                     settings={appSettings}
+                    addLog={addLog}
                 />
                 <IdentityMatrix 
                   identity={currentIdentity} 
