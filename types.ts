@@ -30,6 +30,7 @@ export interface LogEntry {
   timestampRaw: number;
   event: string;
   type: 'info' | 'warning' | 'success' | 'error';
+  ip?: string; // Nouveau champ pour le filtrage par IP
 }
 
 export type PlanTier = 'free' | 'pro' | 'elite';
@@ -37,6 +38,7 @@ export type PlanTier = 'free' | 'pro' | 'elite';
 export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
   dns: 'cloudflare' | 'google' | 'quad9' | 'opendns' | 'custom';
+  customDnsServer: string;
   killSwitch: boolean;
   dnsLeakProtection: boolean;
   autoReconnect: boolean;
@@ -54,6 +56,7 @@ export interface AppSettings {
   // Vortex (Tor) Config
   vortexBridge: 'none' | 'obfs4' | 'snowflake' | 'meek-azure';
   vortexCircuitLength: number;
+  vortexEntryNodeCountry: string;
   vortexExitNodeCountry: string;
   vortexNoScript: boolean;
   // Earning Configurations
@@ -65,6 +68,7 @@ export interface AppSettings {
   mtuSize: number;
   ipv6LeakProtection: boolean;
   localNetworkSharing: boolean;
+  lanBypass: boolean;
   logRetentionHours: number;
 }
 

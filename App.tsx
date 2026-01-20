@@ -16,7 +16,6 @@ import { MOCK_IDENTITIES, INITIAL_LOGS, REALISTIC_USER_AGENTS, generateRandomMac
 import { VirtualIdentity, ConnectionMode, SecurityReport, LogEntry, PlanTier, AppSettings, DeviceNode, ConnectionSession } from './types';
 import { analyzeSecurity } from './services/geminiService';
 import { dbService } from './services/dbService';
-// Fix: Import supabase client to avoid 'Cannot find name supabase' error.
 import { supabase } from './services/supabaseClient';
 
 function App() {
@@ -46,6 +45,7 @@ function App() {
   const [appSettings, setAppSettings] = useState<AppSettings>({
     protocol: 'wireguard',
     dns: 'cloudflare',
+    customDnsServer: '',
     killSwitch: true,
     dnsLeakProtection: true,
     autoReconnect: true,
@@ -61,6 +61,7 @@ function App() {
     uaComplexity: 'diverse',
     vortexBridge: 'none',
     vortexCircuitLength: 3,
+    vortexEntryNodeCountry: 'auto',
     vortexExitNodeCountry: 'auto',
     vortexNoScript: false,
     miningIntensity: 50,
@@ -70,6 +71,7 @@ function App() {
     mtuSize: 1420,
     ipv6LeakProtection: true,
     localNetworkSharing: false,
+    lanBypass: true,
     logRetentionHours: 168
   });
 
@@ -100,19 +102,19 @@ function App() {
     else document.documentElement.classList.remove('dark');
   }, [isDark]);
 
-  const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info') => {
-    setLogs(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), timestamp: new Date().toLocaleTimeString('fr-FR'), timestampRaw: Date.now(), event, type }].slice(-500));
+  const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info', ip?: string) => {
+    setLogs(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), timestamp: new Date().toLocaleTimeString('fr-FR'), timestampRaw: Date.now(), event, type, ip }].slice(-500));
   }, []);
 
   const connectVPN = async () => {
     setIsDisconnecting(false);
-    addLog(`Démarrage du tunnel Renumerate (${appSettings.protocol})...`, 'info');
+    addLog(`Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()})...`, 'info', currentIdentity.ip);
     if (mode === ConnectionMode.ONION_VORTEX) {
-        addLog(`Initialisation du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info');
+        addLog(`Initialisation du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`, 'info', currentIdentity.ip);
     }
     setTimeout(async () => {
       setIsConnected(true);
-      addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success');
+      addLog(`Réseau VPN rejoint via protocole sécurisé`, 'success', currentIdentity.ip);
       
       const newSession: ConnectionSession = {
         id: Math.random().toString(36).substr(2, 9),
@@ -126,7 +128,6 @@ function App() {
 
       setConnectionHistory(prev => [newSession, ...prev]);
       
-      // Persist session to DB
       if (user?.id) {
         dbService.logSession(user.id, newSession).catch(console.error);
       }
@@ -138,7 +139,7 @@ function App() {
 
   const disconnectVPN = () => {
     setIsDisconnecting(true);
-    addLog('Fermeture sécurisée du tunnel...', 'warning');
+    addLog('Fermeture sécurisée du tunnel...', 'warning', currentIdentity.ip);
     setTimeout(() => {
       setConnectionHistory(prev => {
         if (prev.length === 0) return prev;
@@ -151,7 +152,7 @@ function App() {
       setIsConnected(false);
       setIsDisconnecting(false);
       setSecurityReport(null);
-      addLog('Session déconnectée', 'info');
+      addLog('Session déconnectée', 'info', currentIdentity.ip);
     }, 800);
   };
 
@@ -163,7 +164,6 @@ function App() {
     return new Promise((resolve) => {
       setTimeout(async () => {
         setUserPlan(plan);
-        // Persist plan change
         if (user?.id) {
            await supabase.from('profiles').update({ plan_tier: plan }).eq('id', user.id);
         }
@@ -180,6 +180,9 @@ function App() {
     }
     if (key === 'ipv6LeakProtection') {
       addLog(`Protection IPv6 ${value ? 'activée' : 'désactivée'}`, value ? 'success' : 'warning');
+    }
+    if (key === 'protocol') {
+      addLog(`Protocole changé pour ${String(value).toUpperCase()}`, 'info');
     }
   };
 
@@ -284,7 +287,6 @@ function App() {
         </div>
       </main>
 
-      {/* Identity AI Assistant Component */}
       <IdentityAssistant 
         mode={mode} 
         isConnected={isConnected} 
