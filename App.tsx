@@ -136,7 +136,7 @@ function App() {
 
   const handleGlobalScramble = useCallback(() => {
     setIsMasking(true);
-    addLog('Initialisation du re-numérotage global...', 'info');
+    addLog(`Morphing neuronal (Niveau: ${appSettings.obfuscationLevel.toUpperCase()})...`, 'info');
     setTimeout(() => {
       const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
       const newMac = generateRandomMac(appSettings.macScramblingMode, appSettings.macFormat);
@@ -144,7 +144,7 @@ function App() {
       setIsMasking(false);
       addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
     }, 1500);
-  }, [appSettings.macScramblingMode, appSettings.macFormat, addLog]);
+  }, [appSettings.macScramblingMode, appSettings.macFormat, appSettings.obfuscationLevel, addLog]);
 
   const handleScrambleUA = useCallback(() => {
     const newUA = REALISTIC_USER_AGENTS[Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)];
@@ -293,6 +293,9 @@ function App() {
     if (key === 'vortexCircuitLength') {
       addLog(`Longueur du circuit Vortex : ${value} sauts`, 'info');
     }
+    if (key === 'obfuscationLevel') {
+      addLog(`Niveau d'obfuscation : ${String(value).toUpperCase()}`, 'info');
+    }
   };
 
   const handleScrambleMac = () => {
@@ -384,6 +387,8 @@ function App() {
                   }}
                   ipv6LeakProtection={appSettings.ipv6LeakProtection}
                   onIpv6Toggle={(enabled) => updateAppSettings('ipv6LeakProtection', enabled)}
+                  obfuscationLevel={appSettings.obfuscationLevel}
+                  onObfuscationLevelChange={(lvl) => updateAppSettings('obfuscationLevel', lvl)}
                 />
             </div>
             <div className="lg:col-span-4 space-y-8">
