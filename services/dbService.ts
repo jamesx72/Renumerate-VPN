@@ -68,6 +68,9 @@ export const dbService = {
         yield_optimization_ia: settings.yieldOptimizationIA,
         contribution_type: settings.contributionType,
         log_retention_hours: settings.logRetentionHours,
+        socks5_enabled: settings.socks5Enabled,
+        socks5_host: settings.socks5Host,
+        socks5_port: settings.socks5Port,
         updated_at: new Date().toISOString()
       });
 

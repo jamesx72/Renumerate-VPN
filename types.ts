@@ -72,6 +72,10 @@ export interface AppSettings {
   localNetworkSharing: boolean;
   lanBypass: boolean;
   logRetentionHours: number;
+  // SOCKS5 Proxy Config
+  socks5Enabled: boolean;
+  socks5Host: string;
+  socks5Port: number;
 }
 
 export interface DeviceNode {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Shield, Power, Moon, Sun, SlidersVertical, Crown, Ghost, Loader2, LogOut, ShieldCheck, History, Activity, Wifi, Lock, Terminal, X } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
@@ -74,7 +75,10 @@ function App() {
     ipv6LeakProtection: true,
     localNetworkSharing: false,
     lanBypass: true,
-    logRetentionHours: 168
+    logRetentionHours: 168,
+    socks5Enabled: false,
+    socks5Host: '127.0.0.1',
+    socks5Port: 1080
   });
 
   const addLog = useCallback((event: string, type: 'info' | 'warning' | 'success' | 'error' = 'info', ip?: string) => {
@@ -279,6 +283,9 @@ function App() {
     }
     if (key === 'protocol') {
       addLog(`Protocole changé pour ${String(value).toUpperCase()}`, 'info');
+    }
+    if (key === 'socks5Enabled') {
+      addLog(`Proxy SOCKS5 ${value ? 'activé' : 'désactivé'}`, value ? 'success' : 'warning');
     }
   };
 

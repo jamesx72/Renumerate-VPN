@@ -70,7 +70,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
       <div className="relative w-full max-w-6xl h-[820px] bg-slate-900/80 border-2 border-brand-500/30 rounded-[3.5rem] shadow-[0_0_100px_rgba(0,0,0,0.8)] flex overflow-hidden animate-in zoom-in-95 duration-300">
         
         {/* Navigation Sidebar */}
-        <div className="w-80 bg-black/40 border-r border-white/5 flex flex-col relative overflow-hidden">
+        <div className="w-80 bg-black/40 border-r border-white/5 flex flex-col relative overflow-hidden text-white">
             <div className="absolute inset-0 bg-scanline opacity-[0.03] pointer-events-none"></div>
             <div className="p-10 pb-6">
               <div className="flex items-center gap-4 mb-6">
@@ -257,7 +257,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
 
             {activeTab === 'general' && (
                 <div className="space-y-12 animate-in slide-in-from-right-8 duration-500">
-                    <div className="space-y-2">
+                    <div className="space-y-2 text-white">
                         <h3 className="text-4xl font-black text-white uppercase tracking-tighter">Transport_Layer</h3>
                         <p className="text-sm text-slate-400 font-medium max-w-xl">Optimisez les protocoles d'échange et la fragmentation des paquets pour un tunnel ultra-performant.</p>
                     </div>
@@ -318,6 +318,47 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                         <div className="absolute right-10 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-700 uppercase tracking-widest">Sec</div>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* SOCKS5 Proxy Section */}
+                            <div className="pt-10 border-t border-white/5 space-y-8">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-500 flex items-center gap-4">
+                                        <Shield className="w-5 h-5 text-emerald-500" /> SOCKS5_Proxy_Tunnel
+                                    </label>
+                                    <button onClick={() => updateSettings('socks5Enabled', !settings.socks5Enabled)} className="active:scale-90 transition-transform">
+                                        {settings.socks5Enabled ? <ToggleRight className="w-16 h-16 text-emerald-500" /> : <ToggleLeft className="w-16 h-16 text-slate-700" />}
+                                    </button>
+                                </div>
+                                
+                                {settings.socks5Enabled && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in slide-in-from-top-4 duration-300">
+                                        <div className="space-y-4">
+                                            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-4">Proxy_Host</span>
+                                            <div className="relative">
+                                                <input 
+                                                    type="text" 
+                                                    value={settings.socks5Host} 
+                                                    onChange={(e) => updateSettings('socks5Host', e.target.value)}
+                                                    className="w-full bg-black/60 border border-white/5 rounded-2xl py-4 px-6 text-sm font-mono font-bold text-emerald-400 outline-none focus:border-emerald-500 transition-all"
+                                                    placeholder="127.0.0.1"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-4">Proxy_Port</span>
+                                            <div className="relative">
+                                                <input 
+                                                    type="number" 
+                                                    value={settings.socks5Port} 
+                                                    onChange={(e) => updateSettings('socks5Port', parseInt(e.target.value))}
+                                                    className="w-full bg-black/60 border border-white/5 rounded-2xl py-4 px-6 text-sm font-mono font-bold text-emerald-400 outline-none focus:border-emerald-500 transition-all"
+                                                    placeholder="1080"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -424,7 +465,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
             )}
 
             {activeTab === 'security' && (
-                <div className="space-y-12 animate-in slide-in-from-right-8 duration-500">
+                <div className="space-y-12 animate-in slide-in-from-right-8 duration-500 text-white">
                     <div className="space-y-2">
                         <h3 className="text-4xl font-black text-white uppercase tracking-tighter">Security_Sentinel</h3>
                         <p className="text-sm text-slate-400 font-medium">Gérez vos boucliers DNS, l'interception de traqueurs et les protocoles d'urgence.</p>
