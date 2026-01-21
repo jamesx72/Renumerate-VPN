@@ -522,6 +522,19 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                     {settings.ipv6LeakProtection ? <ToggleRight className="w-16 h-16 text-cyan-500" /> : <ToggleLeft className="w-16 h-16 text-slate-700" />}
                                 </button>
                             </div>
+
+                            <div className="flex items-center justify-between p-8 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt hover:border-brand-500/30 transition-all">
+                                <div className="flex items-center gap-6">
+                                    <div className="p-4 bg-brand-500/10 rounded-2xl text-brand-500 shadow-lg shadow-brand-500/10"><Zap className="w-7 h-7" /></div>
+                                    <div>
+                                        <h4 className="font-black text-white uppercase tracking-widest text-sm">Smart_DNS_Cache</h4>
+                                        <p className="text-[10px] text-slate-600 mt-1 uppercase font-black italic leading-relaxed">Accélère la navigation en mémorisant les routes sécurisées sur le nœud de sortie tout en prévenant les fuites DNS répétitives.</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => updateSettings('dnsCache', !settings.dnsCache)} className="active:scale-90 transition-transform">
+                                    {settings.dnsCache ? <ToggleRight className="w-16 h-16 text-brand-500" /> : <ToggleLeft className="w-16 h-16 text-slate-700" />}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

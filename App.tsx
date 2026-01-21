@@ -51,6 +51,7 @@ function App() {
     customDnsServer: '',
     killSwitch: true,
     dnsLeakProtection: true,
+    dnsCache: true,
     autoReconnect: true,
     reconnectDelay: 3,
     splitTunneling: false,
@@ -347,7 +348,7 @@ function App() {
             <button onClick={() => setShowLogs(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:scale-110" title="Journal système (Ctrl+L)"><Terminal className="w-5 h-5" /></button>
             <button onClick={() => setShowSettings(true)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover:rotate-90 duration-500" title="Paramètres"><SlidersVertical className="w-5 h-5" /></button>
             <button onClick={() => setIsDark(!isDark)} className="p-3 rounded-2xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">{isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}</button>
-            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-3 rounded-2xl text-slate-500 hover:bg-red-500/10 hover:text-red-500 transition-all"><LogOut className="w-5 h-5" /></button>
+            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-3 rounded-2xl text-slate-500 hover:bg-red-50/10 hover:text-red-500 transition-all"><LogOut className="w-5 h-5" /></button>
           </div>
         </div>
       </header>

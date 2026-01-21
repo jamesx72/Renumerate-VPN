@@ -43,6 +43,7 @@ export interface AppSettings {
   customDnsServer: string;
   killSwitch: boolean;
   dnsLeakProtection: boolean;
+  dnsCache: boolean;
   autoReconnect: boolean;
   reconnectDelay: number;
   splitTunneling: boolean;
