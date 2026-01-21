@@ -4,7 +4,8 @@ import {
   Activity, Shield, Ghost, Layers, Globe, Server, MapPin, Search, 
   Orbit, Terminal, Lock, Globe2, Loader2, ArrowRight, ShieldCheck, 
   Tv, Radio, Info, Cpu, Database, Radar, Target, Box, 
-  ChevronDown, ExternalLink, ShieldAlert, Zap, Power, RefreshCw
+  ChevronDown, ExternalLink, ShieldAlert, Zap, Power, RefreshCw, CheckCircle2,
+  Share2, ShieldHalf, Key, Link2, Settings2, Sliders
 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { SecurityReport, PlanTier, ConnectionMode, DeviceNode, AppSettings } from '../types';
@@ -23,6 +24,7 @@ interface DashboardProps {
   currentIp: string;
   settings: AppSettings;
   addLog: (event: string, type: 'info' | 'warning' | 'success' | 'error') => void;
+  updateSettings?: (key: keyof AppSettings, value: any) => void;
 }
 
 const VERIFIED_ONION_SERVICES = [
@@ -57,7 +59,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onConnectNode,
   currentIp,
   settings,
-  addLog
+  addLog,
+  updateSettings
 }) => {
   const [countryFilter, setCountryFilter] = useState<string>('Tous');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -86,6 +89,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return matchesCountry && matchesSearch;
     });
   }, [nodes, countryFilter, searchQuery]);
+
+  const getNodeStatusBadge = (node: DeviceNode) => {
+    if (node.latency < 30 && node.signalStrength > 90) {
+      return { label: 'Optimal', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' };
+    }
+    if (node.tags.includes('exit') || node.tags.includes('stealth')) {
+      return { label: 'Bypass OK', color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' };
+    }
+    return { label: 'Stable', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
+  };
 
   const modes = [
     { id: ConnectionMode.STANDARD, icon: Shield, label: 'Standard' },
@@ -209,72 +222,131 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* NEW: Vortex Nodes Section */}
+      {/* Tor Access Hub Section (Vortex Optimized) */}
       {isOnionMode && (
-          <div className={`${theme.cardBase} p-8 rounded-[4rem] border ${theme.primaryBorder} shadow-2xl relative overflow-hidden group animate-in fade-in zoom-in-95 duration-500`}>
+          <div className={`${theme.cardBase} p-1 rounded-[4rem] border ${theme.primaryBorder} shadow-2xl relative overflow-hidden group animate-in fade-in zoom-in-95 duration-500`}>
               <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
               
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-10 relative z-10">
-                  <div className="space-y-1">
-                      <h3 className="text-2xl font-black uppercase tracking-tighter text-white flex items-center gap-4">
-                          <Orbit className="w-8 h-8 text-purple-500 animate-spin-slow" />
-                          Vortex_Nodes_Verified
-                      </h3>
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] pl-12">Service_Access_Layer • Encryption_Standard_v7</p>
+              <div className="grid grid-cols-1 xl:grid-cols-4 gap-0">
+                  {/* Sidebar Quick Config */}
+                  <div className="xl:col-span-1 p-8 bg-black/40 border-r border-white/5 space-y-8 relative overflow-hidden">
+                      <div className="absolute inset-0 cyber-grid opacity-[0.05]"></div>
+                      <div className="relative z-10">
+                          <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-3 mb-8">
+                              <Settings2 className="w-5 h-5 text-purple-500" />
+                              Circuit_Config
+                          </h3>
+                          
+                          <div className="space-y-6">
+                              <div className="space-y-3">
+                                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Bridge_Tunnel</label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                      {['obfs4', 'snowflake'].map(b => (
+                                          <button 
+                                              key={b}
+                                              onClick={() => updateSettings?.('vortexBridge', b)}
+                                              className={`py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${settings.vortexBridge === b ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-black/20 border-white/10 text-slate-600 hover:text-slate-400'}`}
+                                          >
+                                              {b}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+                              
+                              <div className="space-y-3">
+                                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Circuit_Length</label>
+                                  <div className="flex items-center justify-between bg-black/20 p-3 rounded-2xl border border-white/5">
+                                      <button onClick={() => updateSettings?.('vortexCircuitLength', Math.max(3, settings.vortexCircuitLength - 1))} className="p-1 hover:bg-white/5 rounded-lg text-slate-400"><Sliders className="w-4 h-4" /></button>
+                                      <span className="font-mono font-black text-purple-400">{settings.vortexCircuitLength} Hops</span>
+                                      <button onClick={() => updateSettings?.('vortexCircuitLength', Math.min(6, settings.vortexCircuitLength + 1))} className="p-1 hover:bg-white/5 rounded-lg text-slate-400 rotate-180"><Sliders className="w-4 h-4" /></button>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
                   </div>
 
-                  <form onSubmit={handleResolveOnion} className="relative">
-                      <Terminal className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-500" />
-                      <input 
-                        type="text" 
-                        placeholder="ENTRY_CUSTOM_ONION..."
-                        value={onionUrl}
-                        onChange={(e) => setOnionUrl(e.target.value)}
-                        className="pl-12 pr-10 py-4 bg-black/60 border border-purple-500/20 rounded-2xl text-[11px] font-mono font-black uppercase tracking-widest outline-none focus:border-purple-500 transition-all text-purple-400 min-w-[340px] shadow-inner"
-                      />
-                      <button 
-                        type="submit"
-                        disabled={isOnionResolving || !onionUrl}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-purple-600 text-white disabled:opacity-50 transition-all hover:bg-purple-500"
-                      >
-                        {isOnionResolving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                      </button>
-                  </form>
-              </div>
+                  {/* Main Content Hub */}
+                  <div className="xl:col-span-3 p-8 md:p-10 space-y-10 relative">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-4">
+                          <div className="space-y-1">
+                              <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-white flex items-center gap-4">
+                                  <Orbit className="w-8 h-8 text-purple-500 animate-spin-slow" />
+                                  Tor_Access_Hub
+                              </h3>
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] pl-12">Session_Status: {isConnected ? 'Uplink_Active' : 'Offline_Node'}</p>
+                          </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
-                  {/* Fixed: Added comments and ensured proper map of verified onion services */}
-                  {VERIFIED_ONION_SERVICES.map((svc) => (
-                      <button 
-                        key={svc.url}
-                        onClick={() => handleResolveOnion(undefined, svc.url)}
-                        disabled={!isConnected || isOnionResolving}
-                        className="p-6 rounded-[3rem] border border-white/5 bg-black/40 hover:border-purple-500/60 hover:bg-purple-500/5 transition-all duration-500 text-left group/svc relative overflow-hidden bracket-corner"
-                      >
-                          <div className="absolute top-0 right-0 p-4 opacity-[0.02] group-hover/svc:opacity-20 transition-opacity">
-                              <Database className="w-24 h-24" />
+                          <form onSubmit={handleResolveOnion} className="relative group/form">
+                              <Link2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-500 group-focus-within/form:scale-110 transition-transform" />
+                              <input 
+                                type="text" 
+                                placeholder="ENTER_.ONION_ADDRESS..."
+                                value={onionUrl}
+                                onChange={(e) => setOnionUrl(e.target.value)}
+                                className="pl-12 pr-14 py-5 bg-black/60 border border-purple-500/20 rounded-2xl text-xs md:text-sm font-mono font-black uppercase tracking-widest outline-none focus:border-purple-500 transition-all text-purple-400 min-w-[320px] md:min-w-[420px] shadow-inner focus:shadow-[0_0_20px_rgba(168,85,247,0.1)]"
+                              />
+                              <button 
+                                type="submit"
+                                disabled={isOnionResolving || !onionUrl.toLowerCase().endsWith('.onion')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-30 disabled:grayscale transition-all shadow-xl active:scale-95 group/btn overflow-hidden"
+                              >
+                                {isOnionResolving ? <Loader2 className="w-5 h-5 animate-spin" /> : <div className="flex items-center gap-2"><span className="text-[9px] font-black uppercase tracking-widest hidden sm:block">Link</span><ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" /></div>}
+                              </button>
+                          </form>
+                      </div>
+
+                      {/* Path Visualization */}
+                      <div className="bg-black/20 p-8 rounded-[2.5rem] border border-white/5 relative group overflow-hidden">
+                          <div className="absolute inset-0 bg-scanline opacity-[0.03] pointer-events-none"></div>
+                          <div className="flex items-center justify-around relative z-10">
+                              {[...Array(settings.vortexCircuitLength + 1)].map((_, i) => (
+                                  <React.Fragment key={i}>
+                                      <div className="flex flex-col items-center gap-3 group/node">
+                                          <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center transition-all duration-500 ${i === 0 ? 'border-emerald-500 bg-emerald-500/10' : i === settings.vortexCircuitLength ? 'border-purple-500 bg-purple-500/10 animate-pulse' : 'border-slate-700 bg-black/40'} group-hover/node:scale-110`}>
+                                              {i === 0 ? <Key className="w-5 h-5 text-emerald-500" /> : i === settings.vortexCircuitLength ? <Globe2 className="w-5 h-5 text-purple-500" /> : <ShieldHalf className="w-5 h-5 text-slate-600" />}
+                                          </div>
+                                          <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">{i === 0 ? 'ENTRY' : i === settings.vortexCircuitLength ? 'EXIT' : `RELAY_0${i}`}</span>
+                                      </div>
+                                      {i < settings.vortexCircuitLength && (
+                                          <div className="flex-1 max-w-[60px] h-0.5 border-t border-dashed border-slate-800 relative">
+                                              <div className="absolute top-1/2 left-0 w-2 h-2 bg-purple-500/30 rounded-full -translate-y-1/2 animate-[shimmer_1.5s_infinite] shadow-[0_0_10px_rgba(168,85,247,0.5)]"></div>
+                                          </div>
+                                      )}
+                                  </React.Fragment>
+                              ))}
                           </div>
-                          <div className="flex items-center justify-between mb-4 relative z-10">
-                              <div className="p-2.5 rounded-2xl bg-purple-500/10 text-purple-500 border border-purple-500/20 group-hover/svc:scale-110 transition-transform">
-                                  <Box className="w-5 h-5" />
-                              </div>
-                              <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">{svc.security}</span>
-                          </div>
-                          
-                          <div className="space-y-1 relative z-10">
-                              <h4 className="text-base font-black text-white uppercase tracking-tight">{svc.name}</h4>
-                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{svc.category}</p>
-                          </div>
-                          
-                          <div className="mt-6 font-mono text-[9px] text-purple-400/60 truncate bg-black/50 p-3 rounded-xl border border-white/5 group-hover/svc:text-purple-400 transition-colors">
-                              {svc.url}
-                          </div>
-                          
-                          <div className="absolute bottom-4 right-6 opacity-0 group-hover/svc:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                              <Target className="w-4 h-4 text-purple-500" />
-                          </div>
-                      </button>
-                  ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          {VERIFIED_ONION_SERVICES.map((svc) => (
+                              <button 
+                                key={svc.url}
+                                onClick={() => handleResolveOnion(undefined, svc.url)}
+                                disabled={!isConnected || isOnionResolving}
+                                className="p-6 rounded-[2.5rem] border border-white/5 bg-black/40 hover:border-purple-500/60 hover:bg-purple-500/5 transition-all duration-500 text-left group/svc relative overflow-hidden bracket-corner"
+                              >
+                                  <div className="absolute top-0 right-0 p-4 opacity-[0.02] group-hover/svc:opacity-20 transition-opacity">
+                                      <Database className="w-24 h-24" />
+                                  </div>
+                                  <div className="flex items-center justify-between mb-4 relative z-10">
+                                      <div className="p-2.5 rounded-2xl bg-purple-500/10 text-purple-500 border border-purple-500/20 group-hover/svc:scale-110 transition-transform">
+                                          <Box className="w-5 h-5" />
+                                      </div>
+                                      <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">{svc.security}</span>
+                                  </div>
+                                  
+                                  <div className="space-y-1 relative z-10">
+                                      <h4 className="text-base font-black text-white uppercase tracking-tight group-hover/svc:text-purple-300 transition-colors">{svc.name}</h4>
+                                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{svc.category}</p>
+                                  </div>
+                                  
+                                  <div className="mt-6 font-mono text-[9px] text-purple-400/60 truncate bg-black/50 p-3 rounded-xl border border-white/5 group-hover/svc:text-purple-400 transition-colors">
+                                      {svc.url}
+                                  </div>
+                              </button>
+                          ))}
+                      </div>
+                  </div>
               </div>
           </div>
       )}
@@ -321,7 +393,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     {isDropdownOpen && (
                       <div className="absolute top-full mt-3 right-0 w-full min-w-[260px] bg-slate-900/95 border border-white/10 rounded-3xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 backdrop-blur-3xl">
                         <div className="p-3 max-h-[360px] overflow-y-auto custom-scrollbar">
-                           {/* Fixed: Typecasted country array as string[] to resolve "Type 'unknown' cannot be used as an index type" */}
                            {(['Tous', ...Array.from(new Set(nodes.map(n => n.country))).sort()] as string[]).map(country => (
                               <button
                                 key={country}
@@ -344,6 +415,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10 max-h-[500px] overflow-y-auto p-2 custom-scrollbar">
               {filteredNodes.map((node) => {
                   const isActive = node.ip === currentIp && isConnected;
+                  const statusInfo = getNodeStatusBadge(node);
                   return (
                   <div 
                       key={node.id} 
@@ -353,35 +425,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       : 'bg-black/40 border-white/5 hover:border-cyan-500/40'
                       }`}
                   >
-                      <div className="flex items-start justify-between mb-8">
+                      <div className="flex items-start justify-between mb-8 relative z-10">
                         <div className="flex items-center gap-4">
-                            <div className="text-4xl">{countriesWithFlags[node.country as string] || '📍'}</div>
-                            <div>
-                                <h5 className="text-sm font-black text-white uppercase tracking-tight">{node.name}</h5>
-                                <div className="text-[10px] font-mono font-bold text-slate-500 mt-1">{node.ip}</div>
+                            <div className="text-4xl filter drop-shadow-lg">{countriesWithFlags[node.country as string] || '📍'}</div>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <h5 className="text-sm font-black text-white uppercase tracking-tight truncate">{node.name}</h5>
+                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border shrink-0 ${statusInfo.color}`}>
+                                        {statusInfo.label}
+                                    </span>
+                                </div>
+                                <div className="text-[10px] font-mono font-bold text-slate-500 flex items-center gap-1.5">
+                                    <Server className="w-2.5 h-2.5" />
+                                    {node.ip}
+                                </div>
                             </div>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 mb-8">
-                          <div className="bg-black/40 rounded-2xl p-3 border border-white/5">
-                              <span className="text-[8px] font-black text-slate-600 uppercase block mb-1">Latency</span>
-                              <span className="text-xs font-mono font-black text-white">{node.latency}ms</span>
+                      <div className="grid grid-cols-2 gap-3 mb-8 relative z-10">
+                          <div className="bg-black/40 rounded-2xl p-3 border border-white/5 group-hover/node:border-cyan-500/20 transition-colors">
+                              <span className="text-[8px] font-black text-slate-600 uppercase block mb-1 tracking-widest">Latency</span>
+                              <div className="flex items-center gap-2">
+                                  <Radio className={`w-3 h-3 ${node.latency < 50 ? 'text-emerald-500' : 'text-amber-500'}`} />
+                                  <span className="text-xs font-mono font-black text-white">{node.latency}ms</span>
+                              </div>
                           </div>
-                          <div className="bg-black/40 rounded-2xl p-3 border border-white/5">
-                              <span className="text-[8px] font-black text-slate-600 uppercase block mb-1">Security</span>
-                              <span className="text-xs font-mono font-black text-emerald-400">SECURE</span>
+                          <div className="bg-black/40 rounded-2xl p-3 border border-white/5 group-hover/node:border-emerald-500/20 transition-colors">
+                              <span className="text-[8px] font-black text-slate-600 uppercase block mb-1 tracking-widest">Security</span>
+                              <div className="flex items-center gap-2">
+                                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                  <span className="text-xs font-mono font-black text-emerald-400">VERIFIED</span>
+                              </div>
                           </div>
                       </div>
 
                       <button
                         onClick={() => onConnectNode(node.id)}
-                        className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${
+                        className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 relative z-10 ${
                             isActive 
                             ? 'bg-white text-slate-900' 
                             : isConnected 
                                 ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                                : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                                : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg'
                         }`}
                         disabled={isConnected && !isActive}
                       >

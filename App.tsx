@@ -112,7 +112,7 @@ function App() {
       const report = await analyzeSecurity(mode, currentIdentity.country, currentIdentity.ip);
       setSecurityReport(report);
     }, 1200);
-  }, [appSettings.protocol, mode, currentIdentity, addLog, isDisconnecting]);
+  }, [appSettings.protocol, mode, currentIdentity, addLog, isDisconnecting, appSettings.vortexCircuitLength]);
 
   const disconnectVPN = useCallback(() => {
     if (isDisconnecting) return;
@@ -287,6 +287,12 @@ function App() {
     if (key === 'socks5Enabled') {
       addLog(`Proxy SOCKS5 ${value ? 'activé' : 'désactivé'}`, value ? 'success' : 'warning');
     }
+    if (key === 'vortexBridge') {
+      addLog(`Bridge Vortex reconfiguré : ${String(value).toUpperCase()}`, 'info');
+    }
+    if (key === 'vortexCircuitLength') {
+      addLog(`Longueur du circuit Vortex : ${value} sauts`, 'info');
+    }
   };
 
   const handleScrambleMac = () => {
@@ -360,6 +366,7 @@ function App() {
                     currentIp={currentIdentity.ip}
                     settings={appSettings}
                     addLog={addLog}
+                    updateSettings={updateAppSettings}
                 />
                 <IdentityMatrix 
                   identity={currentIdentity} 
