@@ -157,7 +157,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                             <Wand2 className="w-12 h-12 text-brand-500 animate-pulse" />
                         </div>
                         <h3 className="text-4xl font-black text-white uppercase tracking-tighter">Configuration_Wizard</h3>
-                        <p className="text-sm text-slate-400 font-medium">Optimisons votre expérience Renumerate en {wizardStep}/3 étapes.</p>
+                        <h4 className="text-sm text-slate-400 font-medium">Optimisons votre expérience Renumerate en {wizardStep}/3 étapes.</h4>
                     </div>
 
                     <div className="bg-slate-900/60 p-12 rounded-[4rem] border border-white/10 relative overflow-hidden">
@@ -497,6 +497,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                         </div>
 
                         <div className="pt-10 border-t border-white/5 space-y-6">
+                            {/* Emergency Kill Switch */}
                             <div className="flex items-center justify-between p-8 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt hover:border-red-500/30 transition-all">
                                 <div className="flex items-center gap-6">
                                     <div className="p-4 bg-red-500/10 rounded-2xl text-red-500 shadow-lg shadow-red-500/10"><ShieldAlert className="w-7 h-7" /></div>
@@ -510,6 +511,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                 </button>
                             </div>
 
+                            {/* IPV6 Tunnel Guard */}
                             <div className="flex items-center justify-between p-8 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt hover:border-cyan-500/30 transition-all">
                                 <div className="flex items-center gap-6">
                                     <div className="p-4 bg-cyan-500/10 rounded-2xl text-cyan-500 shadow-lg shadow-cyan-500/10"><Lock className="w-7 h-7" /></div>
@@ -523,17 +525,39 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                 </button>
                             </div>
 
-                            <div className="flex items-center justify-between p-8 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt hover:border-brand-500/30 transition-all">
-                                <div className="flex items-center gap-6">
-                                    <div className="p-4 bg-brand-500/10 rounded-2xl text-brand-500 shadow-lg shadow-brand-500/10"><Zap className="w-7 h-7" /></div>
-                                    <div>
-                                        <h4 className="font-black text-white uppercase tracking-widest text-sm">Smart_DNS_Cache</h4>
-                                        <p className="text-[10px] text-slate-600 mt-1 uppercase font-black italic leading-relaxed">Accélère la navigation en mémorisant les routes sécurisées sur le nœud de sortie tout en prévenant les fuites DNS répétitives.</p>
+                            {/* DNS Cache Optimizer */}
+                            <div className="flex items-center justify-between p-8 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt hover:border-brand-500/40 transition-all relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                    <Zap className="w-12 h-12 text-brand-500" />
+                                </div>
+                                <div className="flex items-center gap-6 relative z-10">
+                                    <div className="p-4 bg-brand-500/10 rounded-2xl text-brand-500 shadow-lg shadow-brand-500/20 group-hover:scale-110 transition-transform">
+                                        <Zap className="w-7 h-7" />
+                                    </div>
+                                    <div className="max-w-md">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <h4 className="font-black text-white uppercase tracking-widest text-sm">Smart_DNS_Cache</h4>
+                                            <span className="px-2 py-0.5 bg-brand-500/10 text-brand-400 text-[8px] font-black rounded border border-brand-500/30 uppercase tracking-widest">Speed_Boost</span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-600 uppercase font-black italic leading-relaxed">
+                                            Mémorise les routes DNS sécurisées localement. Accélère le chargement des pages tout en réduisant le nombre de requêtes sortantes vers les serveurs DNS distants, limitant ainsi les risques d'analyse de trafic (Fingerprinting).
+                                        </p>
                                     </div>
                                 </div>
-                                <button onClick={() => updateSettings('dnsCache', !settings.dnsCache)} className="active:scale-90 transition-transform">
+                                <button onClick={() => updateSettings('dnsCache', !settings.dnsCache)} className="active:scale-90 transition-transform relative z-10 ml-6">
                                     {settings.dnsCache ? <ToggleRight className="w-16 h-16 text-brand-500" /> : <ToggleLeft className="w-16 h-16 text-slate-700" />}
                                 </button>
+                            </div>
+
+                            {/* Info Box */}
+                            <div className="p-6 bg-slate-800/40 rounded-[2rem] border border-brand-500/10 flex items-start gap-4">
+                                <Info className="w-5 h-5 text-brand-500 shrink-0 mt-0.5" />
+                                <div className="space-y-1">
+                                    <h5 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Conseil Sentinel</h5>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed italic">
+                                        Le cache DNS est recommandé pour une navigation fluide. Cependant, si vous changez fréquemment de région de sortie (Double Hop), videz-le pour éviter les conflits de résolution géo-localisée.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>

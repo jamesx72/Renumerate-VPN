@@ -5,10 +5,10 @@ import {
   Orbit, Terminal, Lock, Globe2, Loader2, ArrowRight, ShieldCheck, 
   Tv, Radio, Info, Cpu, Database, Radar, Target, Box, 
   ChevronDown, ExternalLink, ShieldAlert, Zap, Power, RefreshCw, CheckCircle2,
-  Share2, ShieldHalf, Key, Link2, Settings2, Sliders
+  Share2, ShieldHalf, Key, Link2, Settings2, Sliders, History, Clock, Calendar
 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
-import { SecurityReport, PlanTier, ConnectionMode, DeviceNode, AppSettings } from '../types';
+import { SecurityReport, PlanTier, ConnectionMode, DeviceNode, AppSettings, ConnectionSession } from '../types';
 
 interface DashboardProps {
   isDark: boolean;
@@ -25,6 +25,7 @@ interface DashboardProps {
   settings: AppSettings;
   addLog: (event: string, type: 'info' | 'warning' | 'success' | 'error') => void;
   updateSettings?: (key: keyof AppSettings, value: any) => void;
+  history?: ConnectionSession[];
 }
 
 const VERIFIED_ONION_SERVICES = [
@@ -60,7 +61,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   currentIp,
   settings,
   addLog,
-  updateSettings
+  updateSettings,
+  history = []
 }) => {
   const [countryFilter, setCountryFilter] = useState<string>('Tous');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -69,15 +71,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isOnionResolving, setIsOnionResolving] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState('us');
   const [isDnsTesting, setIsDnsTesting] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isOnionMode = mode === ConnectionMode.ONION_VORTEX;
   const isSmartDNS = mode === ConnectionMode.SMART_DNS;
 
   const theme = {
-    primary: isOnionMode ? 'text-purple-400' : isSmartDNS ? 'text-amber-400' : 'text-cyan-400',
+    primary: isOnionMode ? 'text-purple-400' : isSmartDNS ? 'text-amber-400' : 'text-brand-400',
     primaryBg: isOnionMode ? 'bg-purple-600' : isSmartDNS ? 'bg-amber-500' : 'bg-cyan-600',
-    primaryBorder: isOnionMode ? 'border-purple-500/30' : isSmartDNS ? 'border-amber-500/30' : 'border-cyan-500/30',
+    primaryBorder: isOnionMode ? 'border-purple-500/30' : isSmartDNS ? 'border-amber-500/30' : 'border-brand-500/20',
     cardBase: 'glass-card dark:bg-slate-900/40 backdrop-blur-3xl'
   };
 
@@ -142,6 +145,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }, 2500);
   };
 
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-700">
       
@@ -184,34 +191,43 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Monitoring Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className={`${theme.cardBase} lg:col-span-2 p-8 rounded-[3.5rem] border ${theme.primaryBorder} shadow-2xl relative overflow-hidden group`}>
-           <div className="absolute top-0 right-0 p-6 flex items-center gap-3">
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Protocol_Uplink:</span>
-              <span className={`text-[10px] font-black px-4 py-1.5 rounded-xl border ${
-                isOnionMode ? 'text-purple-400 bg-purple-500/10 border-purple-500/20' : 
-                isSmartDNS ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 
-                'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'
-              }`}>
-                {isOnionMode ? 'VORTEX_SEC' : isSmartDNS ? 'DNS_BYPASS' : protocol.toUpperCase()}
-              </span>
+           <div className="absolute top-0 right-0 p-6 flex flex-col items-end gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Protocol_Uplink:</span>
+                <span className={`text-[10px] font-black px-4 py-1.5 rounded-xl border ${
+                  isOnionMode ? 'text-purple-400 bg-purple-500/10 border-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 
+                  isSmartDNS ? 'text-amber-400 bg-amber-500/10 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 
+                  'text-cyan-400 bg-cyan-500/10 border-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                }`}>
+                  {isOnionMode ? 'VORTEX_SEC' : isSmartDNS ? 'DNS_BYPASS' : protocol.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex gap-1.5">
+                <div className={`w-3 h-1 rounded-sm ${isConnected ? 'bg-cyan-500 animate-pulse' : 'bg-slate-800'}`}></div>
+                <div className={`w-3 h-1 rounded-sm ${isConnected ? 'bg-purple-500 animate-pulse delay-75' : 'bg-slate-800'}`}></div>
+                <div className={`w-3 h-1 rounded-sm ${isConnected ? 'bg-brand-400 animate-pulse delay-150' : 'bg-slate-800'}`}></div>
+              </div>
            </div>
            <div className="flex items-center gap-3 mb-8">
               <div className={`p-2.5 rounded-xl bg-black/40 border border-white/5`}>
-                <Activity className={`w-5 h-5 ${theme.primary}`} />
+                <Activity className={`w-5 h-5 ${theme.primary} ${isConnected ? 'animate-pulse' : ''}`} />
               </div>
               <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">Transmission_Monitor</h3>
            </div>
-           <div className="bg-black/20 p-6 rounded-[2.5rem] border border-white/5">
+           <div className="bg-black/20 p-6 rounded-[2.5rem] border border-white/5 relative overflow-hidden group/chart">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-px bg-brand-500/20 animate-cyber-scan pointer-events-none opacity-0 group-hover/chart:opacity-100 transition-opacity"></div>
               <TrafficMonitor isDark={isDark} />
            </div>
         </div>
         
-        <div className={`${theme.cardBase} p-8 rounded-[3.5rem] border ${theme.primaryBorder} shadow-2xl flex flex-col justify-center items-center group relative`}>
+        <div className={`${theme.cardBase} p-8 rounded-[3.5rem] border ${theme.primaryBorder} shadow-2xl flex flex-col justify-center items-center group relative overflow-hidden`}>
            <div className="absolute inset-0 pointer-events-none opacity-5 group-hover:opacity-10 transition-opacity">
               <Radar className="w-full h-full p-10 animate-spin-slow" />
            </div>
+           <div className="absolute -top-10 -left-10 w-40 h-40 bg-brand-500/5 blur-[60px]"></div>
            <div className="flex items-center gap-3 mb-10 self-start relative z-10">
               <div className={`p-2.5 rounded-xl bg-black/40 border border-white/5`}>
-                <Zap className={`w-5 h-5 ${theme.primary}`} />
+                <Zap className={`w-5 h-5 ${theme.primary} ${isConnected ? 'animate-bounce' : ''}`} />
               </div>
               <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">Security_Sync</h3>
            </div>
@@ -353,130 +369,191 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Node Acquisition System */}
       {!isOnionMode && !isSmartDNS && (
-          <div className={`${theme.cardBase} p-8 rounded-[4rem] border ${theme.primaryBorder} shadow-2xl relative overflow-hidden group`}>
-            <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-12 relative z-10">
-              <div className="space-y-1">
-                <h3 className="text-xl font-black uppercase tracking-tighter text-slate-900 dark:text-white flex items-center gap-4">
-                  <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></div>
-                  Node_Acquisition_Matrix
-                </h3>
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] pl-7">Network_Nodes: {nodes.length} | Latency_Optimized: True</p>
-              </div>
-              
-              <div className="flex flex-wrap items-center gap-4">
-                 <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                    <input 
-                      type="text" 
-                      placeholder="SCAN_SIGNAL..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-12 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-[11px] font-mono font-black uppercase tracking-widest outline-none focus:border-cyan-500 transition-all dark:text-cyan-400 min-w-[260px]"
-                    />
-                 </div>
-                 
-                 <div className="relative" ref={dropdownRef}>
-                    <button 
-                      onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                      className="flex items-center justify-between gap-4 pl-6 pr-5 py-4 bg-black/40 border border-white/5 rounded-2xl transition-all min-w-[220px]"
-                    >
-                      <div className="flex items-center gap-3">
-                        <MapPin className="w-4 h-4 text-cyan-500" />
-                        <span className="text-[11px] font-black uppercase tracking-widest dark:text-slate-300">
-                          {countryFilter === 'Tous' ? 'Global_Uplink' : countryFilter}
-                        </span>
-                      </div>
-                      <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {isDropdownOpen && (
-                      <div className="absolute top-full mt-3 right-0 w-full min-w-[260px] bg-slate-900/95 border border-white/10 rounded-3xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 backdrop-blur-3xl">
-                        <div className="p-3 max-h-[360px] overflow-y-auto custom-scrollbar">
-                           {(['Tous', ...Array.from(new Set(nodes.map(n => n.country))).sort()] as string[]).map(country => (
-                              <button
-                                key={country}
-                                onClick={() => { setCountryFilter(country); setIsDropdownOpen(false); }}
-                                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all mb-1 ${
-                                  countryFilter === country ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:bg-white/5'
-                                }`}
-                              >
-                                <span className="text-xl">{countriesWithFlags[country] || '🚩'}</span>
-                                <span className="text-[11px] font-black uppercase tracking-widest">{country}</span>
-                              </button>
-                           ))}
+          <div className="space-y-6">
+            <div className={`${theme.cardBase} p-8 rounded-[4rem] border ${theme.primaryBorder} shadow-2xl relative overflow-hidden group`}>
+              <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-12 relative z-10">
+                <div className="space-y-1">
+                  <h3 className="text-xl font-black uppercase tracking-tighter text-slate-900 dark:text-white flex items-center gap-4">
+                    <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></div>
+                    Node_Acquisition_Matrix
+                  </h3>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] pl-7">Network_Nodes: {nodes.length} | Latency_Optimized: True</p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="relative">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                      <input 
+                        type="text" 
+                        placeholder="SCAN_SIGNAL..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-12 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-[11px] font-mono font-black uppercase tracking-widest outline-none focus:border-cyan-500 transition-all dark:text-cyan-400 min-w-[260px]"
+                      />
+                  </div>
+                  
+                  <div className="relative" ref={dropdownRef}>
+                      <button 
+                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                        className="flex items-center justify-between gap-4 pl-6 pr-5 py-4 bg-black/40 border border-white/5 rounded-2xl transition-all min-w-[220px]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <MapPin className="w-4 h-4 text-cyan-500" />
+                          <span className="text-[11px] font-black uppercase tracking-widest dark:text-slate-300">
+                            {countryFilter === 'Tous' ? 'Global_Uplink' : countryFilter}
+                          </span>
                         </div>
-                      </div>
-                    )}
-                 </div>
-              </div>
-            </div>
+                        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10 max-h-[500px] overflow-y-auto p-2 custom-scrollbar">
-              {filteredNodes.map((node) => {
-                  const isActive = node.ip === currentIp && isConnected;
-                  const statusInfo = getNodeStatusBadge(node);
-                  return (
-                  <div 
-                      key={node.id} 
-                      className={`p-6 rounded-[2.5rem] border-2 transition-all duration-500 flex flex-col justify-between group/node relative overflow-hidden bracket-corner ${
-                      isActive 
-                      ? 'bg-cyan-500/10 border-cyan-500/60 shadow-2xl' 
-                      : 'bg-black/40 border-white/5 hover:border-cyan-500/40'
-                      }`}
-                  >
-                      <div className="flex items-start justify-between mb-8 relative z-10">
-                        <div className="flex items-center gap-4">
-                            <div className="text-4xl filter drop-shadow-lg">{countriesWithFlags[node.country as string] || '📍'}</div>
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <h5 className="text-sm font-black text-white uppercase tracking-tight truncate">{node.name}</h5>
-                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border shrink-0 ${statusInfo.color}`}>
-                                        {statusInfo.label}
-                                    </span>
+                      {isDropdownOpen && (
+                        <div className="absolute top-full mt-3 right-0 w-full min-w-[260px] bg-slate-900/95 border border-white/10 rounded-3xl shadow-2xl z-50 overflow-hidden animate-in zoom-in-95 backdrop-blur-3xl">
+                          <div className="p-3 max-h-[360px] overflow-y-auto custom-scrollbar">
+                            {(['Tous', ...Array.from(new Set(nodes.map(n => n.country))).sort()] as string[]).map(country => (
+                                <button
+                                  key={country}
+                                  onClick={() => { setCountryFilter(country); setIsDropdownOpen(false); }}
+                                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all mb-1 ${
+                                    countryFilter === country ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:bg-white/5'
+                                  }`}
+                                >
+                                  <span className="text-xl">{countriesWithFlags[country] || '🚩'}</span>
+                                  <span className="text-[11px] font-black uppercase tracking-widest">{country}</span>
+                                </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10 max-h-[500px] overflow-y-auto p-2 custom-scrollbar">
+                {filteredNodes.map((node) => {
+                    const isActive = node.ip === currentIp && isConnected;
+                    const statusInfo = getNodeStatusBadge(node);
+                    return (
+                    <div 
+                        key={node.id} 
+                        className={`p-6 rounded-[2.5rem] border-2 transition-all duration-500 flex flex-col justify-between group/node relative overflow-hidden bracket-corner ${
+                        isActive 
+                        ? 'bg-cyan-500/10 border-cyan-500/60 shadow-2xl' 
+                        : 'bg-black/40 border-white/5 hover:border-cyan-500/40'
+                        }`}
+                    >
+                        <div className="flex items-start justify-between mb-8 relative z-10">
+                          <div className="flex items-center gap-4">
+                              <div className="text-4xl filter drop-shadow-lg">{countriesWithFlags[node.country as string] || '📍'}</div>
+                              <div className="min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                      <h5 className="text-sm font-black text-white uppercase tracking-tight truncate">{node.name}</h5>
+                                      <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border shrink-0 ${statusInfo.color}`}>
+                                          {statusInfo.label}
+                                      </span>
+                                  </div>
+                                  <div className="text-[10px] font-mono font-bold text-slate-500 flex items-center gap-1.5">
+                                      <Server className="w-2.5 h-2.5" />
+                                      {node.ip}
+                                  </div>
+                              </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 mb-8 relative z-10">
+                            <div className="bg-black/40 rounded-2xl p-3 border border-white/5 group-hover/node:border-cyan-500/20 transition-colors">
+                                <span className="text-[8px] font-black text-slate-600 uppercase block mb-1 tracking-widest">Latency</span>
+                                <div className="flex items-center gap-2">
+                                    <Radio className={`w-3 h-3 ${node.latency < 50 ? 'text-emerald-500' : 'text-amber-500'}`} />
+                                    <span className="text-xs font-mono font-black text-white">{node.latency}ms</span>
                                 </div>
-                                <div className="text-[10px] font-mono font-bold text-slate-500 flex items-center gap-1.5">
-                                    <Server className="w-2.5 h-2.5" />
-                                    {node.ip}
+                            </div>
+                            <div className="bg-black/40 rounded-2xl p-3 border border-white/5 group-hover/node:border-emerald-500/20 transition-colors">
+                                <span className="text-[8px] font-black text-slate-600 uppercase block mb-1 tracking-widest">Security</span>
+                                <div className="flex items-center gap-2">
+                                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                    <span className="text-xs font-mono font-black text-emerald-400">VERIFIED</span>
                                 </div>
                             </div>
                         </div>
-                      </div>
 
-                      <div className="grid grid-cols-2 gap-3 mb-8 relative z-10">
-                          <div className="bg-black/40 rounded-2xl p-3 border border-white/5 group-hover/node:border-cyan-500/20 transition-colors">
-                              <span className="text-[8px] font-black text-slate-600 uppercase block mb-1 tracking-widest">Latency</span>
-                              <div className="flex items-center gap-2">
-                                  <Radio className={`w-3 h-3 ${node.latency < 50 ? 'text-emerald-500' : 'text-amber-500'}`} />
-                                  <span className="text-xs font-mono font-black text-white">{node.latency}ms</span>
-                              </div>
-                          </div>
-                          <div className="bg-black/40 rounded-2xl p-3 border border-white/5 group-hover/node:border-emerald-500/20 transition-colors">
-                              <span className="text-[8px] font-black text-slate-600 uppercase block mb-1 tracking-widest">Security</span>
-                              <div className="flex items-center gap-2">
-                                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                                  <span className="text-xs font-mono font-black text-emerald-400">VERIFIED</span>
-                              </div>
-                          </div>
-                      </div>
+                        <button
+                          onClick={() => onConnectNode(node.id)}
+                          className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 relative z-10 ${
+                              isActive 
+                              ? 'bg-white text-slate-900' 
+                              : isConnected 
+                                  ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                                  : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg'
+                          }`}
+                          disabled={isConnected && !isActive}
+                        >
+                          {isActive ? <Power className="w-4 h-4" /> : <Target className="w-4 h-4" />}
+                          {isActive ? 'DISCONNECT' : 'INITIALIZE'}
+                        </button>
+                    </div>
+                    );
+                })}
+              </div>
+            </div>
 
-                      <button
-                        onClick={() => onConnectNode(node.id)}
-                        className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 relative z-10 ${
-                            isActive 
-                            ? 'bg-white text-slate-900' 
-                            : isConnected 
-                                ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                                : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg'
-                        }`}
-                        disabled={isConnected && !isActive}
-                      >
-                        {isActive ? <Power className="w-4 h-4" /> : <Target className="w-4 h-4" />}
-                        {isActive ? 'DISCONNECT' : 'INITIALIZE'}
-                      </button>
+            {/* Recent Uplink Logs Dropdown Section */}
+            <div className={`${theme.cardBase} rounded-[3rem] border border-white/5 overflow-hidden shadow-2xl`}>
+                <button 
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="w-full p-6 flex items-center justify-between hover:bg-white/[0.02] transition-all group/hist"
+                >
+                  <div className="flex items-center gap-4">
+                      <div className="p-2.5 rounded-xl bg-brand-500/10 text-brand-500 border border-brand-500/20 group-hover/hist:scale-110 transition-transform">
+                          <History className="w-5 h-5" />
+                      </div>
+                      <div className="text-left">
+                          <h4 className="text-sm font-black text-white uppercase tracking-widest">Recent_Uplink_Logs</h4>
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] mt-0.5">Session_Archive: {history.length} Entries Sync</p>
+                      </div>
                   </div>
-                  );
-              })}
+                  <ChevronDown className={`w-5 h-5 text-slate-500 transition-transform duration-500 ${showHistory ? 'rotate-180 text-brand-500' : ''}`} />
+                </button>
+
+                {showHistory && (
+                  <div className="px-6 pb-6 animate-in slide-in-from-top-4 duration-500">
+                    {history.length === 0 ? (
+                      <div className="py-10 text-center space-y-3 opacity-30">
+                        <Orbit className="w-8 h-8 mx-auto text-slate-500 animate-spin-slow" />
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Aucune donnée de session archivée</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {history.slice(0, 5).map((session, i) => (
+                          <div key={session.id} className="p-4 bg-black/40 rounded-2xl border border-white/5 flex items-center justify-between group/sess hover:border-brand-500/30 transition-all">
+                            <div className="flex items-center gap-4">
+                                <span className="text-2xl filter drop-shadow-sm group-hover/sess:scale-110 transition-transform">
+                                  {countriesWithFlags[session.serverCountry] || '📍'}
+                                </span>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-black text-white uppercase tracking-tight">{session.serverCountry}</span>
+                                        <span className="text-[8px] font-mono text-slate-600 bg-black/60 px-1.5 py-0.5 rounded border border-white/5">{session.serverIp}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                                        <span className="flex items-center gap-1"><Calendar className="w-2.5 h-2.5" /> {formatDate(session.startTime)}</span>
+                                        <span className="flex items-center gap-1"><Shield className="w-2.5 h-2.5" /> {session.protocol.toUpperCase()}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-0.5">Session_Life</span>
+                                <div className="flex items-center gap-1.5 justify-end text-brand-400 font-mono font-black text-xs">
+                                  <Clock className="w-3 h-3" />
+                                  {session.durationString}
+                                </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
           </div>
       )}

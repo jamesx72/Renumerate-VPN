@@ -153,6 +153,16 @@ function App() {
     addLog(`Spoofing UA réussi`, 'success');
   }, [addLog]);
 
+  const handleSelectUA = useCallback((uaShort: string) => {
+    setIsMasking(true);
+    addLog(`Injection de la signature logicielle : ${uaShort}...`, 'info');
+    setTimeout(() => {
+        setCurrentIdentity(prev => ({ ...prev, userAgentShort: uaShort }));
+        setIsMasking(false);
+        addLog(`Empreinte synchronisée : ${uaShort}`, 'success');
+    }, 800);
+  }, [addLog]);
+
   // --- Keyboard Shortcuts Implementation ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -371,6 +381,7 @@ function App() {
                     settings={appSettings}
                     addLog={addLog}
                     updateSettings={updateAppSettings}
+                    history={connectionHistory}
                 />
                 <IdentityMatrix 
                   identity={currentIdentity} 
@@ -381,6 +392,7 @@ function App() {
                   onMask={handleGlobalScramble} 
                   onScrambleMac={handleScrambleMac} 
                   onScrambleUA={handleScrambleUA} 
+                  onSelectUA={handleSelectUA}
                   isConnected={isConnected} 
                   macFormat={appSettings.macFormat}
                   onFormatChange={(fmt) => {
