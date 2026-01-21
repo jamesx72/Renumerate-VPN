@@ -11,7 +11,8 @@ import {
   Lock, Shield, Scan, Target, Radio, Brain, 
   ChevronDown, ListChecks, ShieldHalf, Cpu as CpuIcon,
   HelpCircle, Sparkles, Wand2, History as LucideHistory, Ghost,
-  ArrowRightLeft, Settings2, Sliders, ZapOff, Check
+  ArrowRightLeft, Settings2, Sliders, ZapOff, Check, AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 
 interface Props {
@@ -75,7 +76,6 @@ export const IdentityMatrix: React.FC<Props> = ({
     return REALISTIC_USER_AGENTS.find(ua => ua.short === identity.userAgentShort) || REALISTIC_USER_AGENTS[0];
   }, [identity.userAgentShort]);
 
-  // Entropy simulation
   useEffect(() => {
     const interval = setInterval(() => {
       setEntropy((Math.random() * 0.4 + 9.6).toFixed(2));
@@ -83,7 +83,6 @@ export const IdentityMatrix: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Matrix scrambling visual effect
   useEffect(() => {
     if (isMasking || isRotating) {
       const chars = "10101010ABCDEF-X.#";
@@ -107,33 +106,20 @@ export const IdentityMatrix: React.FC<Props> = ({
     }
   }, [isMasking, isRotating]);
 
-  // Clock management with robust cleanup
   useEffect(() => {
-    // Fixed: Using any instead of NodeJS.Timeout to avoid namespace errors in browser environments
     let timerId: any = null;
-    
     const updateTime = () => {
       const tz = identity.timezone || 'UTC+0';
       const offsetStr = tz.replace('UTC', '');
       const offsetValue = offsetStr ? parseInt(offsetStr, 10) : 0;
-      
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
       const cityTime = new Date(utc + (3600000 * (isNaN(offsetValue) ? 0 : offsetValue)));
-      
-      setLocalTime(cityTime.toLocaleTimeString('fr-FR', { 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit' 
-      }));
+      setLocalTime(cityTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     };
-
     updateTime();
     timerId = setInterval(updateTime, 1000);
-    
-    return () => {
-      if (timerId) clearInterval(timerId);
-    };
+    return () => { if (timerId) clearInterval(timerId); };
   }, [identity.timezone]);
 
   const theme = {
@@ -151,19 +137,6 @@ export const IdentityMatrix: React.FC<Props> = ({
     setTimeout(() => setCopiedIp(false), 2000);
   };
 
-  const getOSIcon = (os: string) => {
-    if (os.includes('Windows')) return <Monitor className="w-4 h-4" />;
-    if (os.includes('macOS') || os.includes('iOS')) return <Laptop className="w-4 h-4" />;
-    if (os.includes('Android')) return <Smartphone className="w-4 h-4" />;
-    return <CpuIcon className="w-4 h-4" />;
-  };
-
-  const CyberScanOverlay = () => (
-    <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden rounded-[inherit]">
-      <div className="absolute w-full h-0.5 bg-cyan-500/10 shadow-[0_0_15px_rgba(6,182,212,0.4)] animate-cyber-scan"></div>
-    </div>
-  );
-
   const isWarpDisabled = !isConnected || isSmartDNS || isMasking;
 
   return (
@@ -173,8 +146,8 @@ export const IdentityMatrix: React.FC<Props> = ({
         
         {/* IP Gateway Card */}
         <div className={`lg:col-span-7 ${theme.cardBase} p-6 md:p-8 rounded-[2.5rem] md:rounded-[3.5rem] border ${theme.primaryBorder} relative overflow-hidden group ${theme.glow} bracket-corner transition-all duration-700`}>
-          <CyberScanOverlay />
           <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+          <div className="absolute w-full h-0.5 bg-cyan-500/10 shadow-[0_0_15px_rgba(6,182,212,0.4)] animate-cyber-scan pointer-events-none"></div>
           
           <div className="relative z-10">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-10 md:mb-14">
@@ -255,7 +228,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                     </div>
                     <button 
                       onClick={() => setShowWarpTuning(!showWarpTuning)}
-                      className={`p-5 rounded-2xl bg-black/60 border-2 border-white/10 transition-all duration-700 ${showWarpTuning ? 'text-brand-500 border-brand-500/50 shadow-[0_0_20px_rgba(6,182,212,0.3)]' : 'text-slate-700 hover:text-slate-400 hover:border-brand-500/30'}`}
+                      className={`p-5 rounded-2xl bg-black/60 border-2 border-white/10 transition-all duration-700 ${showWarpTuning ? 'text-brand-500 border-brand-500/50 shadow-[0_0_20px_rgba(6,182,212,0.3)] rotate-90 scale-110' : 'text-slate-700 hover:text-slate-400 hover:border-brand-500/30'}`}
                     >
                         {showWarpTuning ? <X className="w-8 h-8" /> : <Settings2 className="w-8 h-8 group-hover:rotate-90 transition-transform" />}
                     </button>
@@ -263,15 +236,15 @@ export const IdentityMatrix: React.FC<Props> = ({
 
                 <div className="flex-1 relative mb-10 min-h-[140px]">
                     {!showWarpTuning ? (
-                      <div className="space-y-6 animate-in fade-in duration-300">
+                      <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
                         <div className="p-6 bg-black/60 rounded-[2.5rem] border border-white/10 space-y-4 shadow-2xl relative overflow-hidden">
                           <div className="absolute inset-0 bg-scanline opacity-[0.05] pointer-events-none"></div>
                           <div className="flex items-center justify-between text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5 pb-3">
-                            <span className="flex items-center gap-2"><Binary className="w-3 h-3" /> MAC_ROTATION</span>
+                            <span className="flex items-center gap-2"><Binary className="w-3 h-3 text-cyan-500" /> MAC_ROTATION</span>
                             <span className={isMasking ? 'text-brand-400 animate-pulse' : 'text-emerald-500'}>{isMasking ? 'SYNCHRONIZING' : 'SECURE'}</span>
                           </div>
                           <div className="flex items-center justify-between text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                            <span className="flex items-center gap-2"><Scan className="w-3 h-3" /> AGENT_MORPHING</span>
+                            <span className="flex items-center gap-2"><Scan className="w-3 h-3 text-purple-500" /> AGENT_MORPHING</span>
                             <span className={isMasking ? 'text-brand-400 animate-pulse' : 'text-emerald-500'}>{isMasking ? 'SYNCHRONIZING' : 'SECURE'}</span>
                           </div>
                         </div>
@@ -292,38 +265,45 @@ export const IdentityMatrix: React.FC<Props> = ({
                         </div>
                       </div>
                     ) : (
-                      <div className="bg-black/80 rounded-[2.5rem] border-2 border-brand-500/30 p-6 space-y-5 animate-in slide-in-from-bottom-4 duration-300 absolute inset-0 z-40 backdrop-blur-md">
-                        <div className="space-y-3">
-                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                            <Shield className="w-3 h-3 text-brand-500" /> Obfuscation_Level
+                      <div className="bg-black/90 rounded-[2.5rem] border-2 border-brand-500/30 p-6 space-y-5 animate-in slide-in-from-bottom-4 duration-500 absolute inset-0 z-40 backdrop-blur-2xl overflow-hidden bracket-corner">
+                        <div className="absolute inset-0 cyber-grid opacity-10"></div>
+                        <div className="space-y-3 relative z-10">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-3">
+                            <Shield className="w-4 h-4 text-brand-500" /> Obfuscation_Level
                           </label>
                           <div className="grid grid-cols-3 gap-2">
                             {(['standard', 'high', 'ultra'] as const).map(lvl => (
                               <button 
                                 key={lvl}
                                 onClick={() => onObfuscationLevelChange?.(lvl)}
-                                className={`py-3 rounded-xl text-[8px] font-black uppercase transition-all border ${obfuscationLevel === lvl ? 'bg-brand-500 border-brand-500 text-white shadow-lg' : 'bg-white/5 border-white/10 text-slate-500 hover:text-slate-300'}`}
+                                className={`py-4 rounded-2xl text-[9px] font-black uppercase transition-all border-2 ${obfuscationLevel === lvl ? 'bg-brand-500 border-brand-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-black/40 border-white/5 text-slate-600 hover:text-slate-300 hover:border-white/10'}`}
                               >
                                 {lvl}
                               </button>
                             ))}
                           </div>
                         </div>
-                        <div className="space-y-3">
-                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                            <ArrowRightLeft className="w-3 h-3 text-cyan-500" /> Hardware_Logic
+                        <div className="space-y-3 relative z-10">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-3">
+                            <Binary className="w-4 h-4 text-cyan-500" /> Hardware_Logic
                           </label>
                           <button 
                             onClick={() => onFormatChange?.(macFormat === 'random' ? 'standard' : 'random')}
-                            className="w-full py-4 bg-black/40 border border-white/10 rounded-2xl flex items-center justify-between px-4 group/toggle"
+                            className="w-full py-5 bg-black/60 border-2 border-white/5 rounded-2xl flex items-center justify-between px-6 group/toggle hover:border-cyan-500/30 transition-all"
                           >
-                             <span className="text-[10px] font-black text-slate-400 uppercase group-hover/toggle:text-white transition-colors">{macFormat.toUpperCase()} FORMAT</span>
-                             <div className={`w-10 h-5 rounded-full p-1 transition-colors ${macFormat === 'random' ? 'bg-brand-500' : 'bg-slate-800'}`}>
-                                <div className={`w-3 h-3 bg-white rounded-full transition-transform ${macFormat === 'random' ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                             <div className="flex flex-col text-left">
+                               <span className="text-[11px] font-black text-slate-300 uppercase">{macFormat.toUpperCase()} FORMAT</span>
+                               <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{macFormat === 'random' ? 'Dynamic_Entropy' : 'Static_Vendor'}</span>
+                             </div>
+                             <div className={`w-12 h-6 rounded-full p-1 transition-colors ${macFormat === 'random' ? 'bg-brand-500' : 'bg-slate-800'}`}>
+                                <div className={`w-4 h-4 bg-white rounded-full shadow-lg transition-transform ${macFormat === 'random' ? 'translate-x-6' : 'translate-x-0'}`}></div>
                              </div>
                           </button>
                         </div>
-                        <p className="text-[8px] text-slate-600 font-black italic uppercase text-center mt-2 tracking-widest">Config_Updated_Immediately</p>
+                        <div className="flex items-center gap-3 px-4 py-2 bg-emerald-500/5 rounded-xl border border-emerald-500/20 relative z-10">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          <p className="text-[8px] text-slate-500 font-black italic uppercase tracking-widest">Kernel_Ready: Config_Applied</p>
+                        </div>
                       </div>
                     )}
                 </div>
@@ -344,8 +324,8 @@ export const IdentityMatrix: React.FC<Props> = ({
                   </button>
                   
                   {(!isConnected || isSmartDNS) && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center gap-3">
-                        <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
+                    <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center gap-3">
+                        <AlertCircle className="w-4 h-4 text-red-500 animate-pulse" />
                         <p className="text-[10px] font-black text-red-500 uppercase tracking-widest text-center">
                             {isSmartDNS ? 'INDISPONIBLE EN MODE SMART DNS' : 'TUNNEL VPN REQUIS POUR LE MORPHING'}
                         </p>
@@ -473,7 +453,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                     <div className="flex items-center justify-between border-b border-white/10 pb-5">
                         <div className="flex items-center gap-4">
                           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3">
-                              {getOSIcon(currentUAData.os)}
+                              <Laptop className="w-4 h-4" />
                               OS_ENGINE
                           </span>
                           <div className="relative group/info">
@@ -561,7 +541,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                                     <div className="w-12 h-12 rounded-2xl bg-brand-500/10 flex items-center justify-center text-[12px] font-black text-brand-500 border-2 border-brand-500/30 shadow-inner group-hover/rec:scale-110 group-hover/rec:bg-brand-500 group-hover/rec:text-white transition-all duration-500">
                                         0{i+1}
                                     </div>
-                                    <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">Protocol_Patch</span>
+                                    <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Protocol_Patch</span>
                                 </div>
                                 <p className="text-sm font-black text-slate-200 leading-relaxed relative z-10 group-hover:text-white transition-colors">
                                     {rec}

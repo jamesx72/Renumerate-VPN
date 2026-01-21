@@ -14,9 +14,10 @@ interface ChartProps {
 
 export const TrafficMonitor = ({ isDark }: ChartProps) => {
   return (
-    <div className="w-full h-52 min-h-[208px] overflow-hidden relative block">
+    <div className="w-full h-52 min-h-[208px] overflow-hidden relative block" style={{ height: '208px' }}>
       <div className="absolute inset-0 pointer-events-none bg-scanline opacity-[0.03] z-0"></div>
-      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={208}>
+      {/* Fixed: Added debounce to handle container resize during mount */}
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={208} debounce={100}>
         <AreaChart data={trafficData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
           <defs>
             <linearGradient id="colorDown" x1="0" y1="0" x2="0" y2="1">
@@ -74,7 +75,6 @@ export const AnonymityScore = ({ score, isDark }: { score: number, isDark: boole
   return (
     <div className="flex flex-col items-center justify-center p-4">
       <div className="relative w-36 h-36 flex items-center justify-center">
-        {/* Glow effect */}
         <div className={`absolute inset-0 rounded-full blur-[30px] opacity-20 transition-all duration-1000 ${
            score > 80 ? 'bg-emerald-500' : score > 50 ? 'bg-amber-500' : 'bg-red-500'
         }`}></div>
