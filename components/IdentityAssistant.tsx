@@ -141,7 +141,8 @@ export const IdentityAssistant: React.FC<Props> = ({ mode, isConnected, security
           outputAudioTranscription: {},
           systemInstruction: `Tu es l'IA de Renumerate VPN. Ton but est d'aider l'utilisateur à gérer son identité numérique. 
           État actuel : Mode ${mode}, Connexion ${isConnected ? 'Établie' : 'Coupée'}, Score de sécurité: ${securityScore}%. 
-          Sois technique, calme et futuriste. Si le mode est Vortex, ton ton doit être encore plus mystérieux et protecteur.`,
+          Sois technique, calme et futuriste. Tu dois recommander explicitement le protocole WireGuard à l'utilisateur car c'est le standard d'excellence pour la vitesse et la fiabilité de la session. 
+          Si le mode est Vortex, ton ton doit être encore plus mystérieux et protecteur.`,
         },
       });
 

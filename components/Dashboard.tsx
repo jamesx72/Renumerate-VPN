@@ -76,6 +76,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const isOnionMode = mode === ConnectionMode.ONION_VORTEX;
   const isSmartDNS = mode === ConnectionMode.SMART_DNS;
+  const isWireGuard = protocol.toLowerCase() === 'wireguard';
 
   const theme = {
     primary: isOnionMode ? 'text-purple-400' : isSmartDNS ? 'text-amber-400' : 'text-brand-400',
@@ -194,13 +195,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
            <div className="absolute top-0 right-0 p-6 flex flex-col items-end gap-2">
               <div className="flex items-center gap-3">
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Protocol_Uplink:</span>
-                <span className={`text-[10px] font-black px-4 py-1.5 rounded-xl border ${
-                  isOnionMode ? 'text-purple-400 bg-purple-500/10 border-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 
-                  isSmartDNS ? 'text-amber-400 bg-amber-500/10 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 
-                  'text-cyan-400 bg-cyan-500/10 border-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                }`}>
-                  {isOnionMode ? 'VORTEX_SEC' : isSmartDNS ? 'DNS_BYPASS' : protocol.toUpperCase()}
-                </span>
+                <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-black px-4 py-1.5 rounded-xl border flex items-center gap-2 ${
+                    isOnionMode ? 'text-purple-400 bg-purple-500/10 border-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 
+                    isSmartDNS ? 'text-amber-400 bg-amber-500/10 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.2)]' : 
+                    'text-cyan-400 bg-cyan-500/10 border-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                    }`}>
+                    {isWireGuard && <Zap className="w-3 h-3 text-cyan-400 animate-pulse" />}
+                    {isOnionMode ? 'VORTEX_SEC' : isSmartDNS ? 'DNS_BYPASS' : protocol.toUpperCase()}
+                    </span>
+                    {isWireGuard && !isOnionMode && !isSmartDNS && (
+                        <span className="text-[8px] font-black bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded border border-emerald-500/20 uppercase tracking-widest animate-in fade-in zoom-in duration-500">
+                            Speed_Optimized
+                        </span>
+                    )}
+                </div>
               </div>
               <div className="flex gap-1.5">
                 <div className={`w-3 h-1 rounded-sm ${isConnected ? 'bg-cyan-500 animate-pulse' : 'bg-slate-800'}`}></div>

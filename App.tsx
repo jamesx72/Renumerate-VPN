@@ -163,7 +163,6 @@ function App() {
     }, 800);
   }, [addLog]);
 
-  // --- Keyboard Shortcuts Implementation ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
@@ -325,7 +324,9 @@ function App() {
     <div className={`min-h-screen transition-colors duration-500 overflow-x-hidden ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       <div className="fixed inset-0 pointer-events-none z-0">
           <div className="absolute inset-0 cyber-grid opacity-[0.03] dark:opacity-[0.05]"></div>
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] bg-cyan-500/5 blur-[120px] rounded-full"></div>
+          {/* Animated Background Pulse Synchronized with Connection */}
+          <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[500px] bg-brand-500/5 blur-[150px] rounded-full transition-all duration-1000 ${isConnected ? 'opacity-100 scale-110 animate-pulse' : 'opacity-40 scale-100'}`}></div>
+          <div className={`absolute bottom-0 right-0 w-[600px] h-[600px] bg-purple-500/5 blur-[120px] rounded-full transition-all duration-[2000ms] ${isConnected ? 'opacity-80 translate-x-20' : 'opacity-0 translate-x-40'}`}></div>
       </div>
 
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl sticky top-0 z-50">
