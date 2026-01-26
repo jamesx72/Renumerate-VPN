@@ -21,9 +21,12 @@ export const TrafficMonitor = ({ isDark }: ChartProps) => {
             0%, 100% { filter: drop-shadow(0 0 2px rgba(6, 182, 212, 0.4)); stroke-width: 2.5; }
             50% { filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.8)); stroke-width: 3.5; }
           }
-          @keyframes flow-line {
-            from { stroke-dashoffset: 100; }
-            to { stroke-dashoffset: 0; }
+          @keyframes cyber-shimmer {
+            0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
+            20% { opacity: 0.5; }
+            50% { opacity: 0.8; }
+            80% { opacity: 0.5; }
+            100% { transform: translateX(250%) skewX(-20deg); opacity: 0; }
           }
           .animate-chart-path-down {
             animation: chart-pulse 3s infinite ease-in-out;
@@ -38,10 +41,29 @@ export const TrafficMonitor = ({ isDark }: ChartProps) => {
                               linear-gradient(90deg, rgba(6, 182, 212, 0.05) 1px, transparent 1px);
             background-size: 20px 20px;
           }
+          .cyber-shimmer-layer {
+            background: linear-gradient(
+              90deg,
+              transparent 0%,
+              rgba(6, 182, 212, 0.05) 45%,
+              rgba(6, 182, 212, 0.15) 50%,
+              rgba(6, 182, 212, 0.05) 55%,
+              transparent 100%
+            );
+            animation: cyber-shimmer 4s infinite linear;
+            will-change: transform;
+          }
         `}
       </style>
       
+      {/* Background & Grids */}
       <div className="absolute inset-0 cyber-grid-bg opacity-20 z-0"></div>
+      
+      {/* Cyber Shimmer Effect */}
+      <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
+        <div className="cyber-shimmer-layer absolute inset-0 w-1/2 h-full"></div>
+      </div>
+
       <div className="absolute top-0 left-0 w-0.5 h-full bg-brand-500/20 animate-pulse"></div>
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-brand-500/5 to-transparent pointer-events-none"></div>
       
