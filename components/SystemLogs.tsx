@@ -11,6 +11,7 @@ import {
   Search,
   Globe,
   Download,
+  FileDown,
   Pause,
   Play,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ export const SystemLogs: React.FC<Props> = ({
   onRetentionChange,
 }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
+  const downloadFeedbackTimeoutRef = useRef<number | null>(null);
   const [filter, setFilter] = useState<
     'all' | 'error' | 'warning' | 'success' | 'info'
   >('all');
@@ -37,6 +39,7 @@ export const SystemLogs: React.FC<Props> = ({
   const [showRetentionMenu, setShowRetentionMenu] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [logDownloaded, setLogDownloaded] = useState(false);
 
   const filteredLogs = logs.filter((log) => {
     const matchesType = filter === 'all' || log.type === filter;
@@ -53,12 +56,95 @@ export const SystemLogs: React.FC<Props> = ({
     logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
   }, [filteredLogs.length, autoScroll]);
 
+  useEffect(() => {
+    return () => {
+      if (downloadFeedbackTimeoutRef.current !== null) {
+        window.clearTimeout(downloadFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const retentionOptions = [
     { label: 'Volatile (RAM 0h)', value: 0 },
     { label: '24 heures', value: 24 },
     { label: '7 jours', value: 168 },
     { label: '30 jours', value: 720 },
   ];
+
+  const handleDownloadLogFile = () => {
+    if (filteredLogs.length === 0) return;
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateSlug = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+      now.getDate()
+    )}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(
+      now.getSeconds()
+    )}`;
+
+    const filterLabels: Record<typeof filter, string> = {
+      all: 'Tous',
+      info: 'Info',
+      success: 'OK',
+      warning: 'Alerte',
+      error: 'Erreur',
+    };
+
+    const levelLabels: Record<LogEntry['type'], string> = {
+      info: 'INFO   ',
+      success: 'SUCCESS',
+      warning: 'WARNING',
+      error: 'ERROR  ',
+    };
+
+    const retentionLabel =
+      retentionHours === 0 ? 'Volatile (RAM 0h)' : `${retentionHours}h`;
+
+    const headerLines = [
+      '# ============================================================================',
+      '# ReNumerate VPN — Journal système local (.log)',
+      `# Généré le      : ${now.toLocaleString('fr-FR')} (${now.toISOString()})`,
+      `# Filtre niveau  : ${filterLabels[filter]}`,
+      `# Recherche      : ${ipSearch.trim() || 'Aucune'}`,
+      `# Rétention      : ${retentionLabel}`,
+      `# Entrées        : ${filteredLogs.length} affichée(s) sur ${logs.length} au total`,
+      '# ============================================================================',
+      '',
+    ];
+
+    const bodyLines = filteredLogs.map((entry) => {
+      let fullTimestamp = entry.timestamp;
+      if (Number.isFinite(entry.timestampRaw) && entry.timestampRaw > 0) {
+        const d = new Date(entry.timestampRaw);
+        fullTimestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+          d.getDate()
+        )} ${entry.timestamp}`;
+      }
+      const ipColumn = `[${(entry.ip || 'local').padEnd(15, ' ')}]`;
+      return `[${fullTimestamp}] [${levelLabels[entry.type]}] ${ipColumn} ${entry.event}`;
+    });
+
+    const logContent = [...headerLines, ...bodyLines, ''].join('\n');
+    const blob = new Blob([logContent], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renumerate-system-${dateSlug}.log`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setLogDownloaded(true);
+    if (downloadFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(downloadFeedbackTimeoutRef.current);
+    }
+    downloadFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setLogDownloaded(false);
+    }, 1800);
+  };
 
   const handleExportLogs = () => {
     const payload = {
@@ -95,7 +181,7 @@ export const SystemLogs: React.FC<Props> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={() => setShowSearch((s) => !s)}
@@ -128,6 +214,26 @@ export const SystemLogs: React.FC<Props> = ({
               ) : (
                 <Play className="w-3.5 h-3.5" />
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadLogFile}
+              disabled={filteredLogs.length === 0}
+              title="Télécharger les logs actuels sous forme de fichier texte (.log)"
+              aria-label="Télécharger les logs actuels (.log)"
+              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-semibold flex items-center gap-1 border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                logDownloaded
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-cyan-500/50 hover:text-cyan-600 dark:hover:text-cyan-400'
+              }`}
+            >
+              {logDownloaded ? (
+                <Check className="w-3 h-3 shrink-0" />
+              ) : (
+                <FileDown className="w-3 h-3 shrink-0" />
+              )}
+              <span>.log</span>
             </button>
 
             <button
