@@ -91,6 +91,10 @@ export interface DeviceNode {
   tags: string[];
   ip: string;
   country: string;
+  city?: string;
+  lat?: number;
+  lon?: number;
+  timezone?: string;
 }
 
 export interface Transaction {

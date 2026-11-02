@@ -12,6 +12,8 @@ import {
   Terminal,
   X,
   Lock,
+  ShieldAlert,
+  RefreshCw,
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
@@ -88,8 +90,12 @@ function App() {
   const [currentIdentity, setCurrentIdentity] = useState<VirtualIdentity>(
     MOCK_IDENTITIES[0]
   );
-  const [isRenumbering] = useState(false);
+  const [isRenumbering, setIsRenumbering] = useState(false);
   const [isMasking, setIsMasking] = useState(false);
+  const [isEmergency, setIsEmergency] = useState(false);
+  const [rotationSecondsLeft, setRotationSecondsLeft] = useState<number | null>(
+    null
+  );
   const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(
     null
@@ -183,60 +189,79 @@ function App() {
       .catch(() => {});
   }, [user?.email, vaultOwnerKey, vaultRevision]);
 
-  const connectVPN = useCallback(async () => {
-    if (isDisconnecting) return;
-    setIsDisconnecting(false);
-    addLog(
-      `Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()})...`,
-      'info',
-      currentIdentity.ip
-    );
-
-    if (mode === ConnectionMode.ONION_VORTEX) {
-      addLog(
-        `Construction du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`,
-        'info'
-      );
-    }
-
-    setTimeout(async () => {
-      setIsConnected(true);
-      addLog(
-        'Réseau VPN rejoint via protocole sécurisé',
-        'success',
-        currentIdentity.ip
-      );
-
-      const newSession: ConnectionSession = {
-        id: Math.random().toString(36).slice(2, 11),
-        serverCountry: currentIdentity.country,
-        serverIp: currentIdentity.ip,
-        startTime: Date.now(),
-        protocol: appSettings.protocol,
-        mode: mode,
-        durationString: 'En cours...',
-      };
-
-      setConnectionHistory((prev) => [newSession, ...prev]);
-      if (user?.id) {
-        dbService.logSession(user.id, newSession).catch(() => {});
+  const connectVPN = useCallback(
+    async (overrideIdentity?: VirtualIdentity) => {
+      if (isDisconnecting) return;
+      if (isEmergency) {
+        setIsEmergency(false);
+        addLog(
+          'Coupe-circuit désamorcé pour autoriser l’établissement du tunnel sécurisé',
+          'info'
+        );
       }
-      const report = await analyzeSecurity(
-        mode,
-        currentIdentity.country,
-        currentIdentity.ip
+      const targetIdentity = overrideIdentity ?? currentIdentity;
+      setIsDisconnecting(false);
+      addLog(
+        `Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()}) vers ${targetIdentity.city}, ${targetIdentity.country}...`,
+        'info',
+        targetIdentity.ip
       );
-      setSecurityReport(report);
-    }, 1200);
-  }, [
-    appSettings.protocol,
-    mode,
-    currentIdentity,
-    addLog,
-    isDisconnecting,
-    appSettings.vortexCircuitLength,
-    user?.id,
-  ]);
+
+      if (mode === ConnectionMode.ONION_VORTEX) {
+        addLog(
+          `Construction du circuit Vortex (${appSettings.vortexCircuitLength} sauts)...`,
+          'info'
+        );
+      }
+
+      setTimeout(async () => {
+        setIsConnected(true);
+        addLog(
+          `Réseau VPN rejoint via ${appSettings.protocol.toUpperCase()} (${targetIdentity.city})`,
+          'success',
+          targetIdentity.ip
+        );
+
+        const newSession: ConnectionSession = {
+          id: Math.random().toString(36).slice(2, 11),
+          serverCountry: targetIdentity.country,
+          serverIp: targetIdentity.ip,
+          startTime: Date.now(),
+          protocol: appSettings.protocol,
+          mode: mode,
+          durationString: 'En cours...',
+        };
+
+        setConnectionHistory((prev) => [newSession, ...prev]);
+        if (user?.id) {
+          dbService.logSession(user.id, newSession).catch(() => {});
+        }
+        const report = await analyzeSecurity(
+          mode,
+          targetIdentity.country,
+          targetIdentity.ip,
+          {
+            protocol: appSettings.protocol,
+            killSwitch: appSettings.killSwitch,
+            ipv6LeakProtection: appSettings.ipv6LeakProtection,
+          }
+        );
+        setSecurityReport(report);
+      }, 950);
+    },
+    [
+      appSettings.protocol,
+      appSettings.killSwitch,
+      appSettings.ipv6LeakProtection,
+      appSettings.vortexCircuitLength,
+      mode,
+      currentIdentity,
+      addLog,
+      isDisconnecting,
+      isEmergency,
+      user?.id,
+    ]
+  );
 
   const disconnectVPN = useCallback(() => {
     if (isDisconnecting) return;
@@ -313,10 +338,68 @@ function App() {
         setCurrentIdentity((prev) => ({ ...prev, userAgentShort: uaShort }));
         setIsMasking(false);
         addLog(`Empreinte synchronisée : ${uaShort}`, 'success');
-      }, 800);
+      }, 650);
     },
     [addLog]
   );
+
+  const handleSelectIdentity = useCallback(
+    (selected: VirtualIdentity) => {
+      setIsRenumbering(true);
+      const nextIdentity: VirtualIdentity = {
+        ...selected,
+        mac: currentIdentity.mac,
+        userAgentShort: currentIdentity.userAgentShort,
+      };
+      setCurrentIdentity(nextIdentity);
+      addLog(
+        `Passerelle virtuelle basculée vers ${selected.city}, ${selected.country}`,
+        'success',
+        selected.ip
+      );
+      if (isConnected) {
+        analyzeSecurity(mode, selected.country, selected.ip, {
+          protocol: appSettings.protocol,
+          killSwitch: appSettings.killSwitch,
+          ipv6LeakProtection: appSettings.ipv6LeakProtection,
+        })
+          .then((report) => setSecurityReport(report))
+          .catch(() => {});
+      }
+      setTimeout(() => setIsRenumbering(false), 600);
+    },
+    [
+      currentIdentity.mac,
+      currentIdentity.userAgentShort,
+      addLog,
+      isConnected,
+      mode,
+      appSettings.protocol,
+      appSettings.killSwitch,
+      appSettings.ipv6LeakProtection,
+    ]
+  );
+
+  const toggleEmergencyLockdown = useCallback(() => {
+    setIsEmergency((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsConnected(false);
+        setThroughput({ up: 0, down: 0 });
+        addLog(
+          'COUPE-CIRCUIT D’URGENCE ACTIVÉ : interfaces externes verrouillées',
+          'error',
+          currentIdentity.ip
+        );
+      } else {
+        addLog(
+          'Coupe-circuit d’urgence désamorcé : reprise nominale autorisée',
+          'success'
+        );
+      }
+      return next;
+    });
+  }, [addLog, currentIdentity.ip]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -355,7 +438,7 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && !isEmergency) {
       const interval = setInterval(() => {
         setThroughput({
           up: parseFloat((Math.random() * 2.5 + 0.4).toFixed(2)),
@@ -366,7 +449,75 @@ function App() {
     } else {
       setThroughput({ up: 0, down: 0 });
     }
-  }, [isConnected]);
+  }, [isConnected, isEmergency]);
+
+  // Rotation dynamique automatique d'identité (IP + MAC + UA)
+  useEffect(() => {
+    if (!isConnected || !appSettings.autoRotation || isEmergency) {
+      setRotationSecondsLeft(null);
+      return;
+    }
+
+    const periodSeconds = Math.max(1, appSettings.rotationInterval) * 60;
+    setRotationSecondsLeft(periodSeconds);
+
+    const ticker = setInterval(() => {
+      setRotationSecondsLeft((prev) => {
+        if (prev === null || prev <= 1) {
+          setIsRenumbering(true);
+          setCurrentIdentity((curr) => {
+            const candidates = MOCK_IDENTITIES.filter((i) => i.ip !== curr.ip);
+            const picked =
+              candidates[Math.floor(Math.random() * candidates.length)] ||
+              MOCK_IDENTITIES[0];
+            const nextUa =
+              REALISTIC_USER_AGENTS[
+                Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)
+              ];
+            const nextMac = generateRandomMac(
+              appSettings.macScramblingMode,
+              appSettings.macFormat
+            );
+            const rotated: VirtualIdentity = {
+              ...picked,
+              mac: nextMac,
+              userAgentShort: nextUa.short,
+            };
+            addLog(
+              `Rotation auto exécutée : ${rotated.city} (${rotated.ip}) · MAC ${nextMac}`,
+              'success',
+              rotated.ip
+            );
+            analyzeSecurity(mode, rotated.country, rotated.ip, {
+              protocol: appSettings.protocol,
+              killSwitch: appSettings.killSwitch,
+              ipv6LeakProtection: appSettings.ipv6LeakProtection,
+            })
+              .then((rep) => setSecurityReport(rep))
+              .catch(() => {});
+            return rotated;
+          });
+          setTimeout(() => setIsRenumbering(false), 700);
+          return periodSeconds;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(ticker);
+  }, [
+    isConnected,
+    isEmergency,
+    appSettings.autoRotation,
+    appSettings.rotationInterval,
+    appSettings.macScramblingMode,
+    appSettings.macFormat,
+    appSettings.protocol,
+    appSettings.killSwitch,
+    appSettings.ipv6LeakProtection,
+    mode,
+    addLog,
+  ]);
 
   useEffect(() => {
     if (user?.id && user?.email) {
@@ -459,34 +610,36 @@ function App() {
     if (!node) return;
 
     const nextCity =
-      node.country === 'France'
-        ? 'Lyon'
+      node.city ||
+      (node.country === 'France'
+        ? 'Paris'
         : node.country === 'Suisse'
           ? 'Genève'
-          : 'Central';
+          : 'Central');
+
+    const targetIdentity: VirtualIdentity = {
+      ...currentIdentity,
+      ip: node.ip,
+      country: node.country,
+      city: nextCity,
+      latency: node.latency,
+      timezone: node.timezone || currentIdentity.timezone,
+    };
 
     if (isConnected) {
-      addLog(`Transition vers le nœud ${node.name} lancée...`, 'info');
+      addLog(
+        `Bascule du relais vers ${node.name} (${nextCity}, ${node.country})...`,
+        'info',
+        node.ip
+      );
       disconnectVPN();
       setTimeout(() => {
-        setCurrentIdentity((prev) => ({
-          ...prev,
-          ip: node.ip,
-          country: node.country,
-          city: nextCity,
-          latency: node.latency,
-        }));
-        connectVPN();
-      }, 900);
+        setCurrentIdentity(targetIdentity);
+        connectVPN(targetIdentity);
+      }, 850);
     } else {
-      setCurrentIdentity((prev) => ({
-        ...prev,
-        ip: node.ip,
-        country: node.country,
-        city: nextCity,
-        latency: node.latency,
-      }));
-      connectVPN();
+      setCurrentIdentity(targetIdentity);
+      connectVPN(targetIdentity);
     }
   };
 
@@ -647,7 +800,7 @@ function App() {
           {/* Zone 3: Primary Tunnel Action */}
           <div className="flex items-center gap-2.5 shrink-0">
             <button
-              onClick={isConnected ? disconnectVPN : connectVPN}
+              onClick={() => (isConnected ? disconnectVPN() : connectVPN())}
               disabled={isDisconnecting}
               className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap cursor-pointer ${
                 isConnected
@@ -699,9 +852,33 @@ function App() {
                 </span>
               </>
             )}
+            {rotationSecondsLeft !== null && (
+              <>
+                <span className="hidden md:inline">·</span>
+                <span className="hidden md:inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Rotation {Math.floor(rotationSecondsLeft / 60)}:
+                  {String(rotationSecondsLeft % 60).padStart(2, '0')}
+                </span>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={toggleEmergencyLockdown}
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                isEmergency
+                  ? 'bg-red-600 text-white border-red-500'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-red-500/60 hover:text-red-500'
+              }`}
+              title="Coupe-circuit réseau d'urgence (Kill Switch)"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {isEmergency ? 'Verrouillé' : 'Kill Switch'}
+              </span>
+            </button>
             <button
               onClick={() => setShowPricing(true)}
               className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-amber-500 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -788,18 +965,47 @@ function App() {
 
       {/* Main Workspace */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-24 relative z-10">
+        {isEmergency && (
+          <div className="mb-6 p-4 rounded-2xl bg-red-950/90 border border-red-500/50 text-red-100 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <ShieldAlert className="w-5 h-5 text-red-400 shrink-0" />
+              <div className="text-xs sm:text-sm">
+                <span className="font-bold">Coupe-circuit d’urgence actif :</span>{' '}
+                toutes les connexions sortantes non chiffrées sont bloquées pour prévenir toute fuite d’identité.
+              </div>
+            </div>
+            <button
+              onClick={toggleEmergencyLockdown}
+              className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-colors cursor-pointer"
+            >
+              Désamorcer le coupe-circuit
+            </button>
+          </div>
+        )}
+
         {activeSection === 'cockpit' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 space-y-8">
               <Dashboard
                 isDark={isDark}
                 protocol={appSettings.protocol}
-                isEmergency={false}
+                isEmergency={isEmergency}
                 securityReport={securityReport}
                 isConnected={isConnected}
                 userPlan={userPlan}
                 mode={mode}
-                onModeChange={(m) => setMode(m)}
+                onModeChange={(m) => {
+                  setMode(m);
+                  if (isConnected) {
+                    analyzeSecurity(m, currentIdentity.country, currentIdentity.ip, {
+                      protocol: appSettings.protocol,
+                      killSwitch: appSettings.killSwitch,
+                      ipv6LeakProtection: appSettings.ipv6LeakProtection,
+                    })
+                      .then((rep) => setSecurityReport(rep))
+                      .catch(() => {});
+                  }
+                }}
                 nodes={nodes}
                 onConnectNode={handleConnectNode}
                 currentIp={currentIdentity.ip}
@@ -810,6 +1016,7 @@ function App() {
               />
               <IdentityMatrix
                 identity={currentIdentity}
+                availableIdentities={MOCK_IDENTITIES}
                 isRotating={isRenumbering}
                 isMasking={isMasking}
                 mode={mode}
@@ -818,6 +1025,8 @@ function App() {
                 onScrambleMac={handleScrambleMac}
                 onScrambleUA={handleScrambleUA}
                 onSelectUA={handleSelectUA}
+                onSelectIdentity={handleSelectIdentity}
+                onOpenHistory={() => setShowConnectionHistory(true)}
                 isConnected={isConnected}
                 macFormat={appSettings.macFormat}
                 onFormatChange={(fmt) => updateAppSettings('macFormat', fmt)}
@@ -911,6 +1120,10 @@ function App() {
             </div>
             <NetworkView
               nodes={nodes}
+              currentIp={currentIdentity.ip}
+              isConnected={isConnected}
+              mode={mode}
+              isDark={isDark}
               onConnectNode={handleConnectNode}
               onAutonomyUpdate={handleAutonomyUpdate}
             />
@@ -920,8 +1133,13 @@ function App() {
 
       <IdentityAssistant
         mode={mode}
+        protocol={appSettings.protocol}
         isConnected={isConnected}
+        country={currentIdentity.country}
+        ip={currentIdentity.ip}
         securityScore={securityReport?.score || 0}
+        killSwitch={appSettings.killSwitch}
+        ipv6LeakProtection={appSettings.ipv6LeakProtection}
       />
 
       {showPricing && (

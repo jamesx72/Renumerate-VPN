@@ -1,12 +1,12 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Grid, List, Save, Trash2, Filter, Settings2, CircleCheck, 
   ChevronDown, Signal, Activity, Smartphone, Monitor, Server, Cpu, 
   Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil, RotateCcw,
-  ArrowRightLeft, ChevronUp, AlertTriangle, Info, Terminal, Download, ClipboardList
+  ArrowRightLeft, ChevronUp, AlertTriangle, Info, Terminal, Download, ClipboardList, Globe2
 } from 'lucide-react';
-import { DeviceNode } from '../types';
+import { DeviceNode, ConnectionMode } from '../types';
+import { WorldNodeMap } from './WorldNodeMap';
 
 interface SavedViewConfig {
     id: string;
@@ -35,6 +35,10 @@ interface TransferLog {
 
 interface Props {
   nodes: DeviceNode[];
+  currentIp?: string;
+  isConnected?: boolean;
+  mode?: ConnectionMode;
+  isDark?: boolean;
   onConnectNode: (id: string) => void;
   onAutonomyUpdate: (nodeId: string, profile: 'provider' | 'balanced' | 'consumer') => void;
 }
@@ -54,7 +58,15 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
 
 const DEFAULT_COLUMNS = ALL_COLUMNS.map(c => c.key);
 
-export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyUpdate }) => {
+export const NetworkView: React.FC<Props> = ({
+  nodes,
+  currentIp = '',
+  isConnected = false,
+  mode = ConnectionMode.STANDARD,
+  isDark = true,
+  onConnectNode,
+  onAutonomyUpdate,
+}) => {
   // --- State Initialization with Persistence ---
   
   const getInitialState = (): NetworkViewState => {
@@ -77,6 +89,7 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
   const initialState = getInitialState();
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(initialState.viewMode);
+  const [showWorldMap, setShowWorldMap] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>(initialState.filterType);
   const [sortBy, setSortBy] = useState<'name' | 'signal' | 'rate' | 'latency'>(initialState.sortBy);
@@ -292,6 +305,26 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
 
   const clearTransferLogs = () => {
       setTransferState(prev => ({ ...prev, logs: [], progress: 0, status: 'idle' }));
+  };
+
+  const exportTransferLogs = () => {
+      const lines = [
+          `=== RENUMERATE VPN — JOURNAL DE TRANSFERT CHIFFRÉ ===`,
+          `Cible : ${transferState.targetNodeName}`,
+          `Date : ${new Date().toLocaleString('fr-FR')}`,
+          ``,
+          ...transferState.logs.map(l => `[${l.time}] (#${l.step} ${l.type.toUpperCase()}) ${l.message}`)
+      ];
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `renumerate-transfert-${transferState.targetNodeName.toLowerCase()}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setToast('Journal de transfert exporté');
   };
 
   // --- Filtering & Sorting ---
@@ -530,6 +563,20 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                     </div>
                 )}
 
+                <button
+                    type="button"
+                    onClick={() => setShowWorldMap(!showWorldMap)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                        showWorldMap
+                            ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                    title="Afficher ou masquer la carte mondiale D3"
+                >
+                    <Globe2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Carte D3</span>
+                </button>
+
                 <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                     <button 
                         onClick={() => { setViewMode('grid'); setActiveViewId(null); }}
@@ -546,6 +593,28 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                 </div>
             </div>
         </div>
+
+        {/* Toast Feedback */}
+        {toast && (
+            <div className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-xs font-medium border border-slate-700 flex items-center justify-between">
+                <span>{toast}</span>
+                <button onClick={() => setToast(null)} className="text-slate-400 hover:text-white">
+                    <X className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        )}
+
+        {/* Interactive D3.js World Node Map */}
+        {showWorldMap && (
+            <WorldNodeMap
+                nodes={filteredNodes.length > 0 ? filteredNodes : nodes}
+                currentIp={currentIp}
+                isConnected={isConnected}
+                mode={mode}
+                isDark={isDark}
+                onConnectNode={onConnectNode}
+            />
+        )}
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -751,10 +820,17 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                              </h4>
                              {!transferState.isCollapsed && (
                                 <div className="flex items-center gap-2 mt-1.5">
-                                    <div className="w-48 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full transition-all duration-500 ${transferState.status === 'completed' ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{width: `${transferState.progress}%`}}></div>
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 font-mono font-bold">{transferState.progress}%</span>
+                                    <svg viewBox="0 0 100 4" className="w-48 h-1.5 rounded-full overflow-hidden bg-slate-700">
+                                        <rect
+                                            x={0}
+                                            y={0}
+                                            width={transferState.progress}
+                                            height={4}
+                                            rx={2}
+                                            fill={transferState.status === 'completed' ? '#10b981' : '#06b6d4'}
+                                        />
+                                    </svg>
+                                    <span className="text-[10px] text-slate-400 font-mono font-bold tabular-nums">{transferState.progress}%</span>
                                 </div>
                              )}
                          </div>
@@ -838,12 +914,15 @@ export const NetworkView: React.FC<Props> = ({ nodes, onConnectNode, onAutonomyU
                     
                     {transferState.status === 'completed' && (
                         <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex gap-2">
-                             <button className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold transition-all flex items-center justify-center gap-2">
+                             <button
+                                onClick={exportTransferLogs}
+                                className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+                             >
                                 <Download className="w-3 h-3" /> Exporter LOGS
                              </button>
                              <button 
                                 onClick={closeTransferPanel}
-                                className="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-[10px] font-bold transition-all"
+                                className="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-[10px] font-bold transition-all cursor-pointer"
                              >
                                 Fermer
                              </button>

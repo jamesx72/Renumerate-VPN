@@ -16,7 +16,10 @@ type TabId = 'wizard' | 'general' | 'renumbering' | 'vortex' | 'security' | 'ear
 export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClose, userPlan, onShowPricing }) => {
   const [activeTab, setActiveTab] = useState<TabId>('wizard');
   const [wizardStep, setWizardStep] = useState(1);
-  const [hoveredPreset, setHoveredPreset] = useState<string | null>(null);
+  const [, setHoveredPreset] = useState<string | null>(null);
+  const [sessionBadge] = useState(() =>
+    Math.random().toString(36).slice(2, 8).toUpperCase()
+  );
   
   const tabs = [
     { id: 'wizard', label: 'Setup_Wizard', icon: Wand2 },
@@ -143,7 +146,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
             <div className="absolute top-0 right-0 p-8 flex items-center gap-4">
                 <div className="flex flex-col text-right">
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Active_Profile</span>
-                    <span className="text-[10px] font-mono font-bold text-brand-500">SESSION-{Math.random().toString(36).substr(2, 6).toUpperCase()}</span>
+                    <span className="text-[10px] font-mono font-bold text-brand-500">SESSION-{sessionBadge}</span>
                 </div>
                 <button onClick={onClose} className="p-4 hover:bg-white/10 rounded-3xl text-slate-500 transition-all border border-white/5 hover:rotate-90">
                     <X className="w-7 h-7" />
@@ -365,6 +368,278 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                 </div>
             )}
 
+            {activeTab === 'vortex' && (
+                <div className="space-y-10 animate-in slide-in-from-right-8 duration-500 text-white">
+                    <div className="space-y-2">
+                        <div className="flex items-center gap-4">
+                            <h3 className="text-4xl font-black text-white uppercase tracking-tighter">Vortex_Onion_Core</h3>
+                            <span className="px-4 py-1.5 bg-purple-500/15 text-purple-400 text-[10px] font-black rounded-xl border border-purple-500/30 uppercase tracking-widest">
+                                {settings.vortexCircuitLength} Sauts Actifs
+                            </span>
+                        </div>
+                        <p className="text-sm text-slate-400 font-medium max-w-2xl">
+                            Configurez le routage multi-relais Onion Vortex, les ponts d'obfuscation anti-censure (DPI) et les juridictions d'entrée/sortie.
+                        </p>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-10 rounded-[3.5rem] border border-white/10 space-y-10 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+
+                        {/* Bridge Selection */}
+                        <div className="space-y-5">
+                            <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
+                                <Orbit className="w-5 h-5 text-purple-400" /> Pont_Obfuscation_Vortex
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {([
+                                    { id: 'none', label: 'Direct (Aucun pont)', desc: 'Latence minimale sur réseaux non censurés' },
+                                    { id: 'obfs4', label: 'OBFS4 Polymorphe', desc: 'Masque le trafic Tor/VPN contre l’inspection DPI' },
+                                    { id: 'snowflake', label: 'Snowflake WebRTC', desc: 'Relais pair-à-pair éphémères indétectables' },
+                                    { id: 'meek-azure', label: 'Meek Domain-Fronting', desc: 'Encapsulation HTTPS haute furtivité via CDN' },
+                                ] as const).map((bridge) => (
+                                    <button
+                                        key={bridge.id}
+                                        onClick={() => updateSettings('vortexBridge', bridge.id)}
+                                        className={`p-5 rounded-3xl border text-left transition-all cursor-pointer ${
+                                            settings.vortexBridge === bridge.id
+                                                ? 'bg-purple-600/20 border-purple-500 text-white shadow-xl'
+                                                : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20'
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-xs font-black uppercase tracking-wider">{bridge.label}</span>
+                                            {settings.vortexBridge === bridge.id && <Check className="w-4 h-4 text-purple-400" />}
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">{bridge.desc}</p>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Circuit Length */}
+                        <div className="space-y-5 pt-6 border-t border-white/5">
+                            <div className="flex items-center justify-between">
+                                <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
+                                    <Layers className="w-5 h-5 text-cyan-400" /> Profondeur_Du_Circuit
+                                </label>
+                                <span className="text-sm font-mono font-black text-purple-400">
+                                    {settings.vortexCircuitLength} relais chiffrés
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-3 bg-black/50 p-2.5 rounded-3xl border border-white/5">
+                                {[3, 4, 5, 6].map((hops) => (
+                                    <button
+                                        key={hops}
+                                        onClick={() => updateSettings('vortexCircuitLength', hops)}
+                                        className={`py-4 rounded-2xl text-xs font-mono font-black uppercase transition-all cursor-pointer ${
+                                            settings.vortexCircuitLength === hops
+                                                ? 'bg-purple-600 text-white shadow-lg'
+                                                : 'text-slate-500 hover:text-slate-200'
+                                        }`}
+                                    >
+                                        {hops} Sauts
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Entry & Exit Jurisdictions */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-white/5">
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                                    Juridiction d'Entrée (Guard Node)
+                                </label>
+                                <select
+                                    value={settings.vortexEntryNodeCountry}
+                                    onChange={(e) => updateSettings('vortexEntryNodeCountry', e.target.value)}
+                                    className="w-full bg-black/60 border border-white/10 rounded-2xl py-4 px-5 text-xs font-bold text-white outline-none focus:border-purple-500"
+                                >
+                                    <option value="auto">Sélection Automatique (Optimal)</option>
+                                    <option value="Suisse">Suisse (Hors UE / Juridiction stricte)</option>
+                                    <option value="Islande">Islande (Protection constitutionnelle)</option>
+                                    <option value="Estonie">Estonie (Relais haute vitesse)</option>
+                                    <option value="Allemagne">Allemagne (Francfort IXP)</option>
+                                    <option value="France">France (Paris / Lyon)</option>
+                                </select>
+                            </div>
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                                    Juridiction de Sortie (Exit Node)
+                                </label>
+                                <select
+                                    value={settings.vortexExitNodeCountry}
+                                    onChange={(e) => updateSettings('vortexExitNodeCountry', e.target.value)}
+                                    className="w-full bg-black/60 border border-white/10 rounded-2xl py-4 px-5 text-xs font-bold text-white outline-none focus:border-purple-500"
+                                >
+                                    <option value="auto">Rotation Aléatoire Multi-Pays</option>
+                                    <option value="Suisse">Suisse (Genève / Zurich)</option>
+                                    <option value="Islande">Islande (Reykjavik)</option>
+                                    <option value="Panama">Panama (Offshore Zero-Log)</option>
+                                    <option value="Singapour">Singapour (Hub Asie)</option>
+                                    <option value="USA">États-Unis (New York)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* NoScript Shield */}
+                        <div className="pt-6 border-t border-white/5 flex items-center justify-between p-6 bg-black/40 rounded-3xl border border-white/5">
+                            <div className="flex items-center gap-5">
+                                <div className="p-3.5 bg-purple-500/10 rounded-2xl text-purple-400">
+                                    <Ghost className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h4 className="font-black text-white uppercase tracking-wider text-sm">Isolation Stricte NoScript</h4>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                        Neutralise les vecteurs d'empreinte Canvas, WebGL et AudioContext lors des sessions Onion Vortex.
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => updateSettings('vortexNoScript', !settings.vortexNoScript)} className="active:scale-90 transition-transform cursor-pointer">
+                                {settings.vortexNoScript ? <ToggleRight className="w-14 h-14 text-purple-500" /> : <ToggleLeft className="w-14 h-14 text-slate-700" />}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'renumbering' && (
+                <div className="space-y-10 animate-in slide-in-from-right-8 duration-500 text-white">
+                    <div className="space-y-2">
+                        <h3 className="text-4xl font-black text-white uppercase tracking-tighter">Identity_Morphing</h3>
+                        <p className="text-sm text-slate-400 font-medium max-w-2xl">
+                            Automatisez la re-numérotation cyclique de votre adresse IP virtuelle, l'adresse MAC matérielle et l'empreinte User-Agent.
+                        </p>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-10 rounded-[3.5rem] border border-white/10 space-y-10 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
+
+                        {/* Dynamic Auto-Rotation */}
+                        <div className="p-6 bg-black/40 rounded-3xl border border-white/5 space-y-6">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-3.5 bg-cyan-500/10 rounded-2xl text-cyan-400">
+                                        <RefreshCw className={`w-6 h-6 ${settings.autoRotation ? 'animate-spin-slow' : ''}`} />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-black text-white uppercase tracking-wider text-sm">Rotation Dynamique Automatique</h4>
+                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                            Régénère automatiquement l'IP, l'adresse MAC et le navigateur simulé à intervalle régulier lorsque le tunnel est actif.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button onClick={() => updateSettings('autoRotation', !settings.autoRotation)} className="active:scale-90 transition-transform cursor-pointer">
+                                    {settings.autoRotation ? <ToggleRight className="w-14 h-14 text-cyan-500" /> : <ToggleLeft className="w-14 h-14 text-slate-700" />}
+                                </button>
+                            </div>
+
+                            <div className="space-y-3 pt-4 border-t border-white/5">
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                        <Clock className="w-4 h-4 text-cyan-400" /> Intervalle de Rotation
+                                    </span>
+                                    <span className="font-mono font-black text-cyan-400">{settings.rotationInterval} min</span>
+                                </div>
+                                <div className="grid grid-cols-6 gap-2">
+                                    {[1, 5, 10, 15, 30, 60].map((mins) => (
+                                        <button
+                                            key={mins}
+                                            onClick={() => updateSettings('rotationInterval', mins)}
+                                            className={`py-2.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer ${
+                                                settings.rotationInterval === mins
+                                                    ? 'bg-cyan-600 text-white shadow-lg'
+                                                    : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                                            }`}
+                                        >
+                                            {mins}m
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Obfuscation Level */}
+                        <div className="space-y-4">
+                            <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
+                                <Fingerprint className="w-5 h-5 text-brand-500" /> Niveau_Obfuscation_Matérielle
+                            </label>
+                            <div className="grid grid-cols-3 gap-4 bg-black/50 p-2.5 rounded-3xl border border-white/5">
+                                {([
+                                    { id: 'standard', label: 'Standard' },
+                                    { id: 'high', label: 'Élevé (High)' },
+                                    { id: 'ultra', label: 'Polymorphe (Ultra)' },
+                                ] as const).map((lvl) => (
+                                    <button
+                                        key={lvl.id}
+                                        onClick={() => updateSettings('obfuscationLevel', lvl.id)}
+                                        className={`py-4 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                            settings.obfuscationLevel === lvl.id
+                                                ? 'bg-brand-600 text-white shadow-lg'
+                                                : 'text-slate-500 hover:text-slate-200'
+                                        }`}
+                                    >
+                                        {lvl.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* MAC Scrambling Mode & UA Complexity */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-white/5">
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                                    Générateur d'Adresse MAC
+                                </label>
+                                <div className="grid grid-cols-3 gap-2 bg-black/50 p-2 rounded-2xl border border-white/5">
+                                    {([
+                                        { id: 'vendor', label: 'OUI Réel' },
+                                        { id: 'laa', label: 'Locale LAA' },
+                                        { id: 'random', label: 'Aléatoire' },
+                                    ] as const).map((m) => (
+                                        <button
+                                            key={m.id}
+                                            onClick={() => updateSettings('macScramblingMode', m.id)}
+                                            className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer ${
+                                                settings.macScramblingMode === m.id
+                                                    ? 'bg-emerald-600 text-white'
+                                                    : 'text-slate-500 hover:text-slate-200'
+                                            }`}
+                                        >
+                                            {m.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                                    Diversité Signature User-Agent
+                                </label>
+                                <div className="grid grid-cols-3 gap-2 bg-black/50 p-2 rounded-2xl border border-white/5">
+                                    {([
+                                        { id: 'standard', label: 'Standard' },
+                                        { id: 'diverse', label: 'Diversifiée' },
+                                        { id: 'chaotic', label: 'Chaotique' },
+                                    ] as const).map((u) => (
+                                        <button
+                                            key={u.id}
+                                            onClick={() => updateSettings('uaComplexity', u.id)}
+                                            className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer ${
+                                                settings.uaComplexity === u.id
+                                                    ? 'bg-amber-600 text-white'
+                                                    : 'text-slate-500 hover:text-slate-200'
+                                            }`}
+                                        >
+                                            {u.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {activeTab === 'earnings' && (
                  <div className="space-y-12 animate-in slide-in-from-right-8 duration-500">
                     <div className="space-y-2">
@@ -494,9 +769,45 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                     </button>
                                 ))}
                             </div>
+
+                            {settings.dns === 'custom' && (
+                                <div className="pt-2 space-y-2 animate-in fade-in duration-200">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 block">
+                                        Serveur DNS Personnalisé (IPv4 ou DoH)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={settings.customDnsServer}
+                                        onChange={(e) => updateSettings('customDnsServer', e.target.value)}
+                                        placeholder="Ex: 94.140.14.14 ou https://dns.quad9.net/dns-query"
+                                        className="w-full bg-black/60 border border-white/10 rounded-2xl py-4 px-6 text-sm font-mono font-bold text-cyan-400 outline-none focus:border-cyan-500 transition-all"
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         <div className="pt-10 border-t border-white/5 space-y-6">
+                            {/* DNS Leak Protection & Tracker Blocker */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="flex items-center justify-between p-6 bg-black/40 rounded-3xl border border-white/5">
+                                    <div>
+                                        <h4 className="font-black text-white uppercase tracking-wider text-xs">Protection Anti-Fuite DNS</h4>
+                                        <p className="text-[10px] text-slate-500 mt-1">Force toutes les requêtes DNS dans le tunnel chiffré.</p>
+                                    </div>
+                                    <button onClick={() => updateSettings('dnsLeakProtection', !settings.dnsLeakProtection)} className="active:scale-90 transition-transform cursor-pointer">
+                                        {settings.dnsLeakProtection ? <ToggleRight className="w-12 h-12 text-emerald-500" /> : <ToggleLeft className="w-12 h-12 text-slate-700" />}
+                                    </button>
+                                </div>
+                                <div className="flex items-center justify-between p-6 bg-black/40 rounded-3xl border border-white/5">
+                                    <div>
+                                        <h4 className="font-black text-white uppercase tracking-wider text-xs">Bouclier Anti-Traqueurs</h4>
+                                        <p className="text-[10px] text-slate-500 mt-1">Bloque les domaines télémétriques et publicitaires connus.</p>
+                                    </div>
+                                    <button onClick={() => updateSettings('adBlocker', !settings.adBlocker)} className="active:scale-90 transition-transform cursor-pointer">
+                                        {settings.adBlocker ? <ToggleRight className="w-12 h-12 text-amber-500" /> : <ToggleLeft className="w-12 h-12 text-slate-700" />}
+                                    </button>
+                                </div>
+                            </div>
                             {/* Emergency Kill Switch */}
                             <div className="flex items-center justify-between p-8 bg-black/40 rounded-[2.5rem] border border-white/5 group/opt hover:border-red-500/30 transition-all">
                                 <div className="flex items-center gap-6">

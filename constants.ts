@@ -109,17 +109,27 @@ export const generateRandomMac = (
 };
 
 export const MOCK_IDENTITIES: VirtualIdentity[] = [
-  { ip: '192.168.1.105', country: 'France', city: 'Paris', mac: '00:1B:44:11:3A:B7', userAgentShort: 'Chrome 124 / Windows 11', latency: 12, timezone: 'UTC+1' },
-  { ip: '45.33.22.11', country: 'Suisse', city: 'Zürich', mac: 'AC:DE:48:23:45:67', userAgentShort: 'Firefox 126 / Fedora', latency: 24, timezone: 'UTC+1' },
-  { ip: '104.28.11.5', country: 'Singapour', city: 'Singapore', mac: '0014.22ef.6816', userAgentShort: 'Safari 17.5 / macOS', latency: 145, timezone: 'UTC+8' },
+  { ip: '185.212.149.42', country: 'France', city: 'Paris', mac: '00:1B:44:11:3A:B7', userAgentShort: 'Chrome 124 / Windows 11', latency: 12, timezone: 'UTC+1' },
+  { ip: '179.43.168.24', country: 'Suisse', city: 'Zürich', mac: 'AC:DE:48:23:45:67', userAgentShort: 'Firefox 126 / Fedora', latency: 21, timezone: 'UTC+1' },
+  { ip: '82.221.105.19', country: 'Islande', city: 'Reykjavik', mac: '3C:5A:B4:91:0E:44', userAgentShort: 'Brave 1.66 / Windows 11', latency: 38, timezone: 'UTC+0' },
+  { ip: '91.198.174.66', country: 'Allemagne', city: 'Francfort', mac: '00:50:56:C0:00:08', userAgentShort: 'Chrome 124 / Windows 11', latency: 16, timezone: 'UTC+1' },
+  { ip: '185.65.134.88', country: 'Estonie', city: 'Tallinn', mac: '52:54:00:4A:92:1B', userAgentShort: 'Firefox 126 / Fedora', latency: 34, timezone: 'UTC+2' },
+  { ip: '198.54.131.70', country: 'USA', city: 'New York', mac: '00:16:3E:7F:21:C9', userAgentShort: 'Arc Browser / macOS', latency: 76, timezone: 'UTC-5' },
+  { ip: '190.14.37.112', country: 'Panama', city: 'Panama City', mac: 'E0:D5:5E:8B:44:10', userAgentShort: 'Safari 17.5 / macOS', latency: 118, timezone: 'UTC-5' },
+  { ip: '103.253.41.90', country: 'Singapour', city: 'Singapour', mac: '0014.22ef.6816', userAgentShort: 'Safari 17.5 / macOS', latency: 145, timezone: 'UTC+8' },
 ];
 
 export const MOCK_NODES: DeviceNode[] = [
-  { id: 'n1', name: 'FR-PAR-01', type: 'server', status: 'active', signalStrength: 98, transferRate: 120, latency: 12, autonomyProfile: 'provider', tags: ['fast'], ip: '192.168.1.105', country: 'France' },
-  { id: 'n2', name: 'FR-LYO-02', type: 'desktop', status: 'idle', signalStrength: 85, transferRate: 45, latency: 18, autonomyProfile: 'balanced', tags: ['relay'], ip: '192.168.1.201', country: 'France' },
-  { id: 'n3', name: 'CH-ZUR-01', type: 'server', status: 'active', signalStrength: 95, transferRate: 150, latency: 24, autonomyProfile: 'provider', tags: ['stealth'], ip: '45.33.22.11', country: 'Suisse' },
-  { id: 'n4', name: 'CH-GEN-01', type: 'mobile', status: 'active', signalStrength: 70, transferRate: 20, latency: 32, autonomyProfile: 'consumer', tags: ['dynamic'], ip: '45.33.22.45', country: 'Suisse' },
-  { id: 'n5', name: 'SG-CEN-01', type: 'server', status: 'active', signalStrength: 99, transferRate: 200, latency: 145, autonomyProfile: 'provider', tags: ['exit'], ip: '104.28.11.5', country: 'Singapour' },
+  { id: 'n1', name: 'FR-PAR-01', type: 'server', status: 'active', signalStrength: 98, transferRate: 185, latency: 12, autonomyProfile: 'provider', tags: ['fast'], ip: '185.212.149.42', country: 'France', city: 'Paris', lat: 48.8566, lon: 2.3522, timezone: 'UTC+1' },
+  { id: 'n2', name: 'FR-LYO-02', type: 'desktop', status: 'active', signalStrength: 89, transferRate: 74, latency: 17, autonomyProfile: 'balanced', tags: ['relay'], ip: '185.212.151.18', country: 'France', city: 'Lyon', lat: 45.764, lon: 4.8357, timezone: 'UTC+1' },
+  { id: 'n3', name: 'CH-ZUR-01', type: 'server', status: 'active', signalStrength: 97, transferRate: 210, latency: 21, autonomyProfile: 'provider', tags: ['stealth', 'exit'], ip: '179.43.168.24', country: 'Suisse', city: 'Zürich', lat: 47.3769, lon: 8.5417, timezone: 'UTC+1' },
+  { id: 'n4', name: 'CH-GEN-02', type: 'server', status: 'active', signalStrength: 93, transferRate: 145, latency: 24, autonomyProfile: 'provider', tags: ['stealth'], ip: '179.43.170.85', country: 'Suisse', city: 'Genève', lat: 46.2044, lon: 6.1432, timezone: 'UTC+1' },
+  { id: 'n5', name: 'DE-FRA-01', type: 'server', status: 'active', signalStrength: 99, transferRate: 240, latency: 16, autonomyProfile: 'provider', tags: ['fast'], ip: '91.198.174.66', country: 'Allemagne', city: 'Francfort', lat: 50.1109, lon: 8.6821, timezone: 'UTC+1' },
+  { id: 'n6', name: 'IS-REY-01', type: 'server', status: 'active', signalStrength: 94, transferRate: 160, latency: 38, autonomyProfile: 'provider', tags: ['stealth', 'exit'], ip: '82.221.105.19', country: 'Islande', city: 'Reykjavik', lat: 64.1466, lon: -21.9426, timezone: 'UTC+0' },
+  { id: 'n7', name: 'EE-TAL-01', type: 'server', status: 'active', signalStrength: 91, transferRate: 135, latency: 34, autonomyProfile: 'balanced', tags: ['relay'], ip: '185.65.134.88', country: 'Estonie', city: 'Tallinn', lat: 59.437, lon: 24.7536, timezone: 'UTC+2' },
+  { id: 'n8', name: 'US-NYC-01', type: 'server', status: 'active', signalStrength: 92, transferRate: 195, latency: 76, autonomyProfile: 'provider', tags: ['exit'], ip: '198.54.131.70', country: 'USA', city: 'New York', lat: 40.7128, lon: -74.006, timezone: 'UTC-5' },
+  { id: 'n9', name: 'PA-PTY-01', type: 'iot', status: 'active', signalStrength: 82, transferRate: 68, latency: 118, autonomyProfile: 'balanced', tags: ['stealth'], ip: '190.14.37.112', country: 'Panama', city: 'Panama City', lat: 8.9824, lon: -79.5199, timezone: 'UTC-5' },
+  { id: 'n10', name: 'SG-SIN-01', type: 'server', status: 'active', signalStrength: 96, transferRate: 205, latency: 145, autonomyProfile: 'provider', tags: ['exit'], ip: '103.253.41.90', country: 'Singapour', city: 'Singapour', lat: 1.3521, lon: 103.8198, timezone: 'UTC+8' },
 ];
 
 export const INITIAL_LOGS = [

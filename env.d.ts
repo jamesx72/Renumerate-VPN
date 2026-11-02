@@ -1,17 +1,4 @@
-declare namespace NodeJS {
-  interface ProcessEnv {
-    API_KEY: string;
-    GEMINI_API_KEY?: string;
-    NODE_ENV: 'development' | 'production' | 'test';
-  }
-}
-
-declare const process: {
-  env: NodeJS.ProcessEnv;
-};
-
 interface ImportMetaEnv {
-  readonly API_KEY: string;
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
 }
@@ -19,3 +6,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare module 'world-atlas/countries-110m.json' {
+  const topology: Record<string, unknown>;
+  export default topology;
+}
+
