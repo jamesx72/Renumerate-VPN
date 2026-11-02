@@ -8,6 +8,7 @@ import {
   Share2, ShieldHalf, Key, Link2, Settings2, Sliders, History, Clock, Calendar
 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
+import { DnsLeakTester } from './DnsLeakTester';
 import { SecurityReport, PlanTier, ConnectionMode, DeviceNode, AppSettings, ConnectionSession } from '../types';
 
 interface DashboardProps {
@@ -71,6 +72,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isOnionResolving, setIsOnionResolving] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState('us');
   const [isDnsTesting, setIsDnsTesting] = useState(false);
+  const [dnsTestTrigger, setDnsTestTrigger] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -246,6 +248,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
            />
         </div>
       </div>
+
+      {/* DNS Leak Diagnostic Tool */}
+      <DnsLeakTester
+        isConnected={isConnected}
+        mode={mode}
+        protocol={protocol}
+        currentIp={currentIp}
+        nodes={nodes}
+        settings={settings}
+        updateSettings={updateSettings}
+        addLog={addLog}
+        externalTriggerCount={dnsTestTrigger}
+      />
 
       {/* Tor Access Hub Section (Vortex Optimized) */}
       {isOnionMode && (
@@ -611,10 +626,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                   </div>
                   <button 
-                    onClick={() => { setIsDnsTesting(true); setTimeout(()=>setIsDnsTesting(false), 2000); }}
-                    className="px-6 py-3 bg-white text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-500 hover:text-white transition-all shadow-xl active:scale-95"
+                    onClick={() => {
+                      setIsDnsTesting(true);
+                      setDnsTestTrigger((c) => c + 1);
+                      setTimeout(() => setIsDnsTesting(false), 2000);
+                    }}
+                    className="px-6 py-3 bg-white text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-500 hover:text-white transition-all shadow-xl active:scale-95 cursor-pointer"
                   >
-                    {isDnsTesting ? 'TESTING...' : 'RUN_LEAK_TEST'}
+                    {isDnsTesting ? 'TEST EN COURS...' : 'LANCER LE TEST DNS'}
                   </button>
               </div>
           </div>

@@ -1,17 +1,45 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
-// https://vitejs.dev/config/
+function disableHmrWebSocketPlugin(): Plugin {
+  return {
+    name: 'disable-vite-hmr-ws',
+    enforce: 'post',
+    transform(code, id) {
+      if (id.includes('vite/dist/client/client.mjs')) {
+        return {
+          code: code.replace(
+            'transport.connect(createHMRHandler(handleMessage));',
+            '/* HMR WebSocket disabled in preview environment */'
+          ),
+          map: null,
+        };
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
-  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, '.', '');
+  const apiKey =
+    env.GEMINI_API_KEY ||
+    env.API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    process.env.API_KEY ||
+    '';
 
   return {
-    plugins: [react()],
+    server: {
+      port: 3000,
+      host: '0.0.0.0',
+      hmr: false,
+    },
+    plugins: [react(), tailwindcss(), disableHmrWebSocketPlugin()],
     define: {
-      // Polyfill process.env.API_KEY for the browser
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || process.env.API_KEY)
-    }
+      'process.env.API_KEY': JSON.stringify(apiKey),
+      'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),
+    },
   };
 });

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Shield, Mail, ArrowRight, Loader2, KeyRound, CheckCircle } from 'lucide-react';
+import { dbService } from '../services/dbService';
 
 interface Props {
-  onLogin: (email: string) => void;
+  onLogin: (email: string, password: string, userId: string) => void;
 }
 
 export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
@@ -13,16 +14,16 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
-    // Validation spécifique côté client
-    if (!email) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
         setError('L\'adresse email est requise.');
         return;
     }
-    if (!email.includes('@')) {
+    if (!trimmedEmail.includes('@')) {
         setError('Format d\'email invalide.');
         return;
     }
@@ -35,32 +36,37 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
         return;
     }
 
-    setIsLoading(true);
-    
-    // Simulate API call authentication delay
-    setTimeout(() => {
-        // Simulation des erreurs serveur pour démonstration
-        if (isLogin) {
-            // Pour tester "Aucun compte", utiliser cet email
-            if (email === 'inconnu@exemple.com') {
-                setIsLoading(false);
-                setError('Aucun compte trouvé pour cet email.');
-                return;
-            }
-            // Pour tester "Mot de passe incorrect", utiliser ce mot de passe
-            if (password === 'faux') {
-                setIsLoading(false);
-                setError('Mot de passe incorrect.');
-                return;
-            }
+    if (isLogin) {
+        if (trimmedEmail.toLowerCase() === 'inconnu@exemple.com') {
+            setError('Aucun compte trouvé pour cet email.');
+            return;
         }
+        if (password === 'faux') {
+            setError('Mot de passe incorrect.');
+            return;
+        }
+    }
 
-        setIsLoading(false);
-        setIsSuccess(true);
-        setTimeout(() => {
-             onLogin(email);
-        }, 1500);
-    }, 1500);
+    setIsLoading(true);
+    try {
+      const authProfile = await dbService.authenticateUser(
+        trimmedEmail,
+        password,
+        isLogin ? 'login' : 'signup'
+      );
+      setIsLoading(false);
+      setIsSuccess(true);
+      setTimeout(() => {
+        onLogin(authProfile.email, password, authProfile.id);
+      }, 650);
+    } catch (err) {
+      setIsLoading(false);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Impossible de valider votre identité locale.'
+      );
+    }
   };
 
   if (isSuccess) {

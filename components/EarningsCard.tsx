@@ -12,11 +12,12 @@ interface Props {
   onUpgrade: () => void;
   onVerify: () => void;
   onWithdraw: () => void;
+  onShowTransactions?: () => void;
   transactions?: Transaction[];
   settings?: AppSettings;
 }
 
-export const EarningsCard: React.FC<Props> = ({ isConnected, plan, isVerified, balance, reputation = 100, onUpgrade, onVerify, onWithdraw, transactions = [], settings }) => {
+export const EarningsCard: React.FC<Props> = ({ isConnected, plan, isVerified, balance, reputation = 100, onUpgrade, onVerify, onWithdraw, onShowTransactions, transactions = [], settings }) => {
   const [networkLoad, setNetworkLoad] = useState(42);
   const isPremium = plan !== 'free';
   const isEarning = isConnected && isPremium && isVerified;
@@ -50,7 +51,7 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, isVerified, b
     <div className="bg-slate-950 dark:bg-slate-900 rounded-[2.5rem] p-8 border-2 border-brand-500/20 relative overflow-hidden group flex flex-col h-full shadow-2xl transition-all duration-500 hover:border-brand-500/40">
       <div className="absolute inset-0 bg-scanline opacity-[0.03] pointer-events-none"></div>
       
-      <div className="flex items-center justify-between mb-8 relative z-10">
+      <div className="flex items-center justify-between mb-8 relative z-10 gap-2">
         <div className="flex flex-col">
             <h3 className="font-black text-xl flex items-center gap-3 text-white uppercase tracking-tighter">
                 <Wallet className={`w-6 h-6 ${isEarning ? 'text-amber-500 animate-pulse' : 'text-slate-600'}`} />
@@ -61,12 +62,25 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, isVerified, b
                 <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">Node_Contribution_Protocol v5.0</p>
             </div>
         </div>
-        {isEarning && (
-          <div className="flex items-center gap-2 px-4 py-1.5 rounded-xl text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner">
-            <Sparkles className="w-3 h-3" />
-            LIVE_MINING
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {onShowTransactions && (
+            <button
+              type="button"
+              onClick={onShowTransactions}
+              title="Historique des transactions RNC"
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition-colors flex items-center gap-1.5 text-[10px] font-mono cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              {transactions.length > 0 && <span>{transactions.length}</span>}
+            </button>
+          )}
+          {isEarning && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner">
+              <Sparkles className="w-3 h-3" />
+              LIVE_MINING
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col">
@@ -107,7 +121,7 @@ export const EarningsCard: React.FC<Props> = ({ isConnected, plan, isVerified, b
                           ></div>
                       ))}
                   </div>
-                  <p className="text-[8px] text-slate-600 font-bold italic">>> Plus la charge réseau est élevée, plus vos gains RNC s'accélèrent.</p>
+                  <p className="text-[8px] text-slate-600 font-bold italic">Plus la charge réseau est élevée, plus vos gains RNC s'accélèrent.</p>
                </div>
 
                <div className="grid grid-cols-2 gap-4">

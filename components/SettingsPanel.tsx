@@ -286,7 +286,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                         </button>
                                     ))}
                                 </div>
-                                <p className="text-[10px] text-slate-600 font-medium italic pl-4">>> Recommandé : Wireguard pour la performance, OpenVPN pour l'obfuscation.</p>
+                                <p className="text-[10px] text-slate-600 font-medium italic pl-4">Recommandé : WireGuard pour la performance, OpenVPN pour l'obfuscation.</p>
                             </div>
 
                             <div className="grid grid-cols-2 gap-10">
@@ -394,7 +394,7 @@ export const SettingsPanel: React.FC<Props> = ({ settings, updateSettings, onClo
                                         className="w-full h-full bg-transparent appearance-none accent-amber-500 cursor-pointer" 
                                     />
                                 </div>
-                                <p className="text-[10px] text-slate-600 font-bold italic">>> Plus l'intensité est élevée, plus votre CPU/Bande passante est sollicité pour le relayage réseau.</p>
+                                <p className="text-[10px] text-slate-600 font-bold italic">Plus l'intensité est élevée, plus votre CPU et votre bande passante sont sollicités pour le relayage réseau.</p>
                             </div>
 
                             <div className="space-y-8">
