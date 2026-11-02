@@ -609,7 +609,8 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
                 ? 'Masqué (0.0.0.0/0)'
                 : 'Exposé au résolveur'}{' '}
               · Protection IPv6 :{' '}
-              {settings.ipv6LeakProtection ? 'Active' : 'Inactive'}
+              {settings.ipv6LeakProtection ? 'Active' : 'Inactive'} · WebRTC STUN :{' '}
+              {settings.webrtcLeakShield ? 'Masqué' : 'Exposé'}
               {auditResult.measuredDohRttMs !== null
                 ? ` · RTT DoH mesuré : ${auditResult.measuredDohRttMs} ms`
                 : ''}

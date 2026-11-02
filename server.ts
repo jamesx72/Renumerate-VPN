@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -296,6 +297,83 @@ Contexte télémétrique actuel de l'utilisateur :
           'Le moteur Sentinel distant est temporairement indisponible. Vérifiez votre clé API dans Settings > Secrets ou utilisez les outils locaux de diagnostic DNS et Coffre-fort.',
       });
     }
+  });
+
+  app.get('/api/withdrawals/rates', (_req: Request, res: Response) => {
+    const bucket = Math.floor(Date.now() / 300000);
+    const wave = Math.sin(bucket * 0.73) * 0.018;
+    const eurRate = parseFloat((2.45 * (1 + wave)).toFixed(4));
+    const usdRate = parseFloat((eurRate * 1.0938).toFixed(4));
+    const xofRate = Math.round(eurRate * 655.957);
+
+    res.json({
+      updatedAt: new Date().toISOString(),
+      rates: {
+        EUR: eurRate,
+        USD: usdRate,
+        XOF: xofRate,
+      },
+      rails: {
+        crypto: 'operational',
+        mobile_money: 'operational',
+        paypal: 'operational',
+        bank_transfer: 'operational',
+      },
+    });
+  });
+
+  app.post('/api/withdrawals/sign', (req: Request, res: Response) => {
+    const {
+      userId = 'anonymous',
+      amount = 0,
+      netAmountRnc = 0,
+      method = 'crypto',
+      subNetwork = 'polygon',
+      address = '',
+      executionMode = 'instant',
+    } = (req.body || {}) as Record<string, unknown>;
+
+    const parsedAmount = Number(amount);
+    const cleanAddress = String(address || '').trim();
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || cleanAddress.length < 4) {
+      res.status(400).json({
+        ok: false,
+        error: 'Paramètres de retrait incomplets ou montant invalide.',
+      });
+      return;
+    }
+
+    const settledAt = new Date().toISOString();
+    const seedPayload = `${String(userId)}|${parsedAmount.toFixed(6)}|${Number(netAmountRnc).toFixed(6)}|${String(method)}|${String(subNetwork)}|${cleanAddress}|${String(executionMode)}|${settledAt}|${crypto.randomBytes(8).toString('hex')}`;
+    const digest = crypto
+      .createHmac('sha256', 'renumerate-settlement-engine-v2')
+      .update(seedPayload)
+      .digest('hex');
+
+    let txHash = digest;
+    const m = String(method);
+    const sn = String(subNetwork);
+    if (m === 'crypto') {
+      if (sn === 'erc20' || sn === 'polygon') {
+        txHash = `0x${digest}`;
+      } else if (sn === 'lightning') {
+        txHash = `ln-preimage-${digest.slice(0, 32)}`;
+      }
+    } else if (m === 'mobile_money') {
+      txHash = `MM-${sn.toUpperCase().slice(0, 4)}-${Date.now().toString(36).toUpperCase()}-${digest.slice(0, 6).toUpperCase()}`;
+    } else if (m === 'paypal') {
+      txHash = `PP-${digest.slice(0, 12).toUpperCase()}`;
+    } else if (m === 'bank_transfer') {
+      const dateStr = settledAt.slice(0, 10).replace(/-/g, '');
+      txHash = `SEPA-${dateStr}-${digest.slice(0, 8).toUpperCase()}`;
+    }
+
+    res.json({
+      ok: true,
+      txHash,
+      signature: digest.slice(0, 24).toUpperCase(),
+      settledAt,
+    });
   });
 
   const httpServer = http.createServer(app);

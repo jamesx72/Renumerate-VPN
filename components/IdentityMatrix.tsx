@@ -1,18 +1,35 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { VirtualIdentity, ConnectionMode, SecurityReport } from '../types';
+import {
+  VirtualIdentity,
+  ConnectionMode,
+  SecurityReport,
+  FingerprintProtectionConfig,
+} from '../types';
 import { REALISTIC_USER_AGENTS, MOCK_IDENTITIES } from '../constants';
-import { 
-  Globe, Copy, Fingerprint, 
-  Loader2, Chrome, RefreshCw, 
-  Globe2, Activity, ShieldCheck, Orbit, 
-  Zap, ChevronRight, MapPin, Users, Cloud, X, 
-  ShieldAlert, Laptop, Monitor, Smartphone, Binary, 
-  Lock, Shield, Scan, Target, Radio, Brain, 
-  ChevronDown, ShieldHalf, HelpCircle, Sparkles, 
-  Wand2, History as LucideHistory, Ghost,
-  ArrowRightLeft, Settings2, Sliders, ZapOff, Check, AlertCircle,
-  CheckCircle2, ExternalLink, MousePointer2, Terminal, Cpu, Radar as RadarIcon, Download, Search
+import {
+  Globe,
+  Copy,
+  Loader2,
+  Chrome,
+  RefreshCw,
+  Activity,
+  ShieldCheck,
+  MapPin,
+  X,
+  Binary,
+  Shield,
+  Brain,
+  ChevronDown,
+  Sparkles,
+  History as LucideHistory,
+  Settings2,
+  Sliders,
+  Check,
+  Terminal,
+  Cpu,
+  Download,
+  Search,
+  Fingerprint,
 } from 'lucide-react';
 
 interface Props {
@@ -35,121 +52,160 @@ interface Props {
   onIpv6Toggle?: (enabled: boolean) => void;
   obfuscationLevel?: 'standard' | 'high' | 'ultra';
   onObfuscationLevelChange?: (level: 'standard' | 'high' | 'ultra') => void;
+  fingerprintProtection?: FingerprintProtectionConfig;
+  onToggleFingerprint?: (key: keyof FingerprintProtectionConfig) => void;
 }
 
 const COUNTRIES_WITH_FLAGS: Record<string, string> = {
-  'France': '🇫🇷', 'Suisse': '🇨🇭', 'Singapour': '🇸🇬', 'Islande': '🇮🇸', 'Estonie': '🇪🇪', 'Panama': '🇵🇦', 'USA': '🇺🇸', 'Allemagne': '🇩🇪'
+  France: '🇫🇷',
+  Suisse: '🇨🇭',
+  Singapour: '🇸🇬',
+  Islande: '🇮🇸',
+  Estonie: '🇪🇪',
+  Panama: '🇵🇦',
+  USA: '🇺🇸',
+  Allemagne: '🇩🇪',
 };
 
-/**
- * Visual Entropy Radar Component
- */
-const EntropyRadar = ({ isMasking, level }: { isMasking: boolean, level: string }) => {
-  const [points, setPoints] = useState([60, 70, 50, 80]); // MAC, UA, IP, PACKET
-  
-  useEffect(() => {
-    const base = level === 'ultra' ? 85 : level === 'high' ? 70 : 50;
-    const interval = setInterval(() => {
-      setPoints(prev => prev.map(p => {
-        const target = isMasking ? 95 : base;
-        const jitter = isMasking ? (Math.random() * 10 - 5) : (Math.random() * 6 - 3);
-        return Math.max(20, Math.min(100, target + jitter));
-      }));
-    }, isMasking ? 100 : 800);
-    return () => clearInterval(interval);
-  }, [isMasking, level]);
+const EntropyRadar = ({
+  isMasking,
+  level,
+  fingerprintProtection,
+}: {
+  isMasking: boolean;
+  level: 'standard' | 'high' | 'ultra';
+  fingerprintProtection?: FingerprintProtectionConfig;
+}) => {
+  const fpBonus = useMemo(() => {
+    if (!fingerprintProtection) return 10;
+    return (
+      Object.values(fingerprintProtection).filter(Boolean).length * 5
+    );
+  }, [fingerprintProtection]);
 
-  const size = 160;
+  const [points, setPoints] = useState([68, 74, 62, 80]);
+
+  useEffect(() => {
+    const base =
+      (level === 'ultra' ? 78 : level === 'high' ? 66 : 52) + fpBonus * 0.6;
+    const interval = setInterval(
+      () => {
+        setPoints((prev) =>
+          prev.map((_, idx) => {
+            const axisOffset = (idx % 2 === 0 ? 4 : -3);
+            const target = isMasking ? 96 : Math.min(96, base + axisOffset);
+            const jitter = isMasking
+              ? Math.random() * 8 - 4
+              : Math.random() * 4 - 2;
+            return Math.max(25, Math.min(100, target + jitter));
+          })
+        );
+      },
+      isMasking ? 120 : 1200
+    );
+    return () => clearInterval(interval);
+  }, [isMasking, level, fpBonus]);
+
+  const size = 152;
   const center = size / 2;
-  const radius = center - 10;
-  
+  const radius = center - 14;
+
   const getCoordinates = (index: number, value: number) => {
-    const angle = (Math.PI / 2) + (index * Math.PI / 2);
+    const angle = Math.PI / 2 + (index * Math.PI) / 2;
     const r = (value / 100) * radius;
     return {
       x: center + r * Math.cos(angle),
-      y: center - r * Math.sin(angle)
+      y: center - r * Math.sin(angle),
     };
   };
 
-  const polyPoints = points.map((p, i) => {
-    const coords = getCoordinates(i, p);
-    return `${coords.x},${coords.y}`;
-  }).join(' ');
+  const polyPoints = points
+    .map((p, i) => {
+      const coords = getCoordinates(i, p);
+      return `${coords.x.toFixed(1)},${coords.y.toFixed(1)}`;
+    })
+    .join(' ');
 
   return (
     <div className="relative w-40 h-40 flex items-center justify-center">
-      <svg width={size} height={size} className="absolute inset-0 overflow-visible pointer-events-none">
-        <circle cx={center} cy={center} r={radius * 0.25} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
-        <circle cx={center} cy={center} r={radius * 0.5} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
-        <circle cx={center} cy={center} r={radius * 0.75} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
-        <circle cx={center} cy={center} r={radius} fill="none" stroke="rgba(34,211,238,0.08)" strokeWidth="1" />
-        
-        {[0, 1, 2, 3].map(i => {
+      <svg
+        width={size}
+        height={size}
+        className="overflow-visible pointer-events-none"
+      >
+        {[0.25, 0.5, 0.75, 1].map((scale) => (
+          <circle
+            key={scale}
+            cx={center}
+            cy={center}
+            r={radius * scale}
+            fill="none"
+            className="stroke-slate-200 dark:stroke-slate-800"
+            strokeWidth="1"
+          />
+        ))}
+
+        {[0, 1, 2, 3].map((i) => {
           const coords = getCoordinates(i, 100);
-          return <line key={i} x1={center} y1={center} x2={coords.x} y2={coords.y} stroke="rgba(255,255,255,0.03)" strokeWidth="1" />;
+          return (
+            <line
+              key={i}
+              x1={center}
+              y1={center}
+              x2={coords.x}
+              y2={coords.y}
+              className="stroke-slate-200 dark:stroke-slate-800"
+              strokeWidth="1"
+            />
+          );
         })}
 
         <polygon
           points={polyPoints}
-          fill={isMasking ? "rgba(34,211,238,0.2)" : "rgba(139,92,246,0.15)"}
-          stroke={isMasking ? "#22d3ee" : "#8b5cf6"}
+          fill={isMasking ? 'rgba(6,182,212,0.24)' : 'rgba(139,92,246,0.18)'}
+          stroke={isMasking ? '#06b6d4' : '#8b5cf6'}
           strokeWidth="2"
           className="transition-all duration-300 ease-out"
         />
-        
+
         {points.map((p, i) => {
           const coords = getCoordinates(i, p);
           return (
-            <circle 
-              key={i} 
-              cx={coords.x} 
-              cy={coords.y} 
-              r="3" 
-              fill={isMasking ? "#22d3ee" : "#8b5cf6"} 
+            <circle
+              key={i}
+              cx={coords.x}
+              cy={coords.y}
+              r="3.2"
+              fill={isMasking ? '#06b6d4' : '#8b5cf6'}
               className="transition-all duration-300 ease-out"
             />
           );
         })}
       </svg>
-      
-      <span className="absolute -top-5 text-[7px] font-black text-slate-600 uppercase tracking-[0.2em]">UA_COMP</span>
-      <span className="absolute -bottom-5 text-[7px] font-black text-slate-600 uppercase tracking-[0.2em]">IP_OBFS</span>
-      <span className="absolute -right-8 top-1/2 -translate-y-1/2 text-[7px] font-black text-slate-600 uppercase tracking-[0.2em] rotate-90">PKT_JIT</span>
-      <span className="absolute -left-8 top-1/2 -translate-y-1/2 text-[7px] font-black text-slate-600 uppercase tracking-[0.2em] -rotate-90">MAC_ENTR</span>
+
+      <span className="absolute -top-3 text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+        Agent HTTP
+      </span>
+      <span className="absolute -bottom-3 text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+        Passerelle IP
+      </span>
+      <span className="absolute -right-7 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-slate-500 dark:text-slate-400 rotate-90">
+        Obfuscation
+      </span>
+      <span className="absolute -left-7 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-slate-500 dark:text-slate-400 -rotate-90">
+        MAC / Toile
+      </span>
     </div>
   );
 };
 
-const GlitchIP = ({ text, active }: { text: string, active: boolean }) => {
-  if (!active) return <>{text}</>;
-
-  return (
-    <div className="relative inline-block isolate">
-      <span className="absolute top-0 left-0 -z-10 animate-glitch text-red-500 mix-blend-screen opacity-80 translate-x-[3px] translate-y-[-2px] select-none overflow-hidden">
-        {text}
-      </span>
-      <span className="absolute top-0 left-0 -z-10 animate-glitch text-cyan-400 mix-blend-screen opacity-80 translate-x-[-3px] translate-y-[2px] select-none overflow-hidden">
-        {text}
-      </span>
-      <span className="relative z-10 animate-glitch text-white block">
-        {text}
-      </span>
-      <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden">
-        <div className="w-full h-[2px] bg-white/20 absolute top-1/4 animate-scanline opacity-30"></div>
-        <div className="w-full h-[1px] bg-brand-400/40 absolute top-2/3 animate-scanline opacity-20"></div>
-      </div>
-    </div>
-  );
-};
-
-export const IdentityMatrix: React.FC<Props> = ({ 
-  identity, 
+export const IdentityMatrix: React.FC<Props> = ({
+  identity,
   availableIdentities = MOCK_IDENTITIES,
-  isRotating, 
-  isMasking = false, 
-  mode, 
-  securityReport, 
+  isRotating,
+  isMasking = false,
+  mode,
+  securityReport,
   onMask,
   onScrambleMac,
   onScrambleUA,
@@ -162,83 +218,95 @@ export const IdentityMatrix: React.FC<Props> = ({
   ipv6LeakProtection = true,
   onIpv6Toggle,
   obfuscationLevel = 'standard',
-  onObfuscationLevelChange
+  onObfuscationLevelChange,
+  fingerprintProtection,
+  onToggleFingerprint,
 }) => {
-  const [copiedIp, setCopiedIp] = useState(false);
+  const [copiedField, setCopiedField] = useState<'ip' | 'mac' | 'ua' | null>(null);
   const [localTime, setLocalTime] = useState<string>('');
   const [scrambleText, setScrambleText] = useState('');
-  const [entropy, setEntropy] = useState('0.00');
+  const [warpProgress, setWarpProgress] = useState(0);
   const [showCityModal, setShowCityModal] = useState(false);
   const [showRecs, setShowRecs] = useState(false);
-  const [warpProgress, setWarpProgress] = useState(0);
   const [showWarpTuning, setShowWarpTuning] = useState(false);
   const [showUAModal, setShowUAModal] = useState(false);
   const [uaSearch, setUaSearch] = useState('');
 
-  const isOnion = mode === ConnectionMode.ONION_VORTEX;
-  const isSmartDNS = mode === ConnectionMode.SMART_DNS;
+  // Deterministic session signature derived from identity so it never flickers on re-renders
+  const sessionFingerprintTag = useMemo(() => {
+    const seed = `${identity.ip}-${identity.mac}-${identity.userAgentShort}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash << 5) - hash + seed.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(16).toUpperCase().padStart(8, '0').slice(0, 8);
+  }, [identity.ip, identity.mac, identity.userAgentShort]);
+
+  const entropyIndex = useMemo(() => {
+    let base = obfuscationLevel === 'ultra' ? 9.85 : obfuscationLevel === 'high' ? 9.45 : 8.92;
+    if (ipv6LeakProtection) base += 0.08;
+    if (fingerprintProtection?.canvasNoise) base += 0.04;
+    if (fingerprintProtection?.webglMask) base += 0.03;
+    return Math.min(9.99, base).toFixed(2);
+  }, [obfuscationLevel, ipv6LeakProtection, fingerprintProtection]);
 
   const currentUAData = useMemo(() => {
-    return REALISTIC_USER_AGENTS.find(ua => ua.short === identity.userAgentShort) || REALISTIC_USER_AGENTS[0];
+    return (
+      REALISTIC_USER_AGENTS.find((ua) => ua.short === identity.userAgentShort) ||
+      REALISTIC_USER_AGENTS[0]
+    );
   }, [identity.userAgentShort]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setEntropy((Math.random() * 0.4 + 9.6).toFixed(2));
-    }, 1800);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     if (isMasking || isRotating) {
-      const chars = "10101010ABCDEF-X.#";
+      const chars = '0123456789ABCDEF:.';
       const interval = setInterval(() => {
-        let result = "";
-        for (let i = 0; i < 20; i++) result += chars[Math.floor(Math.random() * chars.length)];
+        let result = '';
+        for (let i = 0; i < 18; i++) {
+          result += chars[Math.floor(Math.random() * chars.length)];
+        }
         setScrambleText(result);
-      }, 60);
+      }, 65);
 
       setWarpProgress(0);
       const progressInterval = setInterval(() => {
-        setWarpProgress(prev => Math.min(100, prev + (100 / 15)));
-      }, 100);
+        setWarpProgress((prev) => Math.min(100, prev + 10));
+      }, 110);
 
       return () => {
         clearInterval(interval);
         clearInterval(progressInterval);
       };
     } else {
-        setWarpProgress(0);
+      setWarpProgress(100);
     }
   }, [isMasking, isRotating]);
 
   useEffect(() => {
-    let timerId: any = null;
     const updateTime = () => {
       const tz = identity.timezone || 'UTC+0';
       const offsetValue = parseInt(tz.replace('UTC', '') || '0', 10);
       const now = new Date();
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const cityTime = new Date(utc + (3600000 * offsetValue));
-      setLocalTime(cityTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+      const cityTime = new Date(utc + 3600000 * offsetValue);
+      setLocalTime(
+        cityTime.toLocaleTimeString('fr-FR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      );
     };
     updateTime();
-    timerId = setInterval(updateTime, 1000);
-    return () => { if (timerId) clearInterval(timerId); };
+    const timerId = setInterval(updateTime, 1000);
+    return () => clearInterval(timerId);
   }, [identity.timezone]);
 
-  const theme = {
-    primary: isOnion ? 'text-purple-400' : isSmartDNS ? 'text-amber-400' : 'text-brand-400',
-    primaryBg: isOnion ? 'bg-purple-500' : isSmartDNS ? 'bg-amber-500' : 'bg-brand-500',
-    primaryBorder: isOnion ? 'border-purple-500/20' : isSmartDNS ? 'border-amber-500/20' : 'border-brand-500/20',
-    cardBase: 'bg-slate-900/40 backdrop-blur-3xl border border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.02)]',
-    accent: isOnion ? 'bg-purple-500/10' : isSmartDNS ? 'bg-amber-500/10' : 'bg-brand-500/10'
-  };
-
-  const handleCopyIp = () => {
-    navigator.clipboard.writeText(identity.ip);
-    setCopiedIp(true);
-    setTimeout(() => setCopiedIp(false), 2000);
+  const handleCopy = (field: 'ip' | 'mac' | 'ua', value: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 1800);
   };
 
   const handleExportAuditReport = () => {
@@ -248,6 +316,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       connectionMode: mode,
       obfuscationLevel,
       ipv6LeakProtection,
+      fingerprintProtection,
       virtualIdentity: identity,
       securityReport,
     };
@@ -275,453 +344,544 @@ export const IdentityMatrix: React.FC<Props> = ({
     );
   }, [uaSearch]);
 
-  const isWarpDisabled = !isConnected || isSmartDNS || isMasking;
-
   return (
-    <div className={`space-y-10 ${isMasking ? 'animate-matrix-shift' : ''}`}>
-      {/* Top Section: IP Gateway & Warp Core */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Main Gateway Card */}
-        <div className={`lg:col-span-7 ${theme.cardBase} p-10 rounded-[3rem] relative overflow-hidden group shadow-2xl transition-all duration-700`}>
-          <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
-          <div className="absolute inset-0 cyber-grid opacity-5 pointer-events-none"></div>
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-brand-500/40 to-transparent animate-cyber-scan pointer-events-none"></div>
-          
-          <div className="relative z-10 h-full flex flex-col justify-between">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-12">
-              <div className="flex items-center gap-6">
-                <div className={`w-[2px] h-14 ${theme.primaryBg} rounded-full animate-pulse shadow-[0_0_15px_rgba(34,211,238,0.5)]`}></div>
-                <div>
-                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em]">Network_Uplink_Node</h3>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className={`text-[11px] font-mono font-black uppercase tracking-widest ${isConnected ? 'text-brand-400' : 'text-red-500'}`}>
-                      {isConnected ? 'ENCRYPTED_256B' : 'CONNECTION_OFFLINE'}
-                    </span>
-                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-brand-500 animate-ping' : 'bg-red-500 shadow-[0_0_8px_red]'}`}></div>
-                  </div>
-                </div>
-              </div>
-              <div className="px-5 py-2.5 rounded-xl bg-black/40 border border-white/5 font-mono text-[9px] text-slate-500 shadow-inner group-hover:border-brand-500/30 transition-colors">
-                KERN_ID: <span className="text-white font-black">{Math.random().toString(36).substr(2, 8).toUpperCase()}</span>
+    <div className="space-y-6">
+      {/* Top Section: Public Gateway & Morphing Engine */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Main Public Gateway Card */}
+        <div className="lg:col-span-7 bg-white dark:bg-slate-900 p-6 sm:p-7 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-2.5 h-2.5 rounded-full ${
+                  isConnected ? 'bg-emerald-500' : 'bg-slate-400'
+                }`}
+              />
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Identité réseau &amp; passerelle publique
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {isConnected
+                    ? 'Tunnel actif — chiffrement AEAD 256 bits vérifié'
+                    : 'Pré-configuration active — prête pour ouverture du tunnel'}
+                </p>
               </div>
             </div>
 
-            <div className="space-y-6">
-                <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.7em] ml-1 flex items-center gap-3">
-                  <Terminal className={`w-3.5 h-3.5 ${theme.primary} opacity-70`} /> Public_Gateway_Address
-                </span>
-                <div className="flex flex-wrap items-center gap-8">
-                  <div className={`text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter transition-all duration-700 text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.05)]`}>
-                    <GlitchIP 
-                      text={isRotating || isMasking ? scrambleText.slice(0, 15) : identity.ip} 
-                      active={isRotating || isMasking} 
-                    />
-                  </div>
-                  {!isRotating && !isMasking && (
-                    <button 
-                        onClick={handleCopyIp}
-                        className={`p-5 rounded-[2rem] bg-white/5 border border-white/5 text-slate-500 hover:text-brand-400 hover:border-brand-500/40 hover:bg-brand-500/5 transition-all active:scale-90 group/copy shadow-xl backdrop-blur-md`}
-                    >
-                        {copiedIp ? <ShieldCheck className="w-7 h-7 text-emerald-500" /> : <Copy className="w-7 h-7 group-hover/copy:scale-110 transition-transform" />}
-                    </button>
-                  )}
-                </div>
-            </div>
-
-            <div className="mt-14 pt-8 border-t border-white/5 grid grid-cols-3 gap-8">
-                <div className="space-y-3">
-                   <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest block">Entropy_Index</span>
-                   <div className="font-mono text-xl font-black text-brand-400 tracking-tighter italic">{entropy}%</div>
-                   <svg viewBox="0 0 100 3" className="w-full h-[3px] bg-slate-900 rounded-full overflow-hidden block">
-                      <rect x={0} y={0} width={Math.min(100, parseFloat(entropy) * 10)} height={3} fill="#06b6d4" />
-                   </svg>
-                </div>
-                <div className="space-y-3 border-l border-white/5 pl-8">
-                   <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest block">Ping_Response</span>
-                   <div className="font-mono text-xl font-black text-emerald-400 tracking-tighter italic">{identity.latency}ms</div>
-                   <div className="flex gap-1">
-                      {[1,2,3,4,5,6].map(i => (
-                        <div key={i} className={`w-1.5 h-3 rounded-[1px] transition-all duration-500 ${i <= 4 ? 'bg-emerald-500/40 group-hover:bg-emerald-500' : 'bg-slate-800'}`}></div>
-                      ))}
-                   </div>
-                </div>
-                <div className="space-y-3 border-l border-white/5 pl-8">
-                   <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest block">Kernel_Security</span>
-                   <div className="font-mono text-xl font-black text-purple-400 tracking-tighter italic">AES_GCM</div>
-                   <div className="text-[7px] font-black text-slate-800 uppercase tracking-[0.2em] group-hover:text-slate-600 transition-colors">Phase_4_Sync</div>
-                </div>
+            <div className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono tabular-nums text-xs text-slate-600 dark:text-slate-300">
+              ID Session : <span className="font-bold text-slate-900 dark:text-white">{sessionFingerprintTag}</span>
             </div>
           </div>
-        </div>
 
-        {/* Warp Module Card */}
-        <div className={`lg:col-span-5 ${theme.cardBase} p-10 rounded-[3rem] border-2 border-brand-500/10 relative overflow-hidden group shadow-[0_0_60px_rgba(0,0,0,0.3)] flex flex-col transition-all duration-500 hover:border-brand-500/30 hover:scale-[1.01]`}>
-            <div className="absolute inset-0 bg-brand-500/[0.02] pointer-events-none"></div>
-            
-            <div className="relative z-30 h-full flex flex-col justify-between">
-                <div className="flex justify-between items-start mb-6">
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-4">
-                          <h4 className="text-2xl font-black text-white uppercase tracking-tighter italic">Neural_Warp</h4>
-                          <div className="p-2 rounded-xl bg-brand-500/5 border border-brand-500/10 text-brand-400 group-hover:rotate-180 transition-transform duration-1000"><Sparkles className="w-4 h-4 animate-pulse" /></div>
-                        </div>
-                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.5em] mt-2">Matrix_Sync: <span className="text-emerald-500/80">NOMINAL</span></p>
-                    </div>
-                    <button 
-                      onClick={() => setShowWarpTuning(!showWarpTuning)}
-                      className={`p-3.5 rounded-xl bg-black/40 border border-white/5 transition-all duration-500 ${showWarpTuning ? 'text-brand-400 border-brand-500 shadow-[0_0_15px_rgba(6,182,212,0.2)] rotate-90 scale-110' : 'text-slate-600 hover:text-white'}`}
-                    >
-                        {showWarpTuning ? <X className="w-6 h-6" /> : <Settings2 className="w-6 h-6" />}
-                    </button>
-                </div>
-
-                <div className="flex-1 relative mb-6 flex items-center justify-center min-h-[160px]">
-                    {!showWarpTuning ? (
-                      <div className="flex flex-col items-center gap-8 w-full animate-in fade-in zoom-in-95 duration-500">
-                        <EntropyRadar isMasking={isMasking} level={obfuscationLevel} />
-                        
-                        <div className="w-full space-y-4 px-2">
-                            <div className="flex justify-between text-[8px] font-black text-slate-700 uppercase tracking-[0.3em]">
-                                <span>Synchronicity_Core</span>
-                                <span className="text-brand-400 font-mono text-sm">{Math.round(warpProgress)}%</span>
-                            </div>
-                            <div className="h-[3px] bg-black/40 rounded-full overflow-hidden p-0 flex gap-0.5">
-                                {[...Array(24)].map((_, i) => (
-                                  <div 
-                                    key={i} 
-                                    className={`h-full flex-1 rounded-[1px] transition-all duration-300 ${i * 4 < warpProgress ? 'bg-brand-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'bg-slate-900'}`}
-                                  ></div>
-                                ))}
-                            </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-slate-950/80 rounded-[2.5rem] border border-brand-500/20 p-8 space-y-8 animate-in slide-in-from-bottom-4 duration-500 absolute inset-0 z-40 backdrop-blur-2xl overflow-hidden shadow-2xl">
-                        <div className="absolute inset-0 cyber-grid opacity-5"></div>
-                        <div className="space-y-4 relative z-10">
-                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3">
-                            <Shield className="w-3.5 h-3.5 text-brand-500" /> Layer_Security
-                          </label>
-                          <div className="grid grid-cols-3 gap-2">
-                            {(['standard', 'high', 'ultra'] as const).map(lvl => (
-                              <button 
-                                key={lvl}
-                                onClick={() => onObfuscationLevelChange?.(lvl)}
-                                className={`py-4 rounded-xl text-[8px] font-black uppercase transition-all border ${obfuscationLevel === lvl ? 'bg-brand-500 text-white border-brand-400 shadow-lg' : 'bg-black/40 border-white/5 text-slate-600 hover:text-slate-400'}`}
-                              >
-                                {lvl}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="space-y-4 relative z-10">
-                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3">
-                            <Binary className="w-3.5 h-3.5 text-brand-400" /> HW_Algorithm
-                          </label>
-                          <button 
-                            onClick={() => onFormatChange?.(macFormat === 'random' ? 'standard' : 'random')}
-                            className="w-full py-4 bg-black/40 border border-white/5 rounded-2xl flex items-center justify-between px-6 hover:border-brand-500/30 transition-all"
-                          >
-                             <div className="flex flex-col text-left">
-                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{macFormat.toUpperCase()}</span>
-                               <span className="text-[7px] font-bold text-slate-700 uppercase mt-0.5">{macFormat === 'random' ? 'Entropy_Enabled' : 'Fixed_Stream'}</span>
-                             </div>
-                             <div className={`w-9 h-4.5 rounded-full p-1 transition-all duration-500 ${macFormat === 'random' ? 'bg-brand-500' : 'bg-slate-800'}`}>
-                                <div className={`w-2.5 h-2.5 bg-white rounded-full transition-transform duration-500 ${macFormat === 'random' ? 'translate-x-4' : 'translate-x-0'}`}></div>
-                             </div>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                </div>
-
-                <div className="space-y-3">
-                  <button 
-                      onClick={onMask}
-                      disabled={isWarpDisabled}
-                      className={`w-full py-6 rounded-[2rem] flex items-center justify-center gap-4 font-black text-[11px] uppercase tracking-[0.4em] transition-all active:scale-95 shadow-2xl relative overflow-hidden group/warp border border-white/5 ${
-                          isWarpDisabled 
-                          ? 'bg-slate-900/40 text-slate-700 cursor-not-allowed border-transparent' 
-                          : 'bg-brand-600 hover:bg-brand-500 text-white shadow-[0_0_25px_rgba(6,182,212,0.25)] hover:-translate-y-0.5 hover:animate-glitch'
-                      }`}
-                  >
-                      <div className="absolute inset-0 bg-scanline opacity-0 group-hover/warp:opacity-10 pointer-events-none transition-opacity"></div>
-                      {isMasking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 group-hover:scale-125 transition-transform" />}
-                      {isMasking ? 'SYNCHRONIZING...' : "RENOUVELER L'IDENTITÉ"}
-                  </button>
-                  
-                  {(!isConnected || isSmartDNS) && (
-                    <div className="flex items-center justify-center gap-2 py-2 px-4 bg-red-500/5 rounded-xl border border-red-500/10">
-                        <AlertCircle className="w-3 h-3 text-red-500/70" />
-                        <p className="text-[7px] font-black text-red-500/70 uppercase tracking-widest">
-                            REQUIERT UPLINK ACTIF
-                        </p>
-                    </div>
-                  )}
-                </div>
+          <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2">
+              <Terminal className="w-3.5 h-3.5 text-cyan-500" />
+              Adresse IPv4 virtuelle exposée
+            </span>
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-3xl sm:text-4xl md:text-5xl font-mono tabular-nums font-extrabold tracking-tight text-slate-900 dark:text-white truncate">
+                {isRotating || isMasking ? scrambleText.slice(0, 15) : identity.ip}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopy('ip', identity.ip)}
+                title="Copier l'adresse IP virtuelle"
+                className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors cursor-pointer shrink-0"
+              >
+                {copiedField === 'ip' ? (
+                  <Check className="w-5 h-5 text-emerald-500" />
+                ) : (
+                  <Copy className="w-5 h-5" />
+                )}
+              </button>
             </div>
-        </div>
-      </div>
+          </div>
 
-      {/* Identity Facets Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        
-        {/* Geo Location Card */}
-        <div className={`${theme.cardBase} p-8 rounded-[3rem] group hover:shadow-[0_20px_50px_rgba(0,0,0,0.4)] transition-all duration-700 relative overflow-hidden flex flex-col justify-between hover:-translate-y-1`}>
-            <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
-            <div className="absolute -top-10 -right-10 p-6 opacity-[0.01] group-hover:opacity-[0.05] group-hover:scale-125 group-hover:rotate-6 transition-all duration-1000 pointer-events-none">
-                <Globe className="w-56 h-56 text-brand-400" />
+          {/* Metrics + Direct IPv6 Shield */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Indice d&apos;entropie
+              </span>
+              <span className="font-mono tabular-nums text-lg font-bold text-cyan-600 dark:text-cyan-400 mt-0.5 block">
+                {entropyIndex} / 10
+              </span>
             </div>
-            
-            <div className="flex items-center justify-between mb-10 relative z-10">
-                <div className="flex items-center gap-4">
-                  <div className={`p-4 rounded-2xl ${theme.accent} border border-white/5 backdrop-blur-xl group-hover:scale-110 transition-transform duration-700 shadow-lg`}><MapPin className={`w-5 h-5 ${theme.primary}`} /></div>
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">Geo_Coordinates</span>
-                </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Latence passerelle
+              </span>
+              <span className="font-mono tabular-nums text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 block">
+                {identity.latency} ms
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                  Bouclier IPv6
+                </span>
+                <span
+                  className={`text-xs font-bold mt-0.5 block ${
+                    ipv6LeakProtection
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                  }`}
+                >
+                  {ipv6LeakProtection ? 'Verrouillé' : 'Désactivé'}
+                </span>
+              </div>
+              {onIpv6Toggle && (
                 <button
                   type="button"
-                  onClick={() => onOpenHistory?.()}
-                  title="Historique des passerelles"
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-white transition-colors cursor-pointer"
+                  onClick={() => onIpv6Toggle(!ipv6LeakProtection)}
+                  title="Basculer la protection contre les fuites IPv6"
+                  className={`w-10 h-5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 ${
+                    ipv6LeakProtection
+                      ? 'bg-emerald-500'
+                      : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
                 >
-                  <LucideHistory className="w-4 h-4" />
+                  <div
+                    className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                      ipv6LeakProtection ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
                 </button>
+              )}
             </div>
-            
-            <div className="flex items-center gap-8 mb-12 relative z-10">
-                <div className="relative">
-                  <div className="absolute inset-[-8px] border border-dashed border-brand-500/20 rounded-full animate-spin-slow"></div>
-                  <span className="text-7xl filter drop-shadow-2xl group-hover:scale-110 transition-transform duration-1000 block">{COUNTRIES_WITH_FLAGS[identity.country] || '📍'}</span>
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-[3px] border-slate-900 shadow-lg"></div>
-                </div>
-                <div className="space-y-2">
-                    <span className="text-3xl font-black text-white uppercase tracking-tighter block leading-none">{identity.country}</span>
-                    <div className="flex items-center gap-2 px-3 py-1 bg-brand-500/10 rounded-lg border border-brand-500/10 w-fit">
-                        <div className="w-1 h-1 bg-brand-400 rounded-full animate-pulse"></div>
-                        <span className="text-[8px] font-black text-brand-400 uppercase tracking-widest">TIER_1_UPLINK</span>
-                    </div>
-                </div>
+          </div>
+        </div>
+
+        {/* Morphing Engine & Anti-Fingerprinting Card */}
+        <div className="lg:col-span-5 bg-white dark:bg-slate-900 p-6 sm:p-7 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-5">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Fingerprint className="w-4 h-4 text-purple-500" />
+                <span>Moteur de re-numérotation</span>
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Obfuscation : <span className="font-semibold capitalize">{obfuscationLevel}</span>
+              </p>
             </div>
 
-            <button 
-                onClick={() => isConnected && setShowCityModal(true)}
-                disabled={!isConnected}
-                className={`w-full p-5 rounded-[2rem] border transition-all flex items-center justify-between group/city relative overflow-hidden ${
-                    isConnected 
-                    ? 'bg-black/40 border-white/5 hover:border-brand-500/30 hover:bg-black/60 shadow-lg' 
-                    : 'bg-black/20 border-transparent grayscale opacity-50'
-                }`}
+            <button
+              type="button"
+              onClick={() => setShowWarpTuning((v) => !v)}
+              title="Configurer le niveau d'obfuscation et les protections d'empreinte"
+              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                showWarpTuning
+                  ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-600 dark:text-cyan-400'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
-                <div className="text-left relative z-10">
-                    <span className="text-[8px] font-black text-slate-700 uppercase tracking-[0.2em] mb-1 block">Session_Region</span>
-                    <span className={`text-xl font-mono font-black tracking-tighter ${isConnected ? 'text-white' : 'text-slate-700'}`}>{identity.city}</span>
-                </div>
-                <div className="text-right relative z-10 flex flex-col items-end">
-                    <span className="text-[8px] font-black text-slate-700 uppercase tracking-[0.2em] mb-1 flex items-center gap-1.5">
-                      <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></div>
-                      Local_Uptime
+              {showWarpTuning ? (
+                <X className="w-4 h-4" />
+              ) : (
+                <Settings2 className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center min-h-[172px]">
+            {!showWarpTuning ? (
+              <div className="w-full flex flex-col items-center gap-5 py-2">
+                <EntropyRadar
+                  isMasking={isMasking}
+                  level={obfuscationLevel}
+                  fingerprintProtection={fingerprintProtection}
+                />
+                <div className="w-full space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">
+                      Synchronisation d&apos;empreinte
                     </span>
-                    <span className="text-xs font-mono font-black text-slate-500 group-hover/city:text-brand-400 transition-colors">{localTime}</span>
+                    <span className="font-mono tabular-nums font-bold text-cyan-600 dark:text-cyan-400">
+                      {Math.round(warpProgress)}%
+                    </span>
+                  </div>
+                  <svg className="w-full h-1.5 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 block">
+                    <rect
+                      x="0"
+                      y="0"
+                      width={`${warpProgress}%`}
+                      height="100%"
+                      rx="3"
+                      fill="#06b6d4"
+                    />
+                  </svg>
                 </div>
-            </button>
-        </div>
-
-        {/* Hardware Signature Card */}
-        <div className={`${theme.cardBase} p-8 rounded-[3rem] group hover:shadow-[0_20px_50px_rgba(0,0,0,0.4)] transition-all duration-700 flex flex-col justify-between relative overflow-hidden hover:-translate-y-1`}>
-            <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
-            <div className="absolute -top-10 -right-10 p-6 opacity-[0.01] group-hover:opacity-[0.05] group-hover:rotate-45 group-hover:scale-125 transition-all duration-1000 pointer-events-none">
-                <Fingerprint className="w-56 h-56 text-brand-400" />
-            </div>
-            
-            <div className="flex items-center gap-4 mb-10 relative z-10">
-                <div className={`p-4 rounded-2xl ${theme.accent} border border-white/5 backdrop-blur-xl group-hover:scale-110 transition-transform duration-700 shadow-lg`}><Binary className={`w-5 h-5 ${theme.primary}`} /></div>
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">HW_ID_Scrambler</span>
-            </div>
-
-            <div className="bg-black/40 rounded-[2.5rem] p-8 border border-white/5 mb-8 relative overflow-hidden group/mac shadow-inner flex-1 flex flex-col justify-center text-center">
-                <div className="absolute inset-0 bg-scanline opacity-[0.05] pointer-events-none"></div>
-                <span className="text-[8px] font-black text-slate-800 uppercase tracking-[0.4em] mb-6 block">VIRTUAL_MAC_STREAM</span>
-                <div className="font-mono text-2xl font-black text-white tracking-[0.1em] leading-tight drop-shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-all duration-500 group-hover:text-brand-400">
-                    {isMasking ? (
-                        <span className="text-brand-500 animate-pulse tracking-[0.2em]">{scrambleText.slice(0, 17)}</span>
-                    ) : identity.mac}
+              </div>
+            ) : (
+              <div className="w-full space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-cyan-500" />
+                    Niveau d&apos;obfuscation
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['standard', 'high', 'ultra'] as const).map((lvl) => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => onObfuscationLevelChange?.(lvl)}
+                        className={`py-2 rounded-xl text-xs font-bold capitalize border transition-colors cursor-pointer ${
+                          obfuscationLevel === lvl
+                            ? 'bg-cyan-600 text-white border-cyan-500'
+                            : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {lvl}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex justify-center gap-2 mt-8">
-                   {[...Array(8)].map((_, i) => (
-                      <div key={i} className={`w-5 h-[2px] rounded-full transition-all duration-500 ${isMasking ? 'bg-brand-500 animate-pulse' : 'bg-slate-800'}`}></div>
-                   ))}
-                </div>
-            </div>
 
-            <button 
-                onClick={onScrambleMac}
-                disabled={isWarpDisabled}
-                className={`w-full py-5 rounded-2xl flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-95 border ${
-                    !isWarpDisabled
-                    ? 'bg-slate-900/60 text-white border-white/10 hover:bg-slate-800 hover:border-brand-500/30 shadow-xl' 
-                    : 'bg-slate-950/40 text-slate-800 cursor-not-allowed border-transparent'
-                }`}
-            >
-                {isMasking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-700" />}
-                MORPH_SIGNATURE
-            </button>
-        </div>
-
-        {/* Client Footprint Card */}
-        <div className={`${theme.cardBase} p-8 rounded-[3rem] group hover:shadow-[0_20px_50px_rgba(0,0,0,0.4)] transition-all duration-700 flex flex-col justify-between relative overflow-hidden hover:-translate-y-1`}>
-            <div className="absolute inset-0 bg-scanline opacity-[0.02] pointer-events-none"></div>
-            <div className="absolute -top-10 -right-10 p-6 opacity-[0.01] group-hover:opacity-[0.05] group-hover:-rotate-12 group-hover:scale-125 transition-all duration-1000 pointer-events-none">
-                <Laptop className="w-56 h-56 text-brand-400" />
-            </div>
-            
-            <div className="flex items-center justify-between mb-10 relative z-10">
-                <div className="flex items-center gap-4">
-                    <div className={`p-4 rounded-2xl ${theme.accent} border border-white/5 backdrop-blur-xl group-hover:scale-110 transition-transform duration-700 shadow-lg`}><Chrome className={`w-5 h-5 ${theme.primary}`} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">Client_Metadata</span>
-                </div>
-                <div className="px-3 py-1 bg-emerald-500/10 rounded-full text-[8px] font-black text-emerald-500 border border-emerald-500/20 shadow-lg animate-pulse tracking-[0.2em]">S_SYNC</div>
-            </div>
-
-            <div className="flex-1 space-y-6 mb-8 relative z-10">
-                <div className="p-6 bg-black/40 rounded-[2.5rem] border border-white/5 space-y-5 shadow-inner relative overflow-hidden hover:border-brand-500/20 transition-all">
-                    <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
-                              <Cpu className="w-3.5 h-3.5 text-brand-500/50" /> Virtual_OS
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono font-black text-white uppercase tracking-tighter italic">{isMasking ? 'RECONFIG...' : currentUAData.os.split(' ')[0]}</span>
+                {fingerprintProtection && onToggleFingerprint && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block">
+                      Boucliers anti-pistage navigateur
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(
+                        [
+                          { key: 'canvasNoise', label: 'Bruit Canvas' },
+                          { key: 'webglMask', label: 'Masque WebGL' },
+                          { key: 'audioContextSpoof', label: 'AudioContext' },
+                          { key: 'timezoneSync', label: 'Fuseau auto' },
+                        ] as const
+                      ).map((fp) => {
+                        const enabled = fingerprintProtection[fp.key];
+                        return (
+                          <button
+                            key={fp.key}
+                            type="button"
+                            onClick={() => onToggleFingerprint(fp.key)}
+                            className={`px-2.5 py-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                              enabled
+                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500'
+                            }`}
+                          >
+                            <span className="truncate">{fp.label}</span>
+                            {enabled && <Check className="w-3.5 h-3.5 shrink-0" />}
+                          </button>
+                        );
+                      })}
                     </div>
-                    
-                    <div className="space-y-3">
-                        <span className="text-[8px] font-black text-slate-800 uppercase tracking-[0.4em] block">HTTP_HEADER_ID</span>
-                        <div className="text-[9px] font-mono text-slate-500 leading-relaxed truncate bg-black/40 p-4 rounded-xl border border-white/5 min-h-[50px] group-hover:text-brand-400/80 transition-colors">
-                            {isMasking ? scrambleText.repeat(3) : currentUAData.full}
-                        </div>
-                    </div>
-                </div>
-            </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
-            <div className="grid grid-cols-5 gap-3 relative z-10">
-              <button 
-                  onClick={onScrambleUA}
-                  disabled={isWarpDisabled}
-                  className={`col-span-4 py-5 rounded-2xl flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-95 border ${
-                      !isWarpDisabled 
-                      ? 'bg-brand-600 hover:bg-brand-500 text-white border-white/5 shadow-xl shadow-brand-900/40' 
-                      : 'bg-slate-950/40 text-slate-800 cursor-not-allowed border-transparent'
-                  }`}
-              >
-                  {isMasking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  PATCH_UA
-              </button>
-              <button 
-                  onClick={() => !isWarpDisabled && setShowUAModal(true)}
-                  disabled={isWarpDisabled}
-                  className={`col-span-1 rounded-2xl flex items-center justify-center transition-all active:scale-95 border ${
-                      !isWarpDisabled 
-                      ? 'bg-slate-900/60 border-white/5 text-slate-500 hover:text-white hover:border-brand-500/40 shadow-lg' 
-                      : 'bg-slate-950/40 text-slate-800 cursor-not-allowed border-transparent'
-                  }`}
-              >
-                  <Sliders className="w-4 h-4" />
-              </button>
-            </div>
+          <button
+            type="button"
+            onClick={onMask}
+            disabled={isMasking}
+            className="w-full py-3 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          >
+            {isMasking ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            <span>
+              {isMasking ? 'Morphing en cours...' : "Renouveler l'identité complète"}
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* IA Report Panel */}
-      {securityReport && (
-          <div className={`${theme.cardBase} rounded-[3rem] border border-white/5 overflow-hidden transition-all duration-1000 animate-in fade-in slide-in-from-bottom-8 group/recs shadow-2xl hover:border-brand-500/20`}>
-             <button 
-                onClick={() => setShowRecs(!showRecs)}
-                className="w-full p-10 flex items-center justify-between hover:bg-white/[0.01] transition-all bg-black/20"
-             >
-                <div className="flex items-center gap-8">
-                    <div className={`p-6 rounded-2xl bg-brand-500/5 border border-white/5 group-hover:scale-105 transition-all duration-500 shadow-xl`}>
-                        <Brain className={`w-10 h-10 ${theme.primary} opacity-80`} />
-                    </div>
-                    <div className="text-left space-y-2">
-                        <h4 className="text-2xl font-black text-white uppercase tracking-tighter italic">Sentinel_AI_Sync</h4>
-                        <div className="flex items-center gap-6">
-                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
-                              <Activity className="w-3.5 h-3.5 text-brand-500/40" /> Active_Session_Audit
-                            </span>
-                            <div className="w-[1px] h-3 bg-slate-800"></div>
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${securityReport.score > 80 ? 'text-emerald-500/80' : 'text-amber-500/80'}`}>
-                              MENACE: <span className="font-mono bg-black/40 px-3 py-1 rounded-lg border border-white/5 ml-2 italic">{securityReport.threatLevel.toUpperCase()}</span>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <div className={`p-4 rounded-xl border border-white/5 transition-all duration-500 ${showRecs ? 'rotate-180 bg-brand-500 text-white shadow-xl' : 'text-slate-700'}`}>
-                    <ChevronDown className="w-6 h-6" />
-                </div>
-             </button>
-
-             {showRecs && (
-                 <div className="px-10 pb-12 pt-2 animate-in slide-in-from-top-6 duration-700 space-y-10">
-                    <div className="p-8 bg-slate-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden backdrop-blur-3xl shadow-inner">
-                        <div className="absolute inset-0 cyber-grid opacity-[0.03]"></div>
-                        <p className="text-xl text-slate-300 leading-relaxed font-black italic relative z-10 pr-10 border-l-2 border-l-brand-500/40 pl-8 uppercase tracking-tight">
-                            "{securityReport.analysis}"
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {securityReport.recommendations.map((rec, i) => (
-                            <div key={i} className="p-6 rounded-[2rem] border border-white/5 bg-black/40 hover:border-brand-500/20 hover:-translate-y-1 transition-all duration-500 group/rec relative overflow-hidden shadow-lg">
-                                <div className="absolute inset-0 bg-scanline opacity-0 group-hover/rec:opacity-[0.03] pointer-events-none transition-opacity"></div>
-                                <div className="flex items-center gap-4 mb-5 relative z-10">
-                                    <div className="w-10 h-10 rounded-xl bg-brand-500/5 flex items-center justify-center text-[11px] font-black text-brand-400 border border-brand-500/10 group-hover/rec:bg-brand-500 group-hover/rec:text-white transition-all shadow-inner">
-                                        {i+1}
-                                    </div>
-                                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-[0.2em]">Neural_Patch</span>
-                                </div>
-                                <p className="text-xs font-black text-slate-400 leading-relaxed relative z-10 group-hover:text-white transition-colors uppercase tracking-tight">
-                                    {rec}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
-                    
-                    <div className="flex justify-center border-t border-white/5 pt-8">
-                        <button
-                            type="button"
-                            onClick={handleExportAuditReport}
-                            className="text-[10px] font-black text-slate-400 uppercase tracking-[0.35em] hover:text-brand-400 hover:underline underline-offset-8 transition-all flex items-center gap-3 group/audit-btn cursor-pointer"
-                        >
-                            <Download className="w-3.5 h-3.5" />
-                            EXPORTER LE RAPPORT D’AUDIT JSON
-                        </button>
-                    </div>
-                 </div>
-             )}
+      {/* 3 Identity Facet Cards: Geo Location, Virtual MAC, Browser User-Agent */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Geo Location Card */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                Localisation virtuelle
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenHistory?.()}
+              title="Historique des passerelles"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <LucideHistory className="w-4 h-4" />
+            </button>
           </div>
+
+          <div className="flex items-center gap-4 py-1">
+            <span className="text-5xl">
+              {COUNTRIES_WITH_FLAGS[identity.country] || '🌍'}
+            </span>
+            <div>
+              <div className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                {identity.country}
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums">
+                {identity.timezone} · {localTime}
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowCityModal(true)}
+            className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 flex items-center justify-between text-left transition-colors cursor-pointer"
+          >
+            <div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Ville de sortie
+              </span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                {identity.city}
+              </span>
+            </div>
+            <span className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 flex items-center gap-1">
+              <Globe className="w-3.5 h-3.5" />
+              Changer
+            </span>
+          </button>
+        </div>
+
+        {/* Hardware MAC Scrambler Card */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400">
+                <Binary className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                Adresse MAC virtuelle
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCopy('mac', identity.mac)}
+              title="Copier l'adresse MAC"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              {copiedField === 'mac' ? (
+                <Check className="w-4 h-4 text-emerald-500" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-center space-y-2">
+            <div className="font-mono tabular-nums text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-wider">
+              {isMasking ? scrambleText.slice(0, 17) : identity.mac}
+            </div>
+            {onFormatChange && (
+              <div className="inline-flex items-center gap-1 pt-1">
+                {(['standard', 'hyphen', 'cisco', 'random'] as const).map((fmt) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    onClick={() => onFormatChange(fmt)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                      macFormat === fmt
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    {fmt === 'standard'
+                      ? 'AA:BB'
+                      : fmt === 'hyphen'
+                        ? 'AA-BB'
+                        : fmt === 'cisco'
+                          ? 'aaaa.bb'
+                          : 'Auto'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onScrambleMac}
+            disabled={isMasking}
+            className="w-full py-2.5 px-3 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-purple-600 dark:hover:bg-purple-600 text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isMasking ? 'animate-spin' : ''}`} />
+            <span>Re-numéroter l&apos;adresse MAC</span>
+          </button>
+        </div>
+
+        {/* Browser User-Agent Footprint Card */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                <Chrome className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                Signature User-Agent
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCopy('ua', currentUAData.full)}
+              title="Copier l'en-tête HTTP User-Agent complet"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              {copiedField === 'ua' ? (
+                <Check className="w-4 h-4 text-emerald-500" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                <Cpu className="w-3.5 h-3.5 text-cyan-500" />
+                OS simulé
+              </span>
+              <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[140px]">
+                {currentUAData.os}
+              </span>
+            </div>
+            <div className="text-[11px] font-mono text-slate-600 dark:text-slate-400 line-clamp-2 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200/80 dark:border-slate-800">
+              {isMasking ? scrambleText.repeat(2) : currentUAData.full}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-5 gap-2">
+            <button
+              type="button"
+              onClick={onScrambleUA}
+              disabled={isMasking}
+              className="col-span-4 py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isMasking ? 'animate-spin' : ''}`} />
+              <span>Permuter l&apos;agent</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowUAModal(true)}
+              title="Parcourir le catalogue User-Agent"
+              className="col-span-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <Sliders className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Security Report Accordion */}
+      {securityReport && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+          <button
+            type="button"
+            onClick={() => setShowRecs(!showRecs)}
+            className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400">
+                <Brain className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Synthèse d&apos;audit de session
+                </h4>
+                <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  <span className="flex items-center gap-1">
+                    <Activity className="w-3.5 h-3.5 text-cyan-500" />
+                    Score : {securityReport.score}/100
+                  </span>
+                  <span>·</span>
+                  <span
+                    className={`font-semibold ${
+                      securityReport.score >= 80
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-amber-600 dark:text-amber-400'
+                    }`}
+                  >
+                    Menace : {securityReport.threatLevel}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ChevronDown
+              className={`w-4 h-4 text-slate-400 transition-transform ${
+                showRecs ? 'rotate-180 text-cyan-500' : ''
+              }`}
+            />
+          </button>
+
+          {showRecs && (
+            <div className="px-6 pb-6 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-4">
+              <div className="p-4 bg-slate-50 dark:bg-slate-950/70 rounded-xl border border-slate-200 dark:border-slate-800">
+                <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
+                  {securityReport.analysis}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {securityReport.recommendations.map((rec, i) => (
+                  <div
+                    key={i}
+                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 space-y-2"
+                  >
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-mono text-xs font-bold">
+                      {i + 1}
+                    </span>
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                      {rec}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleExportAuditReport}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Exporter le rapport JSON</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Modal: Sélecteur de Région & Ville Virtuelle */}
       {showCityModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
             onClick={() => setShowCityModal(false)}
           />
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-white">
-                  Passerelle de sortie & ville virtuelle
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Passerelle de sortie &amp; ville virtuelle
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Basculez instantanément votre localisation publique et votre fuseau horaire.
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Sélectionnez votre point de présence géographique et fuseau horaire.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowCityModal(false)}
-                className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -729,7 +889,8 @@ export const IdentityMatrix: React.FC<Props> = ({
             <div className="p-4 max-h-[380px] overflow-y-auto space-y-2">
               {availableIdentities.map((preset) => {
                 const isSelected =
-                  preset.city === identity.city && preset.country === identity.country;
+                  preset.city === identity.city &&
+                  preset.country === identity.country;
                 return (
                   <button
                     key={`${preset.country}-${preset.city}`}
@@ -738,10 +899,10 @@ export const IdentityMatrix: React.FC<Props> = ({
                       onSelectIdentity?.(preset);
                       setShowCityModal(false);
                     }}
-                    className={`w-full p-3.5 rounded-2xl border flex items-center justify-between text-left transition-colors cursor-pointer ${
+                    className={`w-full p-3.5 rounded-xl border flex items-center justify-between text-left transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-cyan-500/15 border-cyan-500/50 text-white'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-200'
+                        ? 'bg-cyan-500/10 border-cyan-500 text-slate-900 dark:text-white'
+                        : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 text-slate-800 dark:text-slate-200'
                     }`}
                   >
                     <div className="flex items-center gap-3.5">
@@ -749,17 +910,17 @@ export const IdentityMatrix: React.FC<Props> = ({
                         {COUNTRIES_WITH_FLAGS[preset.country] || '🌍'}
                       </span>
                       <div>
-                        <div className="text-sm font-semibold text-white">
+                        <div className="text-sm font-bold text-slate-900 dark:text-white">
                           {preset.city}, {preset.country}
                         </div>
-                        <div className="text-xs font-mono text-slate-400">
+                        <div className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
                           {preset.ip} · {preset.timezone}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-emerald-400">
+                    <div className="flex items-center gap-2 text-xs font-mono tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
                       <span>{preset.latency} ms</span>
-                      {isSelected && <Check className="w-4 h-4 text-cyan-400" />}
+                      {isSelected && <Check className="w-4 h-4 text-cyan-500" />}
                     </div>
                   </button>
                 );
@@ -773,28 +934,28 @@ export const IdentityMatrix: React.FC<Props> = ({
       {showUAModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
             onClick={() => setShowUAModal(false)}
           />
-          <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-white">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   Catalogue de signatures User-Agent
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Injectez une empreinte navigateur/OS réaliste dans les en-têtes sortants.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowUAModal(false)}
-                className="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 border-b border-slate-800">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800">
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -802,7 +963,7 @@ export const IdentityMatrix: React.FC<Props> = ({
                   value={uaSearch}
                   onChange={(e) => setUaSearch(e.target.value)}
                   placeholder="Filtrer par OS ou navigateur (macOS, Linux, Android, Brave...)"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white outline-none focus:border-cyan-500"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:border-cyan-500"
                 />
               </div>
             </div>
@@ -817,21 +978,21 @@ export const IdentityMatrix: React.FC<Props> = ({
                       onSelectUA?.(ua.short);
                       setShowUAModal(false);
                     }}
-                    className={`w-full p-3.5 rounded-2xl border text-left transition-colors cursor-pointer ${
+                    className={`w-full p-3.5 rounded-xl border text-left transition-colors cursor-pointer ${
                       active
-                        ? 'bg-cyan-500/15 border-cyan-500/50'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                        ? 'bg-cyan-500/10 border-cyan-500'
+                        : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-semibold text-white">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">
                         {ua.short}
                       </span>
-                      <span className="text-xs text-slate-400">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
                         {ua.os} · {ua.engine}
                       </span>
                     </div>
-                    <p className="text-[11px] font-mono text-slate-400 truncate">
+                    <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
                       {ua.full}
                     </p>
                   </button>

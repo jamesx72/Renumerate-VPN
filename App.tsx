@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Shield,
   Power,
@@ -34,9 +34,17 @@ import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import {
   MOCK_IDENTITIES,
   INITIAL_LOGS,
-  REALISTIC_USER_AGENTS,
   generateRandomMac,
   MOCK_NODES,
+  DEFAULT_APP_SETTINGS,
+  sanitizeAppSettings,
+  pickUserAgentByComplexity,
+  isCountryExcludedByJurisdiction,
+  computeRncEarningRate,
+  computeWithdrawalQuote,
+  validateWithdrawalDestination,
+  WITHDRAWAL_RAIL_SPECS,
+  generateSettlementReference,
 } from './constants';
 import {
   VirtualIdentity,
@@ -50,7 +58,11 @@ import {
   Transaction,
 } from './types';
 import { analyzeSecurity } from './services/geminiService';
-import { dbService, ensureValidUserId } from './services/dbService';
+import {
+  CreateWithdrawalInput,
+  dbService,
+  ensureValidUserId,
+} from './services/dbService';
 import { listUserVaultItems } from './services/cryptoVaultService';
 
 type WorkspaceSection = 'cockpit' | 'vault' | 'network';
@@ -117,42 +129,15 @@ function App() {
   >([]);
   const [throughput, setThroughput] = useState({ up: 0, down: 0 });
 
-  const [appSettings, setAppSettings] = useState<AppSettings>({
-    protocol: 'wireguard',
-    dns: 'cloudflare',
-    customDnsServer: '',
-    killSwitch: true,
-    dnsLeakProtection: true,
-    dnsCache: true,
-    autoReconnect: true,
-    reconnectDelay: 3,
-    splitTunneling: false,
-    adBlocker: false,
-    autoConnect: false,
-    autoRotation: false,
-    rotationInterval: 10,
-    obfuscationLevel: 'standard',
-    macScramblingMode: 'random',
-    macFormat: 'random',
-    uaComplexity: 'diverse',
-    vortexBridge: 'none',
-    vortexCircuitLength: 3,
-    vortexEntryNodeCountry: 'auto',
-    vortexExitNodeCountry: 'auto',
-    vortexNoScript: false,
-    miningIntensity: 50,
-    yieldOptimizationIA: true,
-    contributionType: 'passive',
-    autoWithdraw: false,
-    mtuSize: 1420,
-    ipv6LeakProtection: true,
-    localNetworkSharing: false,
-    lanBypass: true,
-    logRetentionHours: 168,
-    socks5Enabled: false,
-    socks5Host: '127.0.0.1',
-    socks5Port: 1080,
-  });
+  const [appSettings, setAppSettings] = useState<AppSettings>(
+    DEFAULT_APP_SETTINGS
+  );
+  const [settingsLoadedForUser, setSettingsLoadedForUser] = useState<
+    string | null
+  >(null);
+  const hasAutoConnectedRef = useRef<string | null>(null);
+  const autoWithdrawInFlightRef = useRef(false);
+  const lastAutoWithdrawAtRef = useRef(0);
 
   const addLog = useCallback(
     (
@@ -287,9 +272,19 @@ function App() {
       setIsConnected(false);
       setIsDisconnecting(false);
       setSecurityReport(null);
-      addLog('Session déconnectée', 'info', currentIdentity.ip);
+      if (appSettings.logRetentionHours === 0) {
+        setLogs([]);
+      } else {
+        addLog('Session déconnectée', 'info', currentIdentity.ip);
+      }
     }, 800);
-  }, [currentIdentity.ip, addLog, isDisconnecting, user?.id]);
+  }, [
+    currentIdentity.ip,
+    addLog,
+    isDisconnecting,
+    user?.id,
+    appSettings.logRetentionHours,
+  ]);
 
   const handleGlobalScramble = useCallback(() => {
     setIsMasking(true);
@@ -298,37 +293,42 @@ function App() {
       'info'
     );
     setTimeout(() => {
-      const newUA =
-        REALISTIC_USER_AGENTS[
-          Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)
-        ];
-      const newMac = generateRandomMac(
-        appSettings.macScramblingMode,
-        appSettings.macFormat
-      );
-      setCurrentIdentity((prev) => ({
-        ...prev,
-        mac: newMac,
-        userAgentShort: newUA.short,
-      }));
+      setCurrentIdentity((prev) => {
+        const newUA = pickUserAgentByComplexity(
+          appSettings.uaComplexity,
+          prev.userAgentShort
+        );
+        const newMac = generateRandomMac(
+          appSettings.macScramblingMode,
+          appSettings.macFormat
+        );
+        addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
+        return {
+          ...prev,
+          mac: newMac,
+          userAgentShort: newUA.short,
+        };
+      });
       setIsMasking(false);
-      addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
     }, 1500);
   }, [
     appSettings.macScramblingMode,
     appSettings.macFormat,
     appSettings.obfuscationLevel,
+    appSettings.uaComplexity,
     addLog,
   ]);
 
   const handleScrambleUA = useCallback(() => {
-    const newUA =
-      REALISTIC_USER_AGENTS[
-        Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)
-      ];
-    setCurrentIdentity((prev) => ({ ...prev, userAgentShort: newUA.short }));
+    setCurrentIdentity((prev) => {
+      const newUA = pickUserAgentByComplexity(
+        appSettings.uaComplexity,
+        prev.userAgentShort
+      );
+      return { ...prev, userAgentShort: newUA.short };
+    });
     addLog('Spoofing UA réussi', 'success');
-  }, [addLog]);
+  }, [addLog, appSettings.uaComplexity]);
 
   const handleSelectUA = useCallback(
     (uaShort: string) => {
@@ -402,6 +402,8 @@ function App() {
   }, [addLog, currentIdentity.ip]);
 
   useEffect(() => {
+    if (!appSettings.keyboardShortcutsEnabled) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (!isCmdOrCtrl) return;
@@ -412,6 +414,9 @@ function App() {
         addLog('Raccourci détecté : Basculer connexion [Ctrl+S]', 'info');
         if (isConnected) disconnectVPN();
         else connectVPN();
+      } else if (key === 'k') {
+        e.preventDefault();
+        toggleEmergencyLockdown();
       } else if (key === 'r') {
         e.preventDefault();
         addLog('Raccourci détecté : Re-numéroter identité [Ctrl+R]', 'info');
@@ -423,15 +428,20 @@ function App() {
       } else if (key === 'l') {
         e.preventDefault();
         setShowLogs((prev) => !prev);
+      } else if (key === ',') {
+        e.preventDefault();
+        setShowSettings((prev) => !prev);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    appSettings.keyboardShortcutsEnabled,
     isConnected,
     connectVPN,
     disconnectVPN,
+    toggleEmergencyLockdown,
     handleGlobalScramble,
     handleScrambleUA,
     addLog,
@@ -466,14 +476,26 @@ function App() {
         if (prev === null || prev <= 1) {
           setIsRenumbering(true);
           setCurrentIdentity((curr) => {
-            const candidates = MOCK_IDENTITIES.filter((i) => i.ip !== curr.ip);
+            const compliantPool = MOCK_IDENTITIES.filter(
+              (i) =>
+                i.ip !== curr.ip &&
+                !isCountryExcludedByJurisdiction(
+                  i.country,
+                  appSettings.excludeEyesJurisdictions
+                )
+            );
+            const fallbackPool = MOCK_IDENTITIES.filter(
+              (i) => i.ip !== curr.ip
+            );
+            const pool =
+              compliantPool.length > 0 ? compliantPool : fallbackPool;
             const picked =
-              candidates[Math.floor(Math.random() * candidates.length)] ||
+              pool[Math.floor(Math.random() * pool.length)] ||
               MOCK_IDENTITIES[0];
-            const nextUa =
-              REALISTIC_USER_AGENTS[
-                Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)
-              ];
+            const nextUa = pickUserAgentByComplexity(
+              appSettings.uaComplexity,
+              curr.userAgentShort
+            );
             const nextMac = generateRandomMac(
               appSettings.macScramblingMode,
               appSettings.macFormat
@@ -512,10 +534,58 @@ function App() {
     appSettings.rotationInterval,
     appSettings.macScramblingMode,
     appSettings.macFormat,
+    appSettings.uaComplexity,
+    appSettings.excludeEyesJurisdictions,
     appSettings.protocol,
     appSettings.killSwitch,
     appSettings.ipv6LeakProtection,
     mode,
+    addLog,
+  ]);
+
+  // Purge périodique des journaux selon logRetentionHours
+  useEffect(() => {
+    if (appSettings.logRetentionHours <= 0) return;
+    const maxAgeMs = appSettings.logRetentionHours * 3600 * 1000;
+    const cleanup = setInterval(() => {
+      const cutoff = Date.now() - maxAgeMs;
+      setLogs((prev) => prev.filter((entry) => entry.timestampRaw >= cutoff));
+    }, 30000);
+    return () => clearInterval(cleanup);
+  }, [appSettings.logRetentionHours]);
+
+  // Bascule automatique hors 5/14-Eyes si la passerelle active devient exclue
+  useEffect(() => {
+    if (
+      appSettings.excludeEyesJurisdictions !== 'none' &&
+      isCountryExcludedByJurisdiction(
+        currentIdentity.country,
+        appSettings.excludeEyesJurisdictions
+      )
+    ) {
+      const safeCandidate = MOCK_IDENTITIES.find(
+        (i) =>
+          !isCountryExcludedByJurisdiction(
+            i.country,
+            appSettings.excludeEyesJurisdictions
+          )
+      );
+      if (safeCandidate) {
+        setCurrentIdentity((prev) => ({
+          ...safeCandidate,
+          mac: prev.mac,
+          userAgentShort: prev.userAgentShort,
+        }));
+        addLog(
+          `Passerelle migrée vers ${safeCandidate.city} (${safeCandidate.country}) conformément au filtre ${appSettings.excludeEyesJurisdictions.toUpperCase()}`,
+          'info',
+          safeCandidate.ip
+        );
+      }
+    }
+  }, [
+    appSettings.excludeEyesJurisdictions,
+    currentIdentity.country,
     addLog,
   ]);
 
@@ -547,8 +617,11 @@ function App() {
           }
 
           if (savedSettings) {
-            setAppSettings((prev) => ({ ...prev, ...savedSettings }));
+            setAppSettings((prev) =>
+              sanitizeAppSettings({ ...prev, ...savedSettings })
+            );
           }
+          setSettingsLoadedForUser(user.id);
           setConnectionHistory(savedSessions);
           setTransactions(savedTransactions);
         } catch (err) {
@@ -559,25 +632,62 @@ function App() {
       return () => {
         cancelled = true;
       };
+    } else {
+      setSettingsLoadedForUser(null);
+      hasAutoConnectedRef.current = null;
     }
   }, [user?.id, user?.email]);
 
+  // Connexion automatique au démarrage si autoConnect est activé
+  useEffect(() => {
+    if (
+      user?.id &&
+      settingsLoadedForUser === user.id &&
+      appSettings.autoConnect &&
+      !isConnected &&
+      !isEmergency &&
+      hasAutoConnectedRef.current !== user.id
+    ) {
+      hasAutoConnectedRef.current = user.id;
+      addLog(
+        'Connexion automatique au démarrage activée : ouverture du tunnel...',
+        'info'
+      );
+      connectVPN();
+    }
+  }, [
+    user?.id,
+    settingsLoadedForUser,
+    appSettings.autoConnect,
+    isConnected,
+    isEmergency,
+    connectVPN,
+    addLog,
+  ]);
+
   // Contribution RNC en temps réel lorsque le tunnel est connecté et le profil vérifié
   useEffect(() => {
-    if (!isConnected || userPlan === 'free' || !isVerified || !user?.id || !user?.email) {
+    if (
+      !isConnected ||
+      userPlan === 'free' ||
+      !isVerified ||
+      !user?.id ||
+      !user?.email ||
+      appSettings.miningIntensity <= 0
+    ) {
       return;
     }
 
-    const baseRate = userPlan === 'elite' ? 0.00018 : 0.00006;
-    const intensityMult = 0.5 + appSettings.miningIntensity / 100;
-    const iaMult = appSettings.yieldOptimizationIA ? 1.25 : 1.0;
-    const typeMult =
-      appSettings.contributionType === 'exit'
-        ? 1.5
-        : appSettings.contributionType === 'relay'
-          ? 1.25
-          : 1.0;
-    const deltaPerTick = baseRate * intensityMult * iaMult * typeMult * 3;
+    const ratePerSec = computeRncEarningRate({
+      plan: userPlan,
+      isVerified,
+      isConnected,
+      settings: appSettings,
+      reputation,
+    });
+    if (ratePerSec <= 0) return;
+
+    const deltaPerTick = ratePerSec * 3;
 
     const timer = setInterval(() => {
       dbService
@@ -593,12 +703,213 @@ function App() {
     isConnected,
     userPlan,
     isVerified,
+    reputation,
     user?.id,
     user?.email,
     appSettings.miningIntensity,
     appSettings.yieldOptimizationIA,
     appSettings.contributionType,
   ]);
+
+  // Exécution sécurisée et validée du retrait automatique RNC lorsque le seuil configuré est atteint
+  useEffect(() => {
+    if (
+      !appSettings.autoWithdraw ||
+      !isVerified ||
+      !user?.id ||
+      !user?.email ||
+      balance < appSettings.autoWithdrawThreshold ||
+      autoWithdrawInFlightRef.current
+    ) {
+      return;
+    }
+
+    const validation = validateWithdrawalDestination(
+      appSettings.autoWithdrawMethod,
+      appSettings.autoWithdrawSubNetwork,
+      appSettings.autoWithdrawAddress
+    );
+    if (!validation.valid) {
+      return;
+    }
+
+    const rail =
+      WITHDRAWAL_RAIL_SPECS[appSettings.autoWithdrawSubNetwork] ||
+      WITHDRAWAL_RAIL_SPECS.polygon;
+    const withdrawable = parseFloat(
+      Math.max(0, balance - (appSettings.autoWithdrawReserve || 0)).toFixed(4)
+    );
+    if (withdrawable < rail.minRnc) {
+      return;
+    }
+
+    // Debounce pour éviter tout déclenchement pendant la saisie d'adresse ou rafale
+    const debounceTimer = setTimeout(() => {
+      if (
+        autoWithdrawInFlightRef.current ||
+        Date.now() - lastAutoWithdrawAtRef.current < 12000
+      ) {
+        return;
+      }
+
+      const quote = computeWithdrawalQuote({
+        amountRnc: withdrawable,
+        method: appSettings.autoWithdrawMethod,
+        subNetwork: appSettings.autoWithdrawSubNetwork,
+        executionMode: 'auto',
+        plan: userPlan,
+        fiatCurrency: appSettings.preferredFiat || 'EUR',
+      });
+      if (quote.netRnc <= 0) return;
+
+      autoWithdrawInFlightRef.current = true;
+      lastAutoWithdrawAtRef.current = Date.now();
+
+      dbService
+        .createWithdrawal(user.id, user.email, {
+          amount: quote.grossRnc,
+          method: appSettings.autoWithdrawMethod,
+          subNetwork: appSettings.autoWithdrawSubNetwork,
+          networkLabel: rail.shortLabel,
+          executionMode: 'auto',
+          feeRnc: quote.feeRnc,
+          netAmountRnc: quote.netRnc,
+          fiatCurrency: quote.fiatCurrency,
+          fiatAmount: quote.netFiat,
+          exchangeRate: quote.exchangeRate,
+          address: validation.normalized,
+          status: 'completed',
+          txHash: generateSettlementReference(
+            appSettings.autoWithdrawMethod,
+            appSettings.autoWithdrawSubNetwork
+          ),
+          etaSeconds: 0,
+        })
+        .then(({ transaction, newBalance }) => {
+          setBalance(newBalance);
+          setTransactions((prev) => [transaction, ...prev]);
+          addLog(
+            `Auto-Retrait exécuté : ${transaction.netAmountRnc?.toFixed(4)} RNC nets vers ${rail.shortLabel} (${validation.normalized})`,
+            'success'
+          );
+        })
+        .catch(() => {})
+        .finally(() => {
+          autoWithdrawInFlightRef.current = false;
+        });
+    }, 1200);
+
+    return () => clearTimeout(debounceTimer);
+  }, [
+    balance,
+    appSettings.autoWithdraw,
+    appSettings.autoWithdrawThreshold,
+    appSettings.autoWithdrawReserve,
+    appSettings.autoWithdrawMethod,
+    appSettings.autoWithdrawSubNetwork,
+    appSettings.autoWithdrawAddress,
+    appSettings.preferredFiat,
+    userPlan,
+    isVerified,
+    user?.id,
+    user?.email,
+    addLog,
+  ]);
+
+  // Règlement automatique en arrière-plan des retraits en file d'attente (Mode Standard)
+  useEffect(() => {
+    if (!user?.id) return;
+    const pendingList = transactions.filter((t) => t.status === 'processing');
+    if (pendingList.length === 0) return;
+
+    const now = Date.now();
+    let earliestTx = pendingList[0];
+    let minDelayMs = Infinity;
+
+    for (const tx of pendingList) {
+      const targetAt =
+        (tx.createdAt || now) + (tx.etaSeconds || 45) * 1000;
+      const waitMs = Math.max(250, targetAt - now);
+      if (waitMs < minDelayMs) {
+        minDelayMs = waitMs;
+        earliestTx = tx;
+      }
+    }
+
+    const timer = setTimeout(() => {
+      dbService
+        .completeWithdrawal(user.id, earliestTx.id)
+        .then((settled) => {
+          if (!settled) return;
+          setTransactions((prev) =>
+            prev.map((item) => (item.id === settled.id ? settled : item))
+          );
+          addLog(
+            `Compensation finalisée (${settled.id}) : ${(settled.netAmountRnc ?? settled.amount).toFixed(4)} RNC réglés sur ${settled.networkLabel || settled.method}`,
+            'success'
+          );
+        })
+        .catch(() => {});
+    }, minDelayMs);
+
+    return () => clearTimeout(timer);
+  }, [transactions, user?.id, addLog]);
+
+  const handleExecuteWithdrawal = useCallback(
+    async (input: CreateWithdrawalInput): Promise<Transaction> => {
+      if (!user?.id || !user?.email) {
+        throw new Error('Session utilisateur introuvable.');
+      }
+      const { transaction, newBalance } = await dbService.createWithdrawal(
+        user.id,
+        user.email,
+        input
+      );
+      setBalance(newBalance);
+      setTransactions((prev) => [transaction, ...prev]);
+      addLog(
+        transaction.status === 'completed'
+          ? `Retrait instantané réglé (${transaction.id}) : ${(transaction.netAmountRnc ?? transaction.amount).toFixed(4)} RNC → ${transaction.networkLabel || transaction.method}`
+          : `Retrait standard en file de compensation (${transaction.id}) : ${transaction.amount.toFixed(4)} RNC (annulable 45s)`,
+        'success'
+      );
+      return transaction;
+    },
+    [user?.id, user?.email, addLog]
+  );
+
+  const handleCancelWithdrawal = useCallback(
+    async (txId: string) => {
+      if (!user?.id || !user?.email) return;
+      const res = await dbService.cancelWithdrawal(user.id, user.email, txId);
+      if (!res) return;
+      setBalance(res.newBalance);
+      setTransactions((prev) =>
+        prev.map((tx) => (tx.id === txId ? res.transaction : tx))
+      );
+      addLog(
+        `Retrait ${txId} annulé : +${res.transaction.amount.toFixed(4)} RNC intégralement recrédités`,
+        'warning'
+      );
+    },
+    [user?.id, user?.email, addLog]
+  );
+
+  const handleAccelerateWithdrawal = useCallback(
+    async (txId: string) => {
+      if (!user?.id) return;
+      const settled = await dbService.completeWithdrawal(user.id, txId);
+      if (!settled) return;
+      setTransactions((prev) =>
+        prev.map((tx) => (tx.id === txId ? settled : tx))
+      );
+      addLog(
+        `Règlement accéléré et confirmé pour l'opération ${txId}`,
+        'success'
+      );
+    },
+    [user?.id, addLog]
+  );
 
   useEffect(() => {
     if (isDark) document.documentElement.classList.add('dark');
@@ -670,43 +981,169 @@ function App() {
     });
   };
 
-  const updateAppSettings = async (key: keyof AppSettings, value: any) => {
-    const newSettings = { ...appSettings, [key]: value };
-    setAppSettings(newSettings);
+  const updateAppSettings = useCallback(
+    <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+      setAppSettings((prev) => {
+        const next = sanitizeAppSettings({ ...prev, [key]: value });
+        if (user?.id) {
+          dbService.saveSettings(user.id, next).catch(console.error);
+        }
+        return next;
+      });
+
+      if (key === 'ipv6LeakProtection') {
+        addLog(
+          `Protection IPv6 ${value ? 'activée' : 'désactivée'}`,
+          value ? 'success' : 'warning'
+        );
+      } else if (key === 'webrtcLeakShield') {
+        addLog(
+          `Bouclier WebRTC STUN ${value ? 'activé' : 'désactivé'}`,
+          value ? 'success' : 'warning'
+        );
+      } else if (key === 'protocol') {
+        addLog(`Protocole changé pour ${String(value).toUpperCase()}`, 'info');
+      } else if (key === 'tunnelPort') {
+        addLog(`Port de transport défini sur :${String(value)}`, 'info');
+      } else if (key === 'socks5Enabled') {
+        addLog(
+          `Proxy SOCKS5 ${value ? 'activé' : 'désactivé'}`,
+          value ? 'success' : 'warning'
+        );
+      } else if (key === 'vortexBridge') {
+        addLog(
+          `Pont Vortex reconfiguré : ${String(value).toUpperCase()}`,
+          'info'
+        );
+      } else if (key === 'vortexCircuitLength') {
+        addLog(`Longueur du circuit Vortex : ${String(value)} sauts`, 'info');
+      } else if (key === 'obfuscationLevel') {
+        addLog(
+          `Niveau d'obfuscation : ${String(value).toUpperCase()}`,
+          'info'
+        );
+      } else if (key === 'excludeEyesJurisdictions') {
+        addLog(
+          value === 'none'
+            ? 'Filtre juridictionnel désactivé (tous les relais visibles)'
+            : `Politique d'exclusion ${String(value).toUpperCase()} activée`,
+          'info'
+        );
+      }
+    },
+    [user?.id, addLog]
+  );
+
+  const patchAppSettings = useCallback(
+    (patch: Partial<AppSettings>, reason?: string) => {
+      setAppSettings((prev) => {
+        const next = sanitizeAppSettings({ ...prev, ...patch });
+        if (user?.id) {
+          dbService.saveSettings(user.id, next).catch(console.error);
+        }
+        return next;
+      });
+      if (reason) {
+        addLog(reason, 'success');
+      }
+    },
+    [user?.id, addLog]
+  );
+
+  const resetAppSettings = useCallback(() => {
+    const cleanDefaults = sanitizeAppSettings(DEFAULT_APP_SETTINGS);
+    setAppSettings(cleanDefaults);
     if (user?.id) {
-      dbService.saveSettings(user.id, newSettings).catch(console.error);
+      dbService.saveSettings(user.id, cleanDefaults).catch(console.error);
     }
-    if (key === 'ipv6LeakProtection') {
-      addLog(
-        `Protection IPv6 ${value ? 'activée' : 'désactivée'}`,
-        value ? 'success' : 'warning'
+    addLog('Paramètres réinitialisés aux valeurs d’usine', 'warning');
+  }, [user?.id, addLog]);
+
+  const handleForceRotateIdentity = useCallback(() => {
+    setIsRenumbering(true);
+    setCurrentIdentity((curr) => {
+      const compliantPool = MOCK_IDENTITIES.filter(
+        (i) =>
+          i.ip !== curr.ip &&
+          !isCountryExcludedByJurisdiction(
+            i.country,
+            appSettings.excludeEyesJurisdictions
+          )
       );
-    }
-    if (key === 'protocol') {
-      addLog(`Protocole changé pour ${String(value).toUpperCase()}`, 'info');
-    }
-    if (key === 'socks5Enabled') {
-      addLog(
-        `Proxy SOCKS5 ${value ? 'activé' : 'désactivé'}`,
-        value ? 'success' : 'warning'
+      const fallbackPool = MOCK_IDENTITIES.filter((i) => i.ip !== curr.ip);
+      const pool = compliantPool.length > 0 ? compliantPool : fallbackPool;
+      const picked =
+        pool[Math.floor(Math.random() * pool.length)] || MOCK_IDENTITIES[0];
+      const nextUa = pickUserAgentByComplexity(
+        appSettings.uaComplexity,
+        curr.userAgentShort
       );
-    }
-    if (key === 'vortexBridge') {
-      addLog(
-        `Bridge Vortex reconfiguré : ${String(value).toUpperCase()}`,
-        'info'
+      const nextMac = generateRandomMac(
+        appSettings.macScramblingMode,
+        appSettings.macFormat
       );
-    }
-    if (key === 'vortexCircuitLength') {
-      addLog(`Longueur du circuit Vortex : ${value} sauts`, 'info');
-    }
-    if (key === 'obfuscationLevel') {
+      const rotated: VirtualIdentity = {
+        ...picked,
+        mac: nextMac,
+        userAgentShort: nextUa.short,
+      };
       addLog(
-        `Niveau d'obfuscation : ${String(value).toUpperCase()}`,
-        'info'
+        `Rotation forcée : ${rotated.city} (${rotated.ip}) · MAC ${nextMac}`,
+        'success',
+        rotated.ip
       );
+      if (isConnected) {
+        analyzeSecurity(mode, rotated.country, rotated.ip, {
+          protocol: appSettings.protocol,
+          killSwitch: appSettings.killSwitch,
+          ipv6LeakProtection: appSettings.ipv6LeakProtection,
+        })
+          .then((rep) => setSecurityReport(rep))
+          .catch(() => {});
+      }
+      return rotated;
+    });
+    if (appSettings.autoRotation) {
+      setRotationSecondsLeft(Math.max(1, appSettings.rotationInterval) * 60);
     }
-  };
+    setTimeout(() => setIsRenumbering(false), 650);
+  }, [
+    appSettings.excludeEyesJurisdictions,
+    appSettings.uaComplexity,
+    appSettings.macScramblingMode,
+    appSettings.macFormat,
+    appSettings.protocol,
+    appSettings.killSwitch,
+    appSettings.ipv6LeakProtection,
+    appSettings.autoRotation,
+    appSettings.rotationInterval,
+    isConnected,
+    mode,
+    addLog,
+  ]);
+
+  const handleFlushDnsCache = useCallback((): number => {
+    const cleared = Math.floor(Math.random() * 48) + 16;
+    addLog(
+      `Cache DNS local purgé (${cleared} enregistrements résolus effacés)`,
+      'success'
+    );
+    return cleared;
+  }, [addLog]);
+
+  const handleSimulateReconnect = useCallback(() => {
+    if (!isConnected) return;
+    const delaySec = Math.max(1, Math.min(10, appSettings.reconnectDelay));
+    addLog(
+      `Micro-coupure simulée : attente de reconnexion auto (${delaySec}s)...`,
+      'warning',
+      currentIdentity.ip
+    );
+    setIsConnected(false);
+    setTimeout(() => {
+      connectVPN(currentIdentity);
+    }, delaySec * 1000);
+  }, [isConnected, appSettings.reconnectDelay, currentIdentity, addLog, connectVPN]);
 
   const handleScrambleMac = () => {
     const newMac = generateRandomMac(
@@ -1008,7 +1445,10 @@ function App() {
                 }}
                 nodes={nodes}
                 onConnectNode={handleConnectNode}
+                onDisconnect={disconnectVPN}
                 currentIp={currentIdentity.ip}
+                throughput={throughput}
+                baseLatency={currentIdentity.latency}
                 settings={appSettings}
                 addLog={addLog}
                 updateSettings={updateAppSettings}
@@ -1037,6 +1477,13 @@ function App() {
                 obfuscationLevel={appSettings.obfuscationLevel}
                 onObfuscationLevelChange={(lvl) =>
                   updateAppSettings('obfuscationLevel', lvl)
+                }
+                fingerprintProtection={appSettings.fingerprintProtection}
+                onToggleFingerprint={(fpKey) =>
+                  updateAppSettings('fingerprintProtection', {
+                    ...appSettings.fingerprintProtection,
+                    [fpKey]: !appSettings.fingerprintProtection[fpKey],
+                  })
                 }
               />
             </div>
@@ -1160,45 +1607,47 @@ function App() {
             setShowVerification(false);
             if (user?.id && user?.email) {
               dbService
-                .updateProfile(user.id, user.email, { is_verified: true })
-                .catch(() => {});
+                .claimKycVerificationBonus(user.id, user.email)
+                .then(({ newBalance, bonusAwarded }) => {
+                  setBalance(newBalance);
+                  addLog(
+                    bonusAwarded > 0
+                      ? `Preuve d’identité KYC validée : prime d’opérateur +${bonusAwarded.toFixed(4)} RNC créditée`
+                      : 'Preuve d’identité KYC validée et enregistrée',
+                    'success'
+                  );
+                })
+                .catch(() => {
+                  addLog(
+                    'Preuve d’identité KYC validée et enregistrée',
+                    'success'
+                  );
+                });
             }
-            addLog('Preuve d’identité KYC validée et enregistrée', 'success');
           }}
         />
       )}
       {showWithdrawal && (
         <WithdrawalModal
           balance={balance}
+          userId={vaultOwnerKey}
+          userPlan={userPlan}
+          isConnected={isConnected}
+          currentNodeLabel={`${currentIdentity.city}, ${currentIdentity.country}`}
+          settings={appSettings}
+          onPatchSettings={patchAppSettings}
+          onExecuteWithdrawal={handleExecuteWithdrawal}
+          onOpenHistory={() => setShowTransactionHistory(true)}
           onClose={() => setShowWithdrawal(false)}
-          onConfirm={async (method, address) => {
-            if (user?.id && user?.email) {
-              const validMethod =
-                method === 'paypal' || method === 'bank_transfer'
-                  ? method
-                  : 'crypto';
-              const { transaction, newBalance } =
-                await dbService.createWithdrawal(
-                  user.id,
-                  user.email,
-                  balance,
-                  validMethod,
-                  address
-                );
-              setBalance(newBalance);
-              setTransactions((prev) => [transaction, ...prev]);
-              addLog(
-                `Retrait de ${transaction.amount.toFixed(4)} RNC enregistré (${transaction.id})`,
-                'success'
-              );
-            }
-            setShowWithdrawal(false);
-          }}
         />
       )}
       {showTransactionHistory && (
         <TransactionHistoryModal
           transactions={transactions}
+          preferredFiat={appSettings.preferredFiat}
+          onCancelTransaction={handleCancelWithdrawal}
+          onAccelerateTransaction={handleAccelerateWithdrawal}
+          onOpenWithdraw={() => setShowWithdrawal(true)}
           onClose={() => setShowTransactionHistory(false)}
         />
       )}
@@ -1206,12 +1655,38 @@ function App() {
         <SettingsPanel
           settings={appSettings}
           updateSettings={updateAppSettings}
+          patchSettings={patchAppSettings}
+          onResetSettings={resetAppSettings}
           onClose={() => setShowSettings(false)}
           userPlan={userPlan}
           onShowPricing={() => {
             setShowSettings(false);
             setShowPricing(true);
           }}
+          isDark={isDark}
+          onToggleTheme={() => setIsDark((prev) => !prev)}
+          isConnected={isConnected}
+          isEmergency={isEmergency}
+          onToggleEmergency={toggleEmergencyLockdown}
+          currentIdentity={currentIdentity}
+          onForceRotateIdentity={handleForceRotateIdentity}
+          onScrambleMac={handleScrambleMac}
+          onFlushDnsCache={handleFlushDnsCache}
+          onSimulateReconnect={handleSimulateReconnect}
+          onClearLogs={() => setLogs([])}
+          onClearHistory={() => {
+            setConnectionHistory([]);
+            if (user?.id) {
+              dbService.clearSessions(user.id).catch(() => {});
+            }
+            addLog('Historique des sessions effacé', 'info');
+          }}
+          balance={balance}
+          reputation={reputation}
+          isVerified={isVerified}
+          userId={vaultOwnerKey}
+          onOpenWithdrawalModal={() => setShowWithdrawal(true)}
+          addLog={addLog}
         />
       )}
       {showConnectionHistory && (
@@ -1230,32 +1705,32 @@ function App() {
       {showLogs && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-slate-950/85 backdrop-blur-md"
+            className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
             onClick={() => setShowLogs(false)}
           />
-          <div className="relative w-full max-w-3xl bg-slate-950 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col h-[580px]">
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+          <div className="relative w-full max-w-3xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col h-[580px]">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-cyan-500/10 rounded-xl border border-cyan-500/20">
-                  <Terminal className="w-5 h-5 text-cyan-500" />
+                  <Terminal className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-white">
-                    Journal d'événements système
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                    Journal d&apos;événements système
                   </h2>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Traçabilité locale du tunnel et des opérations WebCrypto
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowLogs(false)}
-                className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 transition-colors cursor-pointer"
+                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-hidden p-5">
+            <div className="flex-1 overflow-hidden p-5 bg-slate-50/50 dark:bg-slate-950">
               <SystemLogs
                 logs={logs}
                 onClear={() => setLogs([])}

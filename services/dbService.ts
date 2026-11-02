@@ -4,17 +4,41 @@ import {
   PlanTier,
   ConnectionSession,
   Transaction,
+  WithdrawalMethod,
+  WithdrawalSubNetwork,
+  FiatCurrency,
+  SavedBeneficiary,
 } from '../types';
+import { generateSettlementReference } from '../constants';
 
 export interface PersistedProfile {
   id: string;
   email: string;
   plan_tier: PlanTier;
   is_verified: boolean;
+  kyc_bonus_claimed?: boolean;
   balance: string;
   reputation: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreateWithdrawalInput {
+  amount: number;
+  method: WithdrawalMethod;
+  subNetwork: WithdrawalSubNetwork;
+  networkLabel: string;
+  executionMode: 'instant' | 'standard' | 'auto';
+  feeRnc: number;
+  netAmountRnc: number;
+  fiatCurrency: FiatCurrency;
+  fiatAmount: number;
+  exchangeRate: number;
+  address: string;
+  accountHolder?: string;
+  status: 'completed' | 'processing';
+  txHash?: string;
+  etaSeconds?: number;
 }
 
 interface StoredCredential {
@@ -475,6 +499,7 @@ export const dbService = {
     updates: Partial<{
       plan_tier: PlanTier;
       is_verified: boolean;
+      kyc_bonus_claimed: boolean;
       balance: string | number;
       reputation: number;
     }>
@@ -487,6 +512,10 @@ export const dbService = {
         typeof updates.is_verified === 'boolean'
           ? updates.is_verified
           : current.is_verified,
+      kyc_bonus_claimed:
+        typeof updates.kyc_bonus_claimed === 'boolean'
+          ? updates.kyc_bonus_claimed
+          : current.kyc_bonus_claimed,
       balance:
         updates.balance !== undefined
           ? typeof updates.balance === 'number'
@@ -711,6 +740,27 @@ export const dbService = {
   },
 
   /**
+   * Valide le KYC opérateur et crédite le bonus unique de bienvenue (+2.5000 RNC)
+   */
+  async claimKycVerificationBonus(
+    rawUserId: string,
+    email: string
+  ): Promise<{ newBalance: number; bonusAwarded: number }> {
+    const profile = await this.getOrCreateProfile(rawUserId, email);
+    const currentBalance = parseFloat(profile.balance) || 0;
+    const bonusAwarded = profile.kyc_bonus_claimed ? 0 : 2.5;
+    const nextBalance = currentBalance + bonusAwarded;
+
+    await this.updateProfile(profile.id, email, {
+      is_verified: true,
+      kyc_bonus_claimed: true,
+      balance: nextBalance,
+    });
+
+    return { newBalance: nextBalance, bonusAwarded };
+  },
+
+  /**
    * Récupère l'historique des transactions RNC de l'utilisateur
    */
   async getTransactions(userId: string): Promise<Transaction[]> {
@@ -720,40 +770,58 @@ export const dbService = {
     );
     return rows
       .sort((a, b) => b.createdAt - a.createdAt)
-      .map(({ user_id: _uid, createdAt: _ts, ...tx }) => tx);
+      .map(({ user_id: _uid, ...tx }) => tx);
   },
 
   /**
-   * Crée et persiste une demande de retrait RNC et débite le solde du profil
+   * Crée et persiste une demande de retrait RNC et débite atomiquement le solde du profil
    */
   async createWithdrawal(
     rawUserId: string,
     email: string,
-    amount: number,
-    method: 'crypto' | 'paypal' | 'bank_transfer',
-    address: string
+    input: CreateWithdrawalInput
   ): Promise<{ transaction: Transaction; newBalance: number }> {
     const profile = await this.getOrCreateProfile(rawUserId, email);
     const currentBalance = parseFloat(profile.balance) || 0;
-    const withdrawAmount = Math.min(currentBalance, Math.max(0, amount));
-    const newBalance = Math.max(0, currentBalance - withdrawAmount);
+    const requested = Math.max(0, Number.isFinite(input.amount) ? input.amount : 0);
+    if (requested <= 0 || currentBalance + 0.000001 < requested) {
+      throw new Error('Solde RNC insuffisant pour exécuter ce retrait.');
+    }
 
+    const withdrawAmount = Math.min(currentBalance, requested);
+    const newBalance = Math.max(0, currentBalance - withdrawAmount);
+    const nowTs = Date.now();
     const shortCode = Math.random().toString(16).slice(2, 10).toUpperCase();
+    const txHash =
+      input.txHash ||
+      generateSettlementReference(input.method, input.subNetwork);
+
     const txRecord: StoredTransactionRecord = {
       id: `TX-${shortCode}`,
       user_id: profile.id,
-      method,
+      method: input.method,
+      subNetwork: input.subNetwork,
+      networkLabel: input.networkLabel,
+      executionMode: input.executionMode,
       amount: parseFloat(withdrawAmount.toFixed(4)),
-      status: 'completed',
-      address: address.trim(),
-      date: new Date().toLocaleString('fr-FR', {
+      feeRnc: parseFloat(Math.max(0, input.feeRnc).toFixed(4)),
+      netAmountRnc: parseFloat(Math.max(0, input.netAmountRnc).toFixed(4)),
+      fiatCurrency: input.fiatCurrency,
+      fiatAmount: parseFloat(Math.max(0, input.fiatAmount).toFixed(2)),
+      exchangeRate: input.exchangeRate,
+      status: input.status,
+      address: input.address.trim(),
+      accountHolder: input.accountHolder?.trim() || undefined,
+      txHash,
+      date: new Date(nowTs).toLocaleString('fr-FR', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
       }),
-      createdAt: Date.now(),
+      createdAt: nowTs,
+      etaSeconds: input.etaSeconds,
     };
 
     const existing = await idbGetAllByUser<StoredTransactionRecord>(
@@ -769,13 +837,15 @@ export const dbService = {
 
     if (isSupabaseConfigured && supabase) {
       try {
+        const remoteMethod =
+          input.method === 'mobile_money' ? 'paypal' : input.method;
         await supabase.from('transactions').insert([
           {
             user_id: profile.id,
             amount: txRecord.amount,
-            method,
+            method: remoteMethod,
             address: txRecord.address,
-            status: 'processing',
+            status: input.status,
           },
         ]);
       } catch {
@@ -783,7 +853,116 @@ export const dbService = {
       }
     }
 
-    const { user_id: _uid, createdAt: _ts, ...cleanTx } = txRecord;
+    const { user_id: _uid, ...cleanTx } = txRecord;
     return { transaction: cleanTx, newBalance };
+  },
+
+  /**
+   * Finalise une transaction en attente ('processing' -> 'completed')
+   */
+  async completeWithdrawal(
+    rawUserId: string,
+    txId: string,
+    overrideTxHash?: string
+  ): Promise<Transaction | null> {
+    const existing = await idbGetAllByUser<StoredTransactionRecord>(
+      STORE_TRANSACTIONS,
+      rawUserId
+    );
+    let updatedTx: StoredTransactionRecord | null = null;
+    const nextList = existing.map((tx) => {
+      if (tx.id === txId && tx.status === 'processing') {
+        updatedTx = {
+          ...tx,
+          status: 'completed',
+          txHash: overrideTxHash || tx.txHash,
+        };
+        return updatedTx;
+      }
+      return tx;
+    });
+
+    if (!updatedTx) return null;
+    await idbReplaceUserList(STORE_TRANSACTIONS, rawUserId, nextList);
+    const { user_id: _uid, ...cleanTx } = updatedTx as StoredTransactionRecord;
+    return cleanTx;
+  },
+
+  /**
+   * Annule un retrait en file d'attente ('processing' -> 'cancelled') et rembourse intégralement le solde RNC
+   */
+  async cancelWithdrawal(
+    rawUserId: string,
+    email: string,
+    txId: string
+  ): Promise<{ transaction: Transaction; newBalance: number } | null> {
+    const profile = await this.getOrCreateProfile(rawUserId, email);
+    const existing = await idbGetAllByUser<StoredTransactionRecord>(
+      STORE_TRANSACTIONS,
+      profile.id
+    );
+    const target = existing.find(
+      (tx) => tx.id === txId && tx.status === 'processing'
+    );
+    if (!target) return null;
+
+    const cancelledRecord: StoredTransactionRecord = {
+      ...target,
+      status: 'cancelled',
+    };
+
+    const nextList = existing.map((tx) =>
+      tx.id === txId ? cancelledRecord : tx
+    );
+    await idbReplaceUserList(STORE_TRANSACTIONS, profile.id, nextList);
+
+    const currentBalance = parseFloat(profile.balance) || 0;
+    const refundedBalance = currentBalance + target.amount;
+    await this.updateProfile(profile.id, email, { balance: refundedBalance });
+
+    const { user_id: _uid, ...cleanTx } = cancelledRecord;
+    return { transaction: cleanTx, newBalance: refundedBalance };
+  },
+
+  /**
+   * Gestion du carnet de bénéficiaires enregistrés par utilisateur
+   */
+  getBeneficiaries(rawUserId: string): SavedBeneficiary[] {
+    return (
+      readFallbackJson<SavedBeneficiary[]>(`beneficiaries:list:${rawUserId}`) ||
+      []
+    );
+  },
+
+  saveBeneficiary(
+    rawUserId: string,
+    beneficiary: Omit<SavedBeneficiary, 'id' | 'createdAt'>
+  ): SavedBeneficiary[] {
+    const current = this.getBeneficiaries(rawUserId);
+    const deduped = current.filter(
+      (b) =>
+        !(
+          b.method === beneficiary.method &&
+          b.subNetwork === beneficiary.subNetwork &&
+          b.address.toLowerCase() === beneficiary.address.trim().toLowerCase()
+        )
+    );
+    const created: SavedBeneficiary = {
+      ...beneficiary,
+      address: beneficiary.address.trim(),
+      label: beneficiary.label.trim() || 'Compte vérifié',
+      id: `ben-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: new Date().toLocaleDateString('fr-FR'),
+    };
+    const next = [created, ...deduped].slice(0, 15);
+    writeFallbackJson(`beneficiaries:list:${rawUserId}`, next);
+    return next;
+  },
+
+  deleteBeneficiary(rawUserId: string, beneficiaryId: string): SavedBeneficiary[] {
+    const current = this.getBeneficiaries(rawUserId);
+    const next = current.filter((b) => b.id !== beneficiaryId);
+    writeFallbackJson(`beneficiaries:list:${rawUserId}`, next);
+    return next;
   },
 };
