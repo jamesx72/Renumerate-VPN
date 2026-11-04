@@ -191,7 +191,8 @@ function App() {
       targetMode: ConnectionMode,
       country: string,
       ip: string,
-      forceRefresh = false
+      forceRefresh = false,
+      preferLocal = false
     ) => {
       const reqId = ++securityRequestSeqRef.current;
       if (forceRefresh) setIsRefreshingSecurity(true);
@@ -201,6 +202,7 @@ function App() {
           killSwitch: appSettings.killSwitch,
           ipv6LeakProtection: appSettings.ipv6LeakProtection,
           forceRefresh,
+          preferLocal,
         });
         if (reqId === securityRequestSeqRef.current) {
           setSecurityReport(report);
@@ -400,7 +402,13 @@ function App() {
         selected.ip
       );
       if (isConnected) {
-        runSecurityAnalysis(mode, selected.country, selected.ip).catch(() => {});
+        runSecurityAnalysis(
+          mode,
+          selected.country,
+          selected.ip,
+          false,
+          true
+        ).catch(() => {});
       }
       setTimeout(() => setIsRenumbering(false), spec.settleDelayMs);
     },
@@ -456,6 +464,7 @@ function App() {
           protocol: appSettings.protocol,
           killSwitch: appSettings.killSwitch,
           ipv6LeakProtection: appSettings.ipv6LeakProtection,
+          preferLocal: true,
         })
           .then((rep) => setSecurityReport(rep))
           .catch(() => {});
@@ -705,6 +714,7 @@ function App() {
               protocol: appSettings.protocol,
               killSwitch: appSettings.killSwitch,
               ipv6LeakProtection: appSettings.ipv6LeakProtection,
+              preferLocal: true,
             })
               .then((rep) => setSecurityReport(rep))
               .catch(() => {});

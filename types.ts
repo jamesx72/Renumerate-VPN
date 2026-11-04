@@ -13,6 +13,9 @@ export interface SecurityReport {
   threatLevel: 'Faible' | 'Moyen' | 'Élevé' | 'Critique';
   recommendations: string[];
   analysis: string;
+  engine?: 'gemini' | 'local-heuristic';
+  quotaLimited?: boolean;
+  quotaNotice?: string;
 }
 
 export enum ConnectionMode {

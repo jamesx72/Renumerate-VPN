@@ -20,22 +20,31 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 
 const TEXT_MODEL_CASCADE = [
-  'gemini-3.8-flash',
   'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
   'gemini-flash-latest',
 ] as const;
+
+const QUOTA_GUIDANCE_FR =
+  'Quota Gemini API atteint (429) — moteur heuristique local actif. Pour augmenter votre quota, sélectionnez une clé API avec facturation activée dans Settings > Secrets.';
 
 interface SecurityReportPayload {
   score: number;
   threatLevel: 'Faible' | 'Moyen' | 'Élevé' | 'Critique';
   analysis: string;
   recommendations: string[];
+  engine?: 'gemini' | 'local-heuristic';
+  quotaLimited?: boolean;
+  quotaNotice?: string;
 }
 
 interface DeepAuditPayload {
   analysis: string;
   sources: { title: string; uri: string }[];
   isBlacklisted: boolean;
+  engine?: 'gemini' | 'local-heuristic';
+  quotaLimited?: boolean;
+  quotaNotice?: string;
 }
 
 interface CacheEntry<T> {
@@ -47,10 +56,23 @@ const modelCooldownUntil = new Map<string, number>();
 const securityAnalysisCache = new Map<string, CacheEntry<SecurityReportPayload>>();
 const securityAnalysisInFlight = new Map<string, Promise<SecurityReportPayload>>();
 const deepAuditCache = new Map<string, CacheEntry<DeepAuditPayload>>();
-let lastFallbackNoticeAt = 0;
+
+let globalQuotaCircuitUntil = 0;
+let globalQuotaTrippedAt = 0;
+let lastApiKeyDigest = '';
 
 function getApiKey(): string {
-  return (process.env.GEMINI_API_KEY || '').trim();
+  const key = (process.env.GEMINI_API_KEY || '').trim();
+  const digest = key
+    ? crypto.createHash('sha256').update(key).digest('hex').slice(0, 16)
+    : '';
+  if (digest !== lastApiKeyDigest) {
+    lastApiKeyDigest = digest;
+    modelCooldownUntil.clear();
+    globalQuotaCircuitUntil = 0;
+    globalQuotaTrippedAt = 0;
+  }
+  return key;
 }
 
 function createGenAIClient(): GoogleGenAI | null {
@@ -88,7 +110,7 @@ function setCachedValue<T>(
   key: string,
   value: T,
   ttlMs: number,
-  maxEntries = 64
+  maxEntries = 96
 ): void {
   if (cache.size >= maxEntries) {
     const oldestKey = cache.keys().next().value;
@@ -102,9 +124,30 @@ function setCachedValue<T>(
 interface ClassifiedGeminiError {
   statusCode: number;
   statusText: string;
-  summary: string;
+  isQuotaExhausted: boolean;
+  isRateLimited: boolean;
+  isServerOverload: boolean;
   isTransient: boolean;
   isAuthOrConfig: boolean;
+  retryDelayMs: number;
+}
+
+function parseRetryDelayMs(rawText: string): number {
+  const retryInMatch = rawText.match(/retry in\s+([0-9]+(?:\.[0-9]+)?)s/i);
+  if (retryInMatch?.[1]) {
+    const sec = parseFloat(retryInMatch[1]);
+    if (Number.isFinite(sec) && sec > 0) {
+      return Math.min(10 * 60_000, Math.max(5_000, Math.ceil(sec * 1000)));
+    }
+  }
+  const jsonDelayMatch = rawText.match(/"retryDelay"\s*:\s*"([0-9]+(?:\.[0-9]+)?)s"/i);
+  if (jsonDelayMatch?.[1]) {
+    const sec = parseFloat(jsonDelayMatch[1]);
+    if (Number.isFinite(sec) && sec > 0) {
+      return Math.min(10 * 60_000, Math.max(5_000, Math.ceil(sec * 1000)));
+    }
+  }
+  return 0;
 }
 
 function classifyGeminiError(err: unknown): ClassifiedGeminiError {
@@ -129,7 +172,9 @@ function classifyGeminiError(err: unknown): ClassifiedGeminiError {
     message = err;
   }
 
-  // Parse nested JSON payload inside ApiError.message if present
+  const rawCombined = message;
+  const retryDelayMs = parseRetryDelayMs(rawCombined);
+
   const jsonStart = message.indexOf('{');
   if (jsonStart !== -1) {
     try {
@@ -153,8 +198,22 @@ function classifyGeminiError(err: unknown): ClassifiedGeminiError {
   }
 
   const lower = `${statusText} ${message}`.toLowerCase();
-  const isTransient =
-    statusCode === 429 ||
+
+  const isQuotaExhausted =
+    statusCode === 429 &&
+    (lower.includes('exceeded your current quota') ||
+      lower.includes('check your plan and billing') ||
+      lower.includes('quota exceeded') ||
+      lower.includes('limit: 0') ||
+      lower.includes('per_day') ||
+      lower.includes('billing') ||
+      lower.includes('quota_circuit_open'));
+
+  const isRateLimited =
+    !isQuotaExhausted &&
+    (statusCode === 429 || lower.includes('resource_exhausted'));
+
+  const isServerOverload =
     statusCode === 500 ||
     statusCode === 502 ||
     statusCode === 503 ||
@@ -162,7 +221,6 @@ function classifyGeminiError(err: unknown): ClassifiedGeminiError {
     lower.includes('unavailable') ||
     lower.includes('high demand') ||
     lower.includes('overloaded') ||
-    lower.includes('resource_exhausted') ||
     lower.includes('deadline_exceeded') ||
     lower.includes('fetch failed') ||
     lower.includes('etimedout') ||
@@ -176,65 +234,82 @@ function classifyGeminiError(err: unknown): ClassifiedGeminiError {
     lower.includes('permission_denied') ||
     lower.includes('unauthenticated');
 
-  const cleanMsg = message.replace(/\s+/g, ' ').trim().slice(0, 140);
-  const summary = `${statusCode || statusText || 'ERR'}${cleanMsg ? `: ${cleanMsg}` : ''}`;
-
   return {
     statusCode,
     statusText,
-    summary,
-    isTransient,
+    isQuotaExhausted,
+    isRateLimited,
+    isServerOverload,
+    isTransient: isRateLimited || isServerOverload,
     isAuthOrConfig,
+    retryDelayMs,
   };
 }
 
 function formatCleanFrenchGeminiError(err: unknown): string {
   const info = classifyGeminiError(err);
-  if (info.isTransient) {
-    return 'Le moteur distant connaît un pic de sollicitation temporaire. Veuillez réessayer dans quelques instants.';
+  if (info.isQuotaExhausted || info.isRateLimited) {
+    return QUOTA_GUIDANCE_FR;
   }
   if (info.isAuthOrConfig) {
     return 'Configuration de clé API invalide ou accès restreint côté serveur (vérifiez GEMINI_API_KEY dans Settings > Secrets).';
   }
+  if (info.isServerOverload) {
+    return 'Le moteur distant connaît un pic de sollicitation temporaire. Veuillez réessayer dans quelques instants.';
+  }
   return 'Service distant momentanément indisponible. Les outils locaux de diagnostic restent pleinement opérationnels.';
 }
 
-function noteFallbackLog(scope: string, reason: string): void {
-  const now = Date.now();
-  if (now - lastFallbackNoticeAt > 30_000) {
-    lastFallbackNoticeAt = now;
-    console.info(`[Sentinel/${scope}] Bascule heuristique locale active (${reason})`);
-  }
-}
-
-function orderCandidateModels(models: readonly string[]): string[] {
+function getReadyCandidateModels(models: readonly string[]): string[] {
   const now = Date.now();
   const ready: string[] = [];
-  const cooling: string[] = [];
   for (const m of models) {
     const until = modelCooldownUntil.get(m) ?? 0;
-    if (until > now) {
-      cooling.push(m);
-    } else {
+    if (until <= now) {
       if (until > 0) modelCooldownUntil.delete(m);
       ready.push(m);
     }
   }
-  return [...ready, ...cooling];
+  return ready;
+}
+
+function createQuotaCircuitError(): Error {
+  const err = new Error('429: quota_circuit_open — exceeded your current quota');
+  (err as unknown as Record<string, unknown>).status = 429;
+  return err;
 }
 
 async function generateWithModelCascade(options: {
   ai: GoogleGenAI;
   contents: Parameters<GoogleGenAI['models']['generateContent']>[0]['contents'];
   models?: readonly string[];
+  allowCircuitProbe?: boolean;
   buildConfig?: (model: string) => GenerateContentConfig | undefined;
 }): Promise<{ response: GenerateContentResponse; model: string }> {
-  const candidates = orderCandidateModels(options.models ?? TEXT_MODEL_CASCADE);
+  const now = Date.now();
+  if (globalQuotaCircuitUntil > now) {
+    if (options.allowCircuitProbe && now - globalQuotaTrippedAt >= 60_000) {
+      // Allow a single lightweight probe after 60s when manually requested by user
+      globalQuotaCircuitUntil = 0;
+      modelCooldownUntil.delete('gemini-3.1-flash-lite');
+    } else {
+      throw createQuotaCircuitError();
+    }
+  }
+
+  const candidates = getReadyCandidateModels(
+    options.models ?? TEXT_MODEL_CASCADE
+  );
+  if (candidates.length === 0) {
+    throw createQuotaCircuitError();
+  }
+
   let lastError: unknown = new Error('Aucun modèle disponible');
+  let quotaFailuresInCascade = 0;
 
   for (let idx = 0; idx < candidates.length; idx++) {
     const model = candidates[idx];
-    const maxAttempts = idx === 0 ? 2 : 1;
+    const maxAttempts = 1;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -244,6 +319,7 @@ async function generateWithModelCascade(options: {
           config: options.buildConfig ? options.buildConfig(model) : undefined,
         });
         modelCooldownUntil.delete(model);
+        globalQuotaCircuitUntil = 0;
         return { response, model };
       } catch (err) {
         lastError = err;
@@ -253,24 +329,35 @@ async function generateWithModelCascade(options: {
           throw err;
         }
 
-        if (info.isTransient) {
-          const cooldownMs = info.statusCode === 429 ? 30_000 : 20_000;
+        if (info.isQuotaExhausted) {
+          quotaFailuresInCascade += 1;
+          const cooldownMs = Math.max(info.retryDelayMs, 5 * 60_000);
           modelCooldownUntil.set(model, Date.now() + cooldownMs);
 
-          if (attempt < maxAttempts) {
-            const jitter = Math.floor(Math.random() * 140);
-            await sleep(340 * attempt + jitter);
-            continue;
-          }
-
-          if (idx < candidates.length - 1) {
-            const jitter = Math.floor(Math.random() * 100);
-            await sleep(200 + jitter);
+          // If lightweight model also reports billing/daily quota exhaustion or 2 models fail with quota exhaustion, trip global circuit breaker immediately
+          if (model === 'gemini-3.1-flash-lite' || quotaFailuresInCascade >= 2) {
+            globalQuotaTrippedAt = Date.now();
+            globalQuotaCircuitUntil = Date.now() + cooldownMs;
+            throw err;
           }
           break;
         }
 
-        // If 400 on a specific model config (e.g. tool support difference), move to next candidate
+        if (info.isRateLimited) {
+          const cooldownMs = Math.max(info.retryDelayMs, 60_000);
+          modelCooldownUntil.set(model, Date.now() + cooldownMs);
+          break;
+        }
+
+        if (info.isServerOverload) {
+          modelCooldownUntil.set(model, Date.now() + 20_000);
+          if (idx < candidates.length - 1) {
+            await sleep(220 + Math.floor(Math.random() * 120));
+          }
+          break;
+        }
+
+        // Move to next candidate on model-specific 400 config differences
         break;
       }
     }
@@ -532,6 +619,7 @@ async function startServer() {
         killSwitch = true,
         ipv6LeakProtection = true,
         forceRefresh = false,
+        preferLocal = false,
       } = (req.body || {}) as Record<string, unknown>;
 
       const reportParams = {
@@ -543,12 +631,22 @@ async function startServer() {
         ipv6LeakProtection: Boolean(ipv6LeakProtection),
       };
 
-      const cacheKey = `${reportParams.mode}|${reportParams.location}|${reportParams.ip}|${reportParams.protocol}|${reportParams.killSwitch}|${reportParams.ipv6LeakProtection}`;
+      // Cache key normalized by posture + country so ephemeral hop IP mutations reuse valid audits
+      const cacheKey = `${reportParams.mode}|${reportParams.location}|${reportParams.protocol}|${reportParams.killSwitch}|${reportParams.ipv6LeakProtection}`;
 
       if (!forceRefresh) {
         const cached = getCachedValue(securityAnalysisCache, cacheKey);
         if (cached) {
           res.json(cached);
+          return;
+        }
+
+        if (preferLocal) {
+          const localReport: SecurityReportPayload = {
+            ...buildDeterministicSecurityReport(reportParams),
+            engine: 'local-heuristic',
+          };
+          res.json(localReport);
           return;
         }
 
@@ -562,7 +660,10 @@ async function startServer() {
 
       const ai = createGenAIClient();
       if (!ai) {
-        res.json(buildDeterministicSecurityReport(reportParams));
+        res.json({
+          ...buildDeterministicSecurityReport(reportParams),
+          engine: 'local-heuristic',
+        });
         return;
       }
 
@@ -577,6 +678,7 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
           const { response } = await generateWithModelCascade({
             ai,
             contents: prompt,
+            allowCircuitProbe: Boolean(forceRefresh),
             buildConfig: (model) => ({
               responseMimeType: 'application/json',
               responseSchema: {
@@ -619,14 +721,22 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
             throw new Error('Réponse vide du modèle');
           }
 
-          const parsed = normalizeSecurityReport(JSON.parse(text), reportParams);
-          setCachedValue(securityAnalysisCache, cacheKey, parsed, 90_000);
+          const parsed: SecurityReportPayload = {
+            ...normalizeSecurityReport(JSON.parse(text), reportParams),
+            engine: 'gemini',
+          };
+          setCachedValue(securityAnalysisCache, cacheKey, parsed, 15 * 60_000);
           return parsed;
         } catch (err) {
           const info = classifyGeminiError(err);
-          noteFallbackLog('security-analysis', info.summary);
-          const fallback = buildDeterministicSecurityReport(reportParams);
-          setCachedValue(securityAnalysisCache, cacheKey, fallback, 25_000);
+          const isQuota = info.isQuotaExhausted || info.isRateLimited;
+          const fallback: SecurityReportPayload = {
+            ...buildDeterministicSecurityReport(reportParams),
+            engine: 'local-heuristic',
+            quotaLimited: isQuota,
+            ...(isQuota ? { quotaNotice: QUOTA_GUIDANCE_FR } : {}),
+          };
+          setCachedValue(securityAnalysisCache, cacheKey, fallback, 5 * 60_000);
           return fallback;
         } finally {
           securityAnalysisInFlight.delete(cacheKey);
@@ -657,7 +767,10 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
 
     const ai = createGenAIClient();
     if (!ai) {
-      res.json(buildDeterministicDeepAudit(targetIp, targetLocation));
+      res.json({
+        ...buildDeterministicDeepAudit(targetIp, targetLocation),
+        engine: 'local-heuristic',
+      });
       return;
     }
 
@@ -668,6 +781,7 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
       const { response } = await generateWithModelCascade({
         ai,
         contents: prompt,
+        allowCircuitProbe: true,
         models: ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'],
         buildConfig: (model) =>
           model === 'gemini-3.1-flash-lite'
@@ -699,13 +813,21 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
         sources,
         isBlacklisted:
           lower.includes('blacklisté') || lower.includes('compromis critique'),
+        engine: 'gemini',
       };
-      setCachedValue(deepAuditCache, cacheKey, payload, 120_000, 48);
+      setCachedValue(deepAuditCache, cacheKey, payload, 15 * 60_000, 64);
       res.json(payload);
     } catch (err) {
       const info = classifyGeminiError(err);
-      noteFallbackLog('deep-audit', info.summary);
-      res.json(buildDeterministicDeepAudit(targetIp, targetLocation));
+      const isQuota = info.isQuotaExhausted || info.isRateLimited;
+      const fallback: DeepAuditPayload = {
+        ...buildDeterministicDeepAudit(targetIp, targetLocation),
+        engine: 'local-heuristic',
+        quotaLimited: isQuota,
+        ...(isQuota ? { quotaNotice: QUOTA_GUIDANCE_FR } : {}),
+      };
+      setCachedValue(deepAuditCache, cacheKey, fallback, 5 * 60_000, 64);
+      res.json(fallback);
     }
   });
 
@@ -744,6 +866,7 @@ Contexte télémétrique actuel de l'utilisateur :
       const { response } = await generateWithModelCascade({
         ai,
         contents: userPrompt,
+        allowCircuitProbe: true,
         buildConfig: (model) => ({
           systemInstruction,
           ...(model === 'gemini-3.8-flash'
@@ -759,15 +882,15 @@ Contexte télémétrique actuel de l'utilisateur :
       });
     } catch (err) {
       const info = classifyGeminiError(err);
-      noteFallbackLog('chat', info.summary);
-      if (info.isAuthOrConfig) {
+      const localReply = buildContextualSentinelReply(userPrompt, context);
+      if (info.isAuthOrConfig || info.isQuotaExhausted || info.isRateLimited) {
         res.json({
-          reply: `${formatCleanFrenchGeminiError(err)} ${buildContextualSentinelReply(userPrompt, context)}`,
+          reply: `${localReply}\n\nNote : ${formatCleanFrenchGeminiError(err)}`,
         });
         return;
       }
       res.json({
-        reply: buildContextualSentinelReply(userPrompt, context),
+        reply: localReply,
       });
     }
   });
@@ -814,12 +937,21 @@ Contexte télémétrique actuel de l'utilisateur :
             : Boolean(context.ipv6LeakProtection),
       };
 
-      const buildHeuristicVoicePayload = (spokenText: string) => {
+      const buildHeuristicVoicePayload = (
+        spokenText: string,
+        isQuota = false
+      ) => {
         const effectiveTranscript =
           spokenText.trim() ||
           'Analyse de sécurité et recommandations de protection de la session';
         const intent = inferVoiceIntent(effectiveTranscript);
-        const report = buildDeterministicSecurityReport(reportParams);
+        const baseReport = buildDeterministicSecurityReport(reportParams);
+        const report: SecurityReportPayload = {
+          ...baseReport,
+          engine: 'local-heuristic',
+          quotaLimited: isQuota,
+          ...(isQuota ? { quotaNotice: QUOTA_GUIDANCE_FR } : {}),
+        };
         const reply =
           intent === 'security_analysis'
             ? `${report.analysis} Indice actuel évalué à ${report.score}/100 (risque ${report.threatLevel.toLowerCase()}).`
@@ -840,39 +972,7 @@ Contexte télémétrique actuel de l'utilisateur :
         return;
       }
 
-      let transcript = directText;
-
-      // Step 1: Dedicated speech transcription when audio bytes are supplied
-      if (!transcript && cleanAudioBase64) {
-        try {
-          const { response: txRes } = await generateWithModelCascade({
-            ai,
-            models: ['gemini-3.5-transcribe'],
-            contents: {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: normalizedMime,
-                    data: cleanAudioBase64,
-                  },
-                },
-                {
-                  text: 'Transcris exactement en français la phrase prononcée dans cet extrait audio. Réponds uniquement avec la transcription brute sans guillemets ni commentaire.',
-                },
-              ],
-            },
-          });
-          const txText = (txRes.text ?? '').trim();
-          if (txText) {
-            transcript = txText;
-          }
-        } catch (txErr) {
-          const txInfo = classifyGeminiError(txErr);
-          noteFallbackLog('voice-transcribe', txInfo.summary);
-        }
-      }
-
-      // Step 2: Structured intent classification + security audit / protection advice
+      // Single-pass multimodal or text intent + security audit generation (halves quota usage vs 2-step transcribe+analyze)
       const telemetrySummary = `Contexte session VPN de l'opérateur :
 - État du tunnel : ${context.isConnected ? 'CONNECTÉ' : 'DÉCONNECTÉ'}
 - Architecture active : ${reportParams.mode}
@@ -882,9 +982,9 @@ Contexte télémétrique actuel de l'utilisateur :
 - Kill Switch : ${reportParams.killSwitch ? 'Actif' : 'Inactif'}
 - Protection IPv6 : ${reportParams.ipv6LeakProtection ? 'Active' : 'Inactive'}`;
 
-      const analysisInstruction = transcript
+      const analysisInstruction = directText
         ? `Tu es Sentinel, l'architecte cybersécurité vocal du Cockpit Renumerate VPN.
-Commande vocale transcrite de l'utilisateur : "${transcript}"
+Commande vocale transcrite de l'utilisateur : "${directText}"
 ${telemetrySummary}
 
 Détermine si l'utilisateur demande principalement une analyse de sécurité de sa session ("security_analysis") ou des conseils de protection ("protection_advice").
@@ -898,7 +998,7 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
 
       const multimodalContents: Parameters<
         GoogleGenAI['models']['generateContent']
-      >[0]['contents'] = transcript
+      >[0]['contents'] = directText
         ? analysisInstruction
         : {
             parts: [
@@ -916,6 +1016,10 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
         const { response } = await generateWithModelCascade({
           ai,
           contents: multimodalContents,
+          allowCircuitProbe: true,
+          models: directText
+            ? TEXT_MODEL_CASCADE
+            : ['gemini-3.8-flash', 'gemini-flash-latest'],
           buildConfig: (model) => ({
             responseMimeType: 'application/json',
             responseSchema: {
@@ -979,7 +1083,7 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
 
         const parsed = JSON.parse(rawJson) as Record<string, unknown>;
         const resolvedTranscript =
-          transcript ||
+          directText ||
           (typeof parsed.transcript === 'string' && parsed.transcript.trim()
             ? parsed.transcript.trim()
             : 'Analyse vocale de la posture de sécurité');
@@ -990,18 +1094,21 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
             ? parsed.intent
             : inferVoiceIntent(resolvedTranscript);
 
-        const normalizedReport = normalizeSecurityReport(parsed, reportParams);
+        const normalizedReport: SecurityReportPayload = {
+          ...normalizeSecurityReport(parsed, reportParams),
+          engine: 'gemini',
+        };
         const resolvedReply =
           typeof parsed.reply === 'string' && parsed.reply.trim().length > 8
             ? parsed.reply.trim()
             : normalizedReport.analysis;
 
-        const cacheKey = `${reportParams.mode}|${reportParams.location}|${reportParams.ip}|${reportParams.protocol}|${reportParams.killSwitch}|${reportParams.ipv6LeakProtection}`;
+        const cacheKey = `${reportParams.mode}|${reportParams.location}|${reportParams.protocol}|${reportParams.killSwitch}|${reportParams.ipv6LeakProtection}`;
         setCachedValue(
           securityAnalysisCache,
           cacheKey,
           normalizedReport,
-          90_000
+          15 * 60_000
         );
 
         res.json({
@@ -1013,8 +1120,12 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
         });
       } catch (err) {
         const info = classifyGeminiError(err);
-        noteFallbackLog('voice-command', info.summary);
-        res.json(buildHeuristicVoicePayload(transcript));
+        res.json(
+          buildHeuristicVoicePayload(
+            directText,
+            info.isQuotaExhausted || info.isRateLimited
+          )
+        );
       }
     }
   );
@@ -1028,14 +1139,20 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
     }
 
     const ai = createGenAIClient();
-    if (!ai) {
+    const ttsModel = 'gemini-3.8-flash-lite-tts';
+    const now = Date.now();
+    if (
+      !ai ||
+      globalQuotaCircuitUntil > now ||
+      (modelCooldownUntil.get(ttsModel) ?? 0) > now
+    ) {
       res.json({ audioWavBase64: null });
       return;
     }
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash-lite-tts',
+        model: ttsModel,
         contents: [
           {
             role: 'user',
@@ -1059,12 +1176,18 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
         },
       });
 
+      modelCooldownUntil.delete(ttsModel);
       const base64Audio =
         response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data ?? null;
       res.json({ audioWavBase64: base64Audio });
     } catch (err) {
       const info = classifyGeminiError(err);
-      noteFallbackLog('tts', info.summary);
+      if (info.isQuotaExhausted) {
+        const cooldownMs = Math.max(info.retryDelayMs, 5 * 60_000);
+        modelCooldownUntil.set(ttsModel, Date.now() + cooldownMs);
+      } else if (info.isRateLimited) {
+        modelCooldownUntil.set(ttsModel, Date.now() + 60_000);
+      }
       res.json({ audioWavBase64: null });
     }
   });
@@ -1274,14 +1397,30 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
         },
       });
 
+    if (globalQuotaCircuitUntil > Date.now()) {
+      clientWs.send(
+        JSON.stringify({
+          error: QUOTA_GUIDANCE_FR,
+        })
+      );
+      clientWs.close();
+      return;
+    }
+
     try {
       try {
         liveSession = await openLiveSession();
       } catch (firstErr) {
-        if (classifyGeminiError(firstErr).isTransient) {
+        const firstInfo = classifyGeminiError(firstErr);
+        if (firstInfo.isServerOverload) {
           await sleep(450);
           liveSession = await openLiveSession();
         } else {
+          if (firstInfo.isQuotaExhausted) {
+            globalQuotaTrippedAt = Date.now();
+            globalQuotaCircuitUntil =
+              Date.now() + Math.max(firstInfo.retryDelayMs, 5 * 60_000);
+          }
           throw firstErr;
         }
       }
@@ -1314,8 +1453,6 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
         }
       });
     } catch (err) {
-      const info = classifyGeminiError(err);
-      noteFallbackLog('live-voice', info.summary);
       if (clientWs.readyState === clientWs.OPEN) {
         clientWs.send(
           JSON.stringify({

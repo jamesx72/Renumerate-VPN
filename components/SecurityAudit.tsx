@@ -11,8 +11,9 @@ import {
   RefreshCw,
   Cpu,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
-import { performDeepAudit } from '../services/geminiService';
+import { performDeepAudit, DeepAuditResult } from '../services/geminiService';
 import { AppSettings } from '../types';
 import { computeSettingsHardeningScore } from '../constants';
 
@@ -30,11 +31,7 @@ export const SecurityAudit: React.FC<Props> = ({
   onOpenSystemCenter,
 }) => {
   const [isAuditing, setIsAuditing] = useState(false);
-  const [auditResult, setAuditResult] = useState<{
-    analysis: string;
-    sources: { title: string; uri: string }[];
-    isBlacklisted: boolean;
-  } | null>(null);
+  const [auditResult, setAuditResult] = useState<DeepAuditResult | null>(null);
 
   const hardeningScore = settings ? computeSettingsHardeningScore(settings) : null;
 
@@ -220,6 +217,13 @@ export const SecurityAudit: React.FC<Props> = ({
               </p>
             </div>
           </div>
+
+          {auditResult.quotaNotice && (
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+              <span>{auditResult.quotaNotice}</span>
+            </div>
+          )}
 
           {auditResult.sources.length > 0 && (
             <div className="space-y-2">

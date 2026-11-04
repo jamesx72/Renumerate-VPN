@@ -5,6 +5,7 @@ export interface SecurityContextOptions {
   killSwitch?: boolean;
   ipv6LeakProtection?: boolean;
   forceRefresh?: boolean;
+  preferLocal?: boolean;
 }
 
 function buildLocalFallbackReport(
@@ -65,6 +66,7 @@ function buildLocalFallbackReport(
     threatLevel,
     recommendations: recommendations.slice(0, 3),
     analysis: `Session ${mode} active vers ${location} (${ip}) sous ${protocol.toUpperCase()}. Cloisonnement réseau vérifié localement.`,
+    engine: 'local-heuristic',
   };
 }
 
@@ -98,6 +100,10 @@ export const analyzeSecurity = async (
   ip: string,
   options?: SecurityContextOptions
 ): Promise<SecurityReport> => {
+  if (options?.preferLocal && !options?.forceRefresh) {
+    return buildLocalFallbackReport(mode, location, ip, options);
+  }
+
   try {
     const { ok, data } = await fetchJsonWithTimeout<Partial<SecurityReport>>(
       '/api/gemini/security-analysis',
@@ -109,6 +115,7 @@ export const analyzeSecurity = async (
         killSwitch: options?.killSwitch ?? true,
         ipv6LeakProtection: options?.ipv6LeakProtection ?? true,
         forceRefresh: Boolean(options?.forceRefresh),
+        preferLocal: Boolean(options?.preferLocal),
       }
     );
 
@@ -126,11 +133,23 @@ export const analyzeSecurity = async (
       threatLevel: data.threatLevel || 'Faible',
       analysis: data.analysis,
       recommendations: data.recommendations,
+      engine: data.engine || 'gemini',
+      quotaLimited: Boolean(data.quotaLimited),
+      quotaNotice: data.quotaNotice,
     };
   } catch {
     return buildLocalFallbackReport(mode, location, ip, options);
   }
 };
+
+export interface DeepAuditResult {
+  analysis: string;
+  sources: { title: string; uri: string }[];
+  isBlacklisted: boolean;
+  engine?: 'gemini' | 'local-heuristic';
+  quotaLimited?: boolean;
+  quotaNotice?: string;
+}
 
 /**
  * Exécute un audit profond de réputation IP/juridiction via /api/gemini/deep-audit.
@@ -138,17 +157,13 @@ export const analyzeSecurity = async (
 export const performDeepAudit = async (
   ip: string,
   location: string
-): Promise<{
-  analysis: string;
-  sources: { title: string; uri: string }[];
-  isBlacklisted: boolean;
-}> => {
+): Promise<DeepAuditResult> => {
   try {
-    const { data } = await fetchJsonWithTimeout<{
-      analysis?: string;
-      sources?: { title: string; uri: string }[];
-      isBlacklisted?: boolean;
-    }>('/api/gemini/deep-audit', { ip, location }, 15_000);
+    const { data } = await fetchJsonWithTimeout<Partial<DeepAuditResult>>(
+      '/api/gemini/deep-audit',
+      { ip, location },
+      15_000
+    );
 
     return {
       analysis:
@@ -156,12 +171,16 @@ export const performDeepAudit = async (
         `Audit vérifié pour ${location} (${ip}) : aucune compromission ni signature de liste noire relevée.`,
       sources: Array.isArray(data.sources) ? data.sources : [],
       isBlacklisted: Boolean(data.isBlacklisted),
+      engine: data.engine || 'gemini',
+      quotaLimited: Boolean(data.quotaLimited),
+      quotaNotice: data.quotaNotice,
     };
   } catch {
     return {
       analysis: `Audit heuristique local pour ${location} (${ip}) : passerelle conforme et aucune signature de liste noire détectée.`,
       sources: [],
       isBlacklisted: false,
+      engine: 'local-heuristic',
     };
   }
 };

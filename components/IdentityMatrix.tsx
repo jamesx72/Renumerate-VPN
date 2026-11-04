@@ -30,6 +30,7 @@ import {
   Download,
   Search,
   Fingerprint,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface Props {
@@ -798,11 +799,24 @@ export const IdentityMatrix: React.FC<Props> = ({
                 <Brain className="w-5 h-5" />
               </div>
               <div className="text-left">
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Synthèse d&apos;audit de session
-                </h4>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Synthèse d&apos;audit de session
+                  </h4>
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                      securityReport.engine === 'local-heuristic'
+                        ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        : 'bg-cyan-500/10 border-cyan-500/25 text-cyan-700 dark:text-cyan-300'
+                    }`}
+                  >
+                    {securityReport.engine === 'local-heuristic'
+                      ? 'Heuristique locale'
+                      : 'IA Gemini'}
+                  </span>
+                </div>
                 <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 font-mono tabular-nums">
                     <Activity className="w-3.5 h-3.5 text-cyan-500" />
                     Score : {securityReport.score}/100
                   </span>
@@ -828,6 +842,13 @@ export const IdentityMatrix: React.FC<Props> = ({
 
           {showRecs && (
             <div className="px-6 pb-6 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-4">
+              {securityReport.quotaNotice && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <span>{securityReport.quotaNotice}</span>
+                </div>
+              )}
+
               <div className="p-4 bg-slate-50 dark:bg-slate-950/70 rounded-xl border border-slate-200 dark:border-slate-800">
                 <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
                   {securityReport.analysis}
