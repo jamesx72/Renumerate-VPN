@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Cpu,
   EyeOff,
+  Search,
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
@@ -40,6 +41,7 @@ import { ConnectionHistoryModal } from './components/ConnectionHistoryModal';
 import { SecureFileTransfer } from './components/SecureFileTransfer';
 import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
 import {
   MOCK_IDENTITIES,
   INITIAL_LOGS,
@@ -141,6 +143,7 @@ function App() {
   const [showTransactionHistory, setShowTransactionHistory] = useState(false);
   const [showConnectionHistory, setShowConnectionHistory] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [connectionHistory, setConnectionHistory] = useState<
     ConnectionSession[]
   >([]);
@@ -601,14 +604,23 @@ function App() {
         return;
       }
 
+      if (e.shiftKey && key === 'k') {
+        e.preventDefault();
+        toggleEmergencyLockdown();
+        return;
+      }
+
+      if (key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+        return;
+      }
+
       if (key === 's') {
         e.preventDefault();
         addLog('Raccourci détecté : Basculer connexion [Ctrl+S]', 'info');
         if (isConnected) disconnectVPN();
         else connectVPN();
-      } else if (key === 'k') {
-        e.preventDefault();
-        toggleEmergencyLockdown();
       } else if (key === 'r') {
         e.preventDefault();
         addLog('Raccourci détecté : Re-numéroter identité [Ctrl+R]', 'info');
@@ -674,9 +686,13 @@ function App() {
         powerBoost * tcpBoost * queueBoost * xdpBoost * chaffShaping;
 
       const interval = setInterval(() => {
+        const rand = new Uint32Array(2);
+        window.crypto.getRandomValues(rand);
+        const u0 = rand[0] / 0xffffffff;
+        const u1 = rand[1] / 0xffffffff;
         setThroughput({
-          up: parseFloat(((Math.random() * 2.5 + 0.4) * factor).toFixed(2)),
-          down: parseFloat(((Math.random() * 45 + 8) * factor).toFixed(2)),
+          up: parseFloat(((u0 * 2.5 + 0.4) * factor).toFixed(2)),
+          down: parseFloat(((u1 * 45 + 8) * factor).toFixed(2)),
         });
       }, tickMs);
       return () => clearInterval(interval);
@@ -1659,6 +1675,17 @@ function App() {
 
           <div className="flex items-center gap-1.5">
             <button
+              onClick={() => setShowCommandPalette(true)}
+              className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-cyan-500/60 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Palette de commandes opérateur (Ctrl+K / ⌘K)"
+            >
+              <Search className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span className="hidden md:inline">Actions</span>
+              <span className="font-mono tabular-nums text-[10px] text-slate-400">
+                ⌘K
+              </span>
+            </button>
+            <button
               onClick={toggleEmergencyLockdown}
               className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
                 isEmergency
@@ -2254,6 +2281,51 @@ function App() {
           </div>
         </div>
       )}
+
+      <CommandPaletteModal
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        isDark={isDark}
+        onToggleTheme={() => setIsDark((prev) => !prev)}
+        activeSection={activeSection}
+        onNavigateSection={(sec) => setActiveSection(sec)}
+        isConnected={isConnected}
+        isEmergency={isEmergency}
+        mode={mode}
+        onModeChange={(m) => {
+          setMode(m);
+          if (isConnected) {
+            runSecurityAnalysis(
+              m,
+              currentIdentity.country,
+              currentIdentity.ip
+            ).catch(() => {});
+          }
+        }}
+        currentIdentity={currentIdentity}
+        nodes={nodes}
+        vaultUnlocked={Boolean(sessionPassword)}
+        vaultCount={vaultCount}
+        hardeningScore={hardeningScore}
+        settings={appSettings}
+        logs={logs}
+        onConnectVpn={() => connectVPN()}
+        onDisconnectVpn={disconnectVPN}
+        onConnectNode={handleConnectNode}
+        onTriggerRenumberHop={handleForceRotateIdentity}
+        onGlobalScramble={handleGlobalScramble}
+        onToggleEmergency={toggleEmergencyLockdown}
+        onExecutePanic={handleExecutePanic}
+        onLockVault={() => {
+          setSessionPassword(null);
+          addLog('Clé maîtresse RAM purgée et coffre-fort verrouillé', 'info');
+        }}
+        onFlushDnsCache={handleFlushDnsCache}
+        onPatchSettings={patchAppSettings}
+        onOpenLogs={() => setShowLogs(true)}
+        onOpenSettings={() => setShowSettings(true)}
+        onOpenHistory={() => setShowConnectionHistory(true)}
+      />
     </div>
   );
 }

@@ -1640,6 +1640,65 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
     });
   });
 
+  app.get('/api/network/speedtest-ping', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, no-transform');
+    res.json({
+      ok: true,
+      serverTimeIso: new Date().toISOString(),
+      hrTimeNs: process.hrtime.bigint().toString(),
+    });
+  });
+
+  app.get('/api/network/speedtest-down', (req: Request, res: Response) => {
+    const startHr = process.hrtime.bigint();
+    const rawBytes = Number(req.query.bytes) || 524_288;
+    const byteCount = Math.max(65_536, Math.min(1_048_576, Math.floor(rawBytes)));
+
+    const payload = crypto.randomBytes(byteCount);
+    const sha256Prefix = crypto
+      .createHash('sha256')
+      .update(payload)
+      .digest('hex')
+      .slice(0, 12)
+      .toUpperCase();
+    const computeMs = Number(process.hrtime.bigint() - startHr) / 1_000_000;
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(byteCount));
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, no-transform');
+    res.setHeader('X-Server-Compute-Ms', computeMs.toFixed(3));
+    res.setHeader('X-Payload-Sha256', sha256Prefix);
+    res.status(200).send(payload);
+  });
+
+  app.post(
+    '/api/network/speedtest-up',
+    express.raw({ type: 'application/octet-stream', limit: '2mb' }),
+    (req: Request, res: Response) => {
+      const startHr = process.hrtime.bigint();
+      const buf = Buffer.isBuffer(req.body)
+        ? req.body
+        : Buffer.from(typeof req.body === 'string' ? req.body : '');
+      const receivedBytes = buf.byteLength;
+      const sha256Prefix = crypto
+        .createHash('sha256')
+        .update(buf)
+        .digest('hex')
+        .slice(0, 12)
+        .toUpperCase();
+      const serverProcessMs = Number(process.hrtime.bigint() - startHr) / 1_000_000;
+
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.json({
+        ok: true,
+        receivedBytes,
+        sha256Prefix,
+        serverProcessMs: Number(serverProcessMs.toFixed(3)),
+        receivedAt: new Date().toISOString(),
+      });
+    }
+  );
+
   app.get('/api/withdrawals/rates', (_req: Request, res: Response) => {
     const bucket = Math.floor(Date.now() / 300000);
     const wave = Math.sin(bucket * 0.73) * 0.018;

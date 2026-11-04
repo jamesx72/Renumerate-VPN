@@ -30,7 +30,6 @@ import {
   Clock,
   Calendar,
   ArrowUpDown,
-  Sparkles,
   CheckCircle2,
   Mic,
   MicOff,
@@ -40,6 +39,9 @@ import {
   X,
   AlertTriangle,
   Fingerprint,
+  Plus,
+  Trash2,
+  GitFork,
 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { DnsLeakTester } from './DnsLeakTester';
@@ -51,6 +53,8 @@ import {
   AppSettings,
   AnonymityLevel,
   ConnectionSession,
+  SplitTunnelRule,
+  ThreatFilterConfig,
 } from '../types';
 import {
   isCountryExcludedByJurisdiction,
@@ -286,6 +290,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [dnsTestTrigger, setDnsTestTrigger] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Split Tunneling & DNS Threat Shield quick controls
+  const [newSplitTarget, setNewSplitTarget] = useState('');
+  const [newSplitPolicy, setNewSplitPolicy] = useState<'bypass' | 'vpn_only'>('bypass');
+  const [blockedQueriesTick, setBlockedQueriesTick] = useState(0);
+
   // Cockpit Voice Command states & refs
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
@@ -386,6 +395,110 @@ export const Dashboard: React.FC<DashboardProps> = ({
       stopSpeechPlayback();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isConnected || isEmergency || !settings.adBlocker) return;
+    const activeFeedsCount = Object.values(settings.threatFilters).filter(Boolean).length;
+    if (activeFeedsCount === 0) return;
+
+    const timer = window.setInterval(() => {
+      const rand = new Uint32Array(1);
+      window.crypto.getRandomValues(rand);
+      const step = (rand[0] % (activeFeedsCount + 1)) + (rand[0] % 2);
+      if (step > 0) {
+        setBlockedQueriesTick((prev) => prev + step);
+      }
+    }, 4500);
+
+    return () => window.clearInterval(timer);
+  }, [isConnected, isEmergency, settings.adBlocker, settings.threatFilters]);
+
+  const handleToggleThreatFeed = (feedKey: keyof ThreatFilterConfig) => {
+    if (!updateSettings) return;
+    const nextFilters: ThreatFilterConfig = {
+      ...settings.threatFilters,
+      [feedKey]: !settings.threatFilters[feedKey],
+    };
+    updateSettings('threatFilters', nextFilters);
+    const labels: Record<keyof ThreatFilterConfig, string> = {
+      ads: 'Publicités',
+      trackers: 'Traqueurs télémétriques',
+      malware: 'Domaines malveillants',
+      cryptominers: 'Scripts de cryptominage',
+    };
+    addLog(
+      `Filtre DNS « ${labels[feedKey]} » ${nextFilters[feedKey] ? 'activé' : 'désactivé'}`,
+      nextFilters[feedKey] ? 'success' : 'warning'
+    );
+  };
+
+  const handleAddSplitRule = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!updateSettings) return;
+    const cleanTarget = newSplitTarget.trim().toLowerCase();
+    if (!cleanTarget) return;
+
+    const alreadyExists = settings.splitTunnelRules.some(
+      (r) => r.target.toLowerCase() === cleanTarget
+    );
+    if (alreadyExists) {
+      addLog(`La règle Split Tunnel « ${cleanTarget} » existe déjà.`, 'warning');
+      return;
+    }
+
+    const isCidr =
+      /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/.test(cleanTarget);
+    const newRule: SplitTunnelRule = {
+      id: `rule-${Date.now().toString(36)}`,
+      target: isCidr && !cleanTarget.includes('/') ? `${cleanTarget}/32` : cleanTarget,
+      type: isCidr ? 'cidr' : 'domain',
+      policy: newSplitPolicy,
+      enabled: true,
+    };
+
+    updateSettings('splitTunnelRules', [...settings.splitTunnelRules, newRule]);
+    if (!settings.splitTunneling) {
+      updateSettings('splitTunneling', true);
+    }
+    setNewSplitTarget('');
+    addLog(
+      `Règle Split Tunnel ajoutée : ${newRule.target} (${newRule.policy === 'bypass' ? 'Hors tunnel' : 'Tunnel forcé'})`,
+      'success'
+    );
+  };
+
+  const handleToggleSplitRule = (ruleId: string) => {
+    if (!updateSettings) return;
+    const nextRules = settings.splitTunnelRules.map((r) =>
+      r.id === ruleId ? { ...r, enabled: !r.enabled } : r
+    );
+    updateSettings('splitTunnelRules', nextRules);
+  };
+
+  const handleSwitchSplitRulePolicy = (ruleId: string) => {
+    if (!updateSettings) return;
+    const nextRules = settings.splitTunnelRules.map((r) =>
+      r.id === ruleId
+        ? {
+            ...r,
+            policy: (r.policy === 'bypass' ? 'vpn_only' : 'bypass') as
+              | 'bypass'
+              | 'vpn_only',
+          }
+        : r
+    );
+    updateSettings('splitTunnelRules', nextRules);
+  };
+
+  const handleDeleteSplitRule = (ruleId: string) => {
+    if (!updateSettings) return;
+    const targetRule = settings.splitTunnelRules.find((r) => r.id === ruleId);
+    const nextRules = settings.splitTunnelRules.filter((r) => r.id !== ruleId);
+    updateSettings('splitTunnelRules', nextRules);
+    if (targetRule) {
+      addLog(`Règle Split Tunnel retirée : ${targetRule.target}`, 'info');
+    }
+  };
 
   const excludedNodesCount = useMemo(
     () =>
@@ -1528,6 +1641,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
             throughput={throughput}
             baseLatency={baseLatency}
             mode={mode}
+            protocol={protocol}
+            mtuSize={settings.mtuSize}
+            onLog={addLog}
           />
         </div>
 
@@ -1728,6 +1844,249 @@ export const Dashboard: React.FC<DashboardProps> = ({
         addLog={addLog}
         externalTriggerCount={dnsTestTrigger}
       />
+
+      {/* Interactive DNS Threat Shield & Split Tunneling Quick Console */}
+      {updateSettings && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+          <div className="grid grid-cols-1 xl:grid-cols-2 divide-y xl:divide-y-0 xl:divide-x divide-slate-200 dark:divide-slate-800">
+            {/* Left Half: DNS Sinkhole Threat Blocker */}
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div
+                    className={`p-2.5 rounded-xl border shrink-0 transition-colors ${
+                      settings.adBlocker
+                        ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                    }`}
+                  >
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Filtrage DNS Sinkhole anti-menaces
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Neutralise en amont les domaines publicitaires, traqueurs et malwares (0.0.0.0).
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !settings.adBlocker;
+                    updateSettings('adBlocker', next);
+                    addLog(
+                      `Bouclier DNS Sinkhole ${next ? 'activé' : 'suspendu'}`,
+                      next ? 'success' : 'warning'
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
+                    settings.adBlocker
+                      ? 'bg-emerald-600 border-emerald-500 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {settings.adBlocker ? 'Bouclier actif' : 'Désactivé'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { key: 'ads', label: 'Publicités', baseCount: 42 },
+                    { key: 'trackers', label: 'Traqueurs', baseCount: 68 },
+                    { key: 'malware', label: 'Malwares', baseCount: 14 },
+                    { key: 'cryptominers', label: 'Cryptomineurs', baseCount: 7 },
+                  ] as const
+                ).map((feed) => {
+                  const enabled = settings.adBlocker && settings.threatFilters[feed.key];
+                  const intercepted = isConnected && enabled
+                    ? feed.baseCount + Math.floor(blockedQueriesTick * (feed.baseCount / 60))
+                    : 0;
+                  return (
+                    <button
+                      key={feed.key}
+                      type="button"
+                      disabled={!settings.adBlocker}
+                      onClick={() => handleToggleThreatFeed(feed.key)}
+                      className={`p-3 rounded-xl border text-left transition-colors cursor-pointer disabled:opacity-50 ${
+                        enabled
+                          ? 'bg-slate-50 dark:bg-slate-950/70 border-emerald-500/35 text-slate-900 dark:text-white'
+                          : 'bg-slate-50/60 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold truncate">{feed.label}</span>
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+                          }`}
+                        />
+                      </div>
+                      <div className="mt-1 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        {enabled
+                          ? isConnected
+                            ? `${intercepted} bloqués`
+                            : 'Prêt (veille)'
+                          : 'Inactif'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400">
+                <span>
+                  Listes actives :{' '}
+                  <strong className="font-mono tabular-nums text-slate-800 dark:text-slate-200">
+                    {settings.adBlocker
+                      ? Object.values(settings.threatFilters).filter(Boolean).length
+                      : 0}
+                    /4
+                  </strong>
+                </span>
+                <span>·</span>
+                <span className="font-mono tabular-nums">
+                  {settings.customBlockedDomains.length} domaine
+                  {settings.customBlockedDomains.length > 1 ? 's' : ''} personnalisé
+                  {settings.customBlockedDomains.length > 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+
+            {/* Right Half: Selective Split Tunneling */}
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div
+                    className={`p-2.5 rounded-xl border shrink-0 transition-colors ${
+                      settings.splitTunneling
+                        ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-600 dark:text-cyan-400'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                    }`}
+                  >
+                    <GitFork className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Routage sélectif (Split Tunneling)
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Excluez des sous-réseaux locaux ou forcez des domaines sensibles dans wg0.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !settings.splitTunneling;
+                    updateSettings('splitTunneling', next);
+                    addLog(
+                      `Split Tunneling sélectif ${next ? 'activé' : 'désactivé'}`,
+                      next ? 'success' : 'info'
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer shrink-0 ${
+                    settings.splitTunneling
+                      ? 'bg-cyan-600 border-cyan-500 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {settings.splitTunneling ? 'Routage actif' : 'Désactivé'}
+                </button>
+              </div>
+
+              <form onSubmit={handleAddSplitRule} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                <input
+                  type="text"
+                  value={newSplitTarget}
+                  onChange={(e) => setNewSplitTarget(e.target.value)}
+                  placeholder="Domaine ou CIDR (ex: intranet.local, 10.8.0.0/24)"
+                  className="flex-1 min-w-[160px] px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white outline-none focus:border-cyan-500"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setNewSplitPolicy((p) => (p === 'bypass' ? 'vpn_only' : 'bypass'))
+                  }
+                  className="px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer shrink-0"
+                  title="Basculer la politique de la nouvelle règle"
+                >
+                  {newSplitPolicy === 'bypass' ? 'Hors tunnel' : 'Tunnel forcé'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newSplitTarget.trim()}
+                  className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Ajouter</span>
+                </button>
+              </form>
+
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {settings.splitTunnelRules.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-2">
+                    Aucune règle configurée. Tout le trafic transite par la route par défaut du tunnel.
+                  </p>
+                ) : (
+                  settings.splitTunnelRules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs ${
+                        rule.enabled && settings.splitTunneling
+                          ? 'bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-800'
+                          : 'bg-slate-50/40 dark:bg-slate-950/30 border-slate-200/60 dark:border-slate-800/60 opacity-65'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSplitRule(rule.id)}
+                        className="flex items-center gap-2 min-w-0 text-left cursor-pointer"
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            rule.enabled ? 'bg-cyan-500' : 'bg-slate-400'
+                          }`}
+                        />
+                        <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white truncate">
+                          {rule.target}
+                        </span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchSplitRulePolicy(rule.id)}
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                            rule.policy === 'bypass'
+                              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                              : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                          }`}
+                          title="Cliquer pour inverser la politique de routage"
+                        >
+                          {rule.policy === 'bypass' ? 'Direct FAI' : 'Tunnel VPN'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSplitRule(rule.id)}
+                          aria-label={`Supprimer la règle ${rule.target}`}
+                          className="p-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Onion Vortex Multi-Hop Hub */}
       {isOnionMode && (
@@ -2001,7 +2360,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   disabled={filteredNodes.length === 0}
                   className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Zap className="w-3.5 h-3.5" />
                   <span>Relais optimal auto</span>
                 </button>
 
