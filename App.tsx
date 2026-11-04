@@ -25,7 +25,10 @@ import {
 } from './components/NetworkView';
 import { LocalVault } from './components/LocalVault';
 import { SystemCenter } from './components/SystemCenter';
-import { PricingModal } from './components/PricingModal';
+import {
+  PricingModal,
+  PaymentSettlementMethod,
+} from './components/PricingModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
 import { SystemLogs } from './components/SystemLogs';
@@ -1214,19 +1217,64 @@ function App() {
   };
 
   const handleProcessPayment = async (
-    plan: PlanTier
+    plan: PlanTier,
+    method: PaymentSettlementMethod = 'card',
+    rncCost?: number
   ): Promise<{ success: boolean; redirect: boolean }> => {
     return new Promise((resolve) => {
       setTimeout(async () => {
+        if (
+          method === 'rnc_balance' &&
+          typeof rncCost === 'number' &&
+          rncCost > 0
+        ) {
+          if (balance < rncCost) {
+            addLog(
+              `Solde RNC insuffisant pour activer ${plan.toUpperCase()} (${balance.toFixed(4)} / ${rncCost.toFixed(2)} RNC)`,
+              'warning'
+            );
+            resolve({ success: false, redirect: false });
+            return;
+          }
+
+          const nextBalance = Math.max(
+            0,
+            parseFloat((balance - rncCost).toFixed(6))
+          );
+          setBalance(nextBalance);
+          setUserPlan(plan);
+          if (user?.id && user?.email) {
+            await dbService.updateProfile(user.id, user.email, {
+              plan_tier: plan,
+              balance: nextBalance,
+            });
+          }
+          addLog(
+            `Licence ${plan.toUpperCase()} réglée via portefeuille RNC (-${rncCost.toFixed(4)} RNC)`,
+            'success'
+          );
+          resolve({ success: true, redirect: false });
+          return;
+        }
+
         setUserPlan(plan);
         if (user?.id && user?.email) {
           await dbService.updateProfile(user.id, user.email, {
             plan_tier: plan,
           });
         }
-        addLog(`Forfait mis à niveau : ${plan.toUpperCase()}`, 'success');
+        const methodLabel =
+          method === 'card'
+            ? 'Carte'
+            : method === 'paypal'
+              ? 'PayPal'
+              : 'Crypto';
+        addLog(
+          `Forfait mis à niveau : ${plan.toUpperCase()} (${methodLabel})`,
+          'success'
+        );
         resolve({ success: true, redirect: false });
-      }, 1200);
+      }, 900);
     });
   };
 
@@ -1892,7 +1940,7 @@ function App() {
                 Coffre-fort cryptographique local
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Chiffrez et déchiffrez vos fichiers localement via <span className="font-mono">window.crypto.subtle</span> (PBKDF2-SHA256 + AES-256-GCM) avec une clé dérivée de votre mot de passe utilisateur avant tout stockage ou transfert.
+                Scellez vos fichiers <span className="font-mono">.rvault</span> et secrets volatils en RAM via <span className="font-mono">window.crypto.subtle</span> (PBKDF2-SHA256 + AES-256-GCM), auditez l’intégrité GCM/SHA-256 et effectuez la rotation atomique de votre clé maîtresse.
               </p>
             </div>
             <LocalVault
@@ -1904,6 +1952,7 @@ function App() {
               isConnected={isConnected}
               currentNodeIp={currentIdentity.ip}
               currentNodeCountry={currentIdentity.country}
+              clipboardAutoClearSeconds={appSettings.clipboardAutoClearSeconds}
               addLog={addLog}
               vaultRevision={vaultRevision}
               onVaultMutated={() => setVaultRevision((r) => r + 1)}
@@ -1989,8 +2038,9 @@ function App() {
       {showPricing && (
         <PricingModal
           currentPlan={userPlan}
-          onUpgrade={async (plan) => {
-            const result = await handleProcessPayment(plan);
+          balance={balance}
+          onUpgrade={async (plan, method, rncCost) => {
+            const result = await handleProcessPayment(plan, method, rncCost);
             return result.success && !result.redirect;
           }}
           onClose={() => setShowPricing(false)}

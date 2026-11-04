@@ -32,7 +32,7 @@ interface Props {
   vaultCount: number;
   addLog: (
     event: string,
-    type: 'info' | 'warning' | 'success' | 'error',
+    type?: 'info' | 'warning' | 'success' | 'error',
     ip?: string
   ) => void;
 }
@@ -157,10 +157,14 @@ export const SecureFileTransfer: React.FC<Props> = ({
         setStatus('idle');
         setProgress(0);
       }, 3200);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStatus('idle');
       setProgress(0);
-      setAuthError(err?.message || 'Erreur WebCrypto lors du scellement.');
+      setAuthError(
+        err instanceof Error
+          ? err.message
+          : 'Erreur WebCrypto lors du scellement.'
+      );
     }
   };
 
@@ -169,12 +173,12 @@ export const SecureFileTransfer: React.FC<Props> = ({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {sessionPassword ? (
-            <Unlock className="w-4 h-4 text-emerald-500" />
+            <Unlock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           ) : (
-            <Lock className="w-4 h-4 text-amber-500" />
+            <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           )}
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-            Coffre-fort local
+            Scellement rapide
           </h3>
           <span className="text-xs font-mono tabular-nums text-slate-400">
             · {vaultCount}
@@ -182,8 +186,9 @@ export const SecureFileTransfer: React.FC<Props> = ({
         </div>
 
         <button
+          type="button"
           onClick={onOpenFullVault}
-          className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 cursor-pointer"
+          className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
         >
           <span>Ouvrir le coffre</span>
           <ArrowUpRight className="w-3.5 h-3.5" />
@@ -201,8 +206,8 @@ export const SecureFileTransfer: React.FC<Props> = ({
           onClick={() => fileInputRef.current?.click()}
           className={`h-32 border-2 border-dashed rounded-xl flex flex-col items-center justify-center p-4 text-center cursor-pointer transition-colors ${
             isDragging
-              ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-500/10'
-              : 'border-slate-300 dark:border-slate-700 hover:border-brand-500 bg-slate-50 dark:bg-slate-950/40'
+              ? 'border-cyan-500 bg-cyan-50/60 dark:bg-cyan-500/10'
+              : 'border-slate-300 dark:border-slate-700 hover:border-cyan-500 bg-slate-50 dark:bg-slate-950/40'
           }`}
         >
           <input
@@ -211,11 +216,11 @@ export const SecureFileTransfer: React.FC<Props> = ({
             className="hidden"
             onChange={handleFileSelect}
           />
-          <FileUp className="w-5 h-5 text-brand-500 mb-2" />
+          <FileUp className="w-5 h-5 text-cyan-600 dark:text-cyan-400 mb-2" />
           <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
             Glisser-déposer un fichier à sceller
           </p>
-          <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
             PBKDF2 · AES-256-GCM local
           </p>
         </div>
@@ -223,7 +228,7 @@ export const SecureFileTransfer: React.FC<Props> = ({
         <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              <FileText className="w-4 h-4 text-brand-500 shrink-0" />
+              <FileText className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
               <div className="min-w-0">
                 <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                   {file.name}
@@ -235,6 +240,7 @@ export const SecureFileTransfer: React.FC<Props> = ({
             </div>
             {status === 'idle' && (
               <button
+                type="button"
                 onClick={() => setFile(null)}
                 className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
               >
@@ -251,26 +257,28 @@ export const SecureFileTransfer: React.FC<Props> = ({
                 value={quickPassword}
                 onChange={(e) => setQuickPassword(e.target.value)}
                 placeholder="Mot de passe utilisateur (clé PBKDF2)..."
-                className="w-full pl-8 pr-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:border-brand-500 outline-none"
+                className="w-full pl-8 pr-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:border-cyan-500 outline-none"
               />
             </div>
           )}
 
           {authError && (
-            <p className="text-[11px] text-red-500 font-medium">{authError}</p>
+            <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+              {authError}
+            </p>
           )}
 
           {lastDigest && (
-            <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] font-mono tabular-nums text-slate-500 space-y-0.5">
+            <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono tabular-nums text-slate-500 space-y-0.5">
               <div className="flex justify-between">
-                <span>IV GCM :</span>
+                <span>IV GCM</span>
                 <span className="text-slate-800 dark:text-slate-200">
                   {lastDigest.ivHex.slice(0, 16)}…
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>SHA-256 :</span>
-                <span className="text-brand-600 dark:text-brand-400">
+                <span>SHA-256</span>
+                <span className="text-cyan-600 dark:text-cyan-400">
                   {lastDigest.sha256CipherHex.slice(0, 14)}…
                 </span>
               </div>
@@ -280,19 +288,21 @@ export const SecureFileTransfer: React.FC<Props> = ({
           {status === 'idle' ? (
             <div className="grid grid-cols-1 gap-2">
               <button
+                type="button"
                 onClick={() => executeSeal(false)}
-                className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <HardDrive className="w-3.5 h-3.5" />
-                <span>Chiffrer & stocker localement</span>
+                <span>Chiffrer &amp; stocker localement</span>
               </button>
               {isConnected && (
                 <button
+                  type="button"
                   onClick={() => executeSeal(true)}
-                  className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Chiffrer & transférer via VPN</span>
+                  <span>Chiffrer &amp; transférer via VPN</span>
                 </button>
               )}
             </div>
@@ -303,7 +313,7 @@ export const SecureFileTransfer: React.FC<Props> = ({
                   {status === 'completed' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
                   ) : (
-                    <Loader2 className="w-3.5 h-3.5 text-brand-500 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 animate-spin" />
                   )}
                   {status === 'encrypting'
                     ? 'Scellement AES-256-GCM...'

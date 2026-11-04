@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { Shield, Mail, ArrowRight, Loader2, KeyRound, CheckCircle } from 'lucide-react';
+import {
+  Shield,
+  Mail,
+  ArrowRight,
+  Loader2,
+  KeyRound,
+  CheckCircle,
+} from 'lucide-react';
 import { dbService } from '../services/dbService';
 
 interface Props {
@@ -17,34 +24,34 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-        setError('L\'adresse email est requise.');
-        return;
+      setError("L'adresse email est requise.");
+      return;
     }
     if (!trimmedEmail.includes('@')) {
-        setError('Format d\'email invalide.');
-        return;
+      setError("Format d'email invalide.");
+      return;
     }
     if (!password) {
-        setError('Le mot de passe est requis.');
-        return;
+      setError('Le mot de passe est requis.');
+      return;
     }
     if (password.length < 6) {
-        setError('Le mot de passe doit contenir au moins 6 caractères.');
-        return;
+      setError('Le mot de passe doit contenir au moins 6 caractères.');
+      return;
     }
 
     if (isLogin) {
-        if (trimmedEmail.toLowerCase() === 'inconnu@exemple.com') {
-            setError('Aucun compte trouvé pour cet email.');
-            return;
-        }
-        if (password === 'faux') {
-            setError('Mot de passe incorrect.');
-            return;
-        }
+      if (trimmedEmail.toLowerCase() === 'inconnu@exemple.com') {
+        setError('Aucun compte trouvé pour cet email.');
+        return;
+      }
+      if (password === 'faux') {
+        setError('Mot de passe incorrect.');
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -71,112 +78,110 @@ export const AuthScreen: React.FC<Props> = ({ onLogin }) => {
 
   if (isSuccess) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors duration-300">
-        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl p-8 border border-slate-200 dark:border-slate-800 text-center animate-in fade-in zoom-in duration-300">
-           <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-500 shadow-lg shadow-emerald-500/20">
-              <CheckCircle className="w-10 h-10" />
-           </div>
-           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-             {isLogin ? 'Connexion réussie !' : 'Compte créé avec succès !'}
-           </h2>
-           <p className="text-slate-500 dark:text-slate-400">
-             Redirection vers votre interface sécurisée...
-           </p>
-           <div className="mt-6 flex justify-center">
-              <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
-           </div>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl p-8 border border-slate-200 dark:border-slate-800 text-center">
+          <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-500/15 rounded-2xl flex items-center justify-center mx-auto mb-5 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30">
+            <CheckCircle className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1.5">
+            {isLogin ? 'Session authentifiée' : 'Profil cryptographique créé'}
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Initialisation du cockpit sécurisé et dérivation de session...
+          </p>
+          <div className="mt-5 flex justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-cyan-600 dark:text-cyan-400" />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors duration-300">
-      <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
-        
-        {/* Decorative elements */}
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-500 to-emerald-500"></div>
-        <div className="absolute -top-24 -right-24 w-48 h-48 bg-brand-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl"></div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors">
+      <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 p-8">
+        <div className="text-center mb-7">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-cyan-50 dark:bg-cyan-500/15 mb-4 border border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400">
+            <Shield className="w-7 h-7" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+            Renumerate<span className="text-cyan-600 dark:text-cyan-400">VPN</span>
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+            {isLogin
+              ? 'Authentifiez votre session et déverrouillez votre coffre PBKDF2'
+              : 'Créez une identité locale chiffrée zéro-connaissance'}
+          </p>
+        </div>
 
-        <div className="p-8 relative z-10">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 mb-4 shadow-inner border border-slate-200 dark:border-slate-700">
-               <Shield className="w-8 h-8 text-brand-500" />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Adresse e-mail opérateur
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 outline-none focus:border-cyan-500 transition-colors text-sm text-slate-900 dark:text-white placeholder:text-slate-400"
+                placeholder="operateur@domaine.org"
+              />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
-              Renumerate<span className="text-brand-500">VPN</span>
-            </h1>
-            <p className="text-slate-600 dark:text-slate-300 text-sm font-medium tracking-wide mb-2">
-               Redéfinissez votre identité numérique.
-            </p>
-            <p className="text-slate-400 dark:text-slate-500 text-xs">
-              {isLogin ? 'Bon retour parmi nous' : 'Commencez votre expérience sécurisée'}
-            </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-             <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-500 ml-1">Email</label>
-                <div className="relative group">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-brand-500 transition-colors" />
-                    <input 
-                        type="email" 
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600"
-                        placeholder="nom@exemple.com"
-                    />
-                </div>
-             </div>
-
-             <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-500 ml-1">Mot de passe</label>
-                <div className="relative group">
-                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-brand-500 transition-colors" />
-                    <input 
-                        type="password" 
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600"
-                        placeholder="••••••••"
-                    />
-                </div>
-             </div>
-
-             {error && (
-                 <div className="text-red-500 text-xs text-center font-medium bg-red-50 dark:bg-red-900/10 py-2 rounded-lg border border-red-100 dark:border-red-500/20 animate-in fade-in slide-in-from-top-2">
-                     {error}
-                 </div>
-             )}
-
-             <button 
-                type="submit" 
-                disabled={isLoading}
-                className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-brand-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
-             >
-                {isLoading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                    <>
-                        {isLogin ? 'Se connecter' : "S'inscrire"}
-                        <ArrowRight className="w-5 h-5" />
-                    </>
-                )}
-             </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <button 
-                onClick={() => {
-                    setIsLogin(!isLogin);
-                    setError('');
-                }} 
-                className="text-sm text-slate-500 hover:text-brand-500 transition-colors font-medium underline underline-offset-4 decoration-transparent hover:decoration-brand-500"
-            >
-                {isLogin ? "Pas encore de compte ? Créer un compte" : "Déjà un compte ? Se connecter"}
-            </button>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Mot de passe maître (clé PBKDF2)
+            </label>
+            <div className="relative">
+              <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 outline-none focus:border-cyan-500 transition-colors text-sm text-slate-900 dark:text-white placeholder:text-slate-400"
+                placeholder="Minimum 6 caractères"
+              />
+            </div>
           </div>
+
+          {error && (
+            <div className="text-rose-600 dark:text-rose-400 text-xs text-center font-medium bg-rose-50 dark:bg-rose-950/30 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-500/30">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 mt-2 disabled:opacity-60 cursor-pointer text-sm"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <>
+                <span>{isLogin ? 'Déverrouiller la console' : 'Initialiser le profil'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError('');
+            }}
+            className="text-xs text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors font-medium cursor-pointer"
+          >
+            {isLogin
+              ? 'Nouvel opérateur ? Créer un profil local'
+              : 'Déjà enregistré ? Se connecter'}
+          </button>
         </div>
       </div>
     </div>

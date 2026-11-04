@@ -3,10 +3,18 @@
  * - Dérivation de clé basée sur le mot de passe utilisateur : PBKDF2-HMAC-SHA256 -> AES-GCM 256 bits
  * - Chiffrement authentifié : AES-256-GCM (vecteur IV 96 bits aléatoire, Tag d'authentification 128 bits, AAD liée)
  * - Intégrité de bout en bout : Empreinte SHA-256 calculée avant scellement et vérifiée après déchiffrement
+ * - Rotation de clé maîtresse (Re-Keying), Audit d'intégrité par lot, Visionneuse RAM éphémère & Archives zéro-connaissance
  * - Persistance locale : Stockage binaire chiffré dans IndexedDB (aucune donnée en clair ni mot de passe sur disque)
  */
 
 export type KdfStrengthPreset = 150000 | 310000 | 600000;
+
+export type SecretNoteCategory =
+  | 'note'
+  | 'ssh_key'
+  | 'seed_phrase'
+  | 'api_token'
+  | 'wireguard_psk';
 
 export interface RvaultEnvelopeHeader {
   version: 1;
@@ -22,6 +30,8 @@ export interface RvaultEnvelopeHeader {
   mimeType: string;
   originalSize: number;
   createdAt: number;
+  itemKind?: 'file' | 'secret_note';
+  secretCategory?: SecretNoteCategory;
 }
 
 export interface VaultStoredItem extends RvaultEnvelopeHeader {
@@ -42,6 +52,19 @@ export interface VaultVerifierRecord {
   updatedAt: number;
 }
 
+export interface EncryptedVaultArchiveV1 {
+  schema: 'renumerate-vault-archive-v1';
+  exportedAt: string;
+  itemCount: number;
+  entries: Array<{
+    header: RvaultEnvelopeHeader;
+    transferStatus: 'local_only' | 'transferred_vpn';
+    transferredAt?: number;
+    transferredNodeIp?: string;
+    cipherBase64: string;
+  }>;
+}
+
 const RVAULT_MAGIC = 'RVAULT01';
 const DB_NAME = 'renumerate_local_vault_v1';
 const DB_VERSION = 1;
@@ -53,6 +76,26 @@ function toArrayBuffer(view: Uint8Array): ArrayBuffer {
     view.byteOffset,
     view.byteOffset + view.byteLength
   ) as ArrayBuffer;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64.trim());
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    out[i] = binary.charCodeAt(i);
+  }
+  return toArrayBuffer(out);
 }
 
 export function bytesToHex(bytes: Uint8Array): string {
@@ -150,6 +193,7 @@ export async function deriveAesGcmKeyFromPassword(
     false,
     ['deriveKey', 'deriveBits']
   );
+  passwordBytes.fill(0);
 
   const aesKey = await subtle.deriveKey(
     {
@@ -164,7 +208,6 @@ export async function deriveAesGcmKeyFromPassword(
     ['encrypt', 'decrypt']
   );
 
-  // Dérivation séparée par domaine pour calculer le Key Check Value (KCV) sans exposer la clé de chiffrement
   const kcvSaltLabel = new TextEncoder().encode('RENUMERATE-KCV-VERIFY-V1');
   const combinedKcvSalt = new Uint8Array(salt.length + kcvSaltLabel.length);
   combinedKcvSalt.set(salt, 0);
@@ -261,7 +304,7 @@ export function buildRvaultBlob(
   header: RvaultEnvelopeHeader,
   cipherBuffer: ArrayBuffer
 ): Blob {
-  const magicBytes = new TextEncoder().encode(RVAULT_MAGIC); // 8 octets
+  const magicBytes = new TextEncoder().encode(RVAULT_MAGIC);
   const headerBytes = new TextEncoder().encode(JSON.stringify(header));
   const lengthPrefix = new Uint8Array(4);
   new DataView(lengthPrefix.buffer).setUint32(0, headerBytes.byteLength, false);
@@ -287,6 +330,8 @@ export async function encryptFileWithUserPassword(
     userId: string;
     iterations?: number;
     maskFilename?: boolean;
+    itemKind?: 'file' | 'secret_note';
+    secretCategory?: SecretNoteCategory;
   }
 ): Promise<{
   item: VaultStoredItem;
@@ -362,6 +407,8 @@ export async function encryptFileWithUserPassword(
     mimeType,
     originalSize: file.size,
     createdAt,
+    itemKind: options.itemKind ?? 'file',
+    secretCategory: options.secretCategory,
   };
 
   const envelopeBlob = buildRvaultBlob(header, cipherBuffer);
@@ -390,6 +437,169 @@ export async function encryptFileWithUserPassword(
       throughputMBps,
     },
   };
+}
+
+/**
+ * Scelle directement en RAM une note confidentielle, clé privée SSH, phrase mnémonique ou PSK WireGuard
+ * sans jamais créer de fichier temporaire en clair sur le système de fichiers de l'hôte.
+ */
+export async function encryptSecretNoteWithPassword(
+  params: {
+    title: string;
+    secretText: string;
+    category: SecretNoteCategory;
+    userId: string;
+    iterations?: number;
+  },
+  password: string
+): Promise<{
+  item: VaultStoredItem;
+  stats: { deriveMs: number; encryptMs: number };
+}> {
+  const cleanTitle = params.title
+    .trim()
+    .replace(/[^a-zA-Z0-9._-\u00C0-\u017F ]/g, '')
+    .trim();
+  const extByCategory: Record<SecretNoteCategory, string> = {
+    note: '.txt',
+    ssh_key: '.pem',
+    seed_phrase: '.seed.txt',
+    api_token: '.env.txt',
+    wireguard_psk: '.psk.conf',
+  };
+  const suffix = extByCategory[params.category] || '.txt';
+  const finalName = cleanTitle.toLowerCase().endsWith(suffix)
+    ? cleanTitle
+    : `${cleanTitle || 'secret-confidentiel'}${suffix}`;
+
+  const encoded = new TextEncoder().encode(params.secretText);
+  const inMemoryFile = new File([toArrayBuffer(encoded)], finalName, {
+    type: 'text/plain;charset=utf-8',
+  });
+  encoded.fill(0);
+
+  const { item, stats } = await encryptFileWithUserPassword(
+    inMemoryFile,
+    password,
+    {
+      userId: params.userId,
+      iterations: params.iterations ?? 310000,
+      maskFilename: false,
+      itemKind: 'secret_note',
+      secretCategory: params.category,
+    }
+  );
+
+  await saveItemToLocalVault(item);
+  return {
+    item,
+    stats: {
+      deriveMs: stats.deriveMs,
+      encryptMs: stats.encryptMs,
+    },
+  };
+}
+
+/**
+ * Indique si un objet chiffré peut être inspecté dans la visionneuse RAM éphémère sans écriture disque.
+ */
+export function isVaultItemPreviewableInRam(item: VaultStoredItem): boolean {
+  if (item.originalSize > 8 * 1024 * 1024) return false;
+  if (item.itemKind === 'secret_note') return true;
+  const mime = (item.mimeType || '').toLowerCase();
+  if (
+    mime.startsWith('text/') ||
+    mime.startsWith('image/') ||
+    mime.includes('json') ||
+    mime.includes('xml') ||
+    mime.includes('yaml') ||
+    mime.includes('javascript')
+  ) {
+    return true;
+  }
+  const lowerName = (item.originalName || item.displayName).toLowerCase();
+  return /\.(txt|md|json|log|csv|conf|cfg|ini|yaml|yml|pem|pub|key|env|sh|sql)$/i.test(
+    lowerName
+  );
+}
+
+/**
+ * Déchiffre un objet uniquement en mémoire vive (RAM) pour inspection visuelle temporaire.
+ */
+export async function decryptVaultItemInRam(
+  item: VaultStoredItem,
+  password: string
+): Promise<{
+  kind: 'text' | 'image';
+  textContent?: string;
+  imageUrl?: string;
+  restoredName: string;
+  verifiedSha256: boolean;
+  decryptMs: number;
+}> {
+  const subtle = ensureWebCrypto();
+  const salt = hexToBytes(item.saltHex);
+  const iv = hexToBytes(item.ivHex);
+
+  const t0 = performance.now();
+  const { key } = await deriveAesGcmKeyFromPassword(
+    password,
+    salt,
+    item.iterations
+  );
+
+  const aadBytes = buildAadBytes({
+    displayName: item.displayName,
+    mimeType: item.mimeType,
+    originalSize: item.originalSize,
+    createdAt: item.createdAt,
+  });
+
+  try {
+    const plainBuffer = await subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: toArrayBuffer(iv),
+        additionalData: toArrayBuffer(aadBytes),
+        tagLength: 128,
+      },
+      key,
+      item.cipherBuffer
+    );
+
+    const digestBuffer = await subtle.digest('SHA-256', plainBuffer);
+    const computedHex = bytesToHex(new Uint8Array(digestBuffer));
+    const verifiedSha256 = computedHex === item.sha256PlainHex;
+    const decryptMs = Math.max(1, Math.round(performance.now() - t0));
+    const restoredName = item.originalName || item.displayName;
+
+    if ((item.mimeType || '').toLowerCase().startsWith('image/')) {
+      const imgBlob = new Blob([plainBuffer], { type: item.mimeType });
+      return {
+        kind: 'image',
+        imageUrl: URL.createObjectURL(imgBlob),
+        restoredName,
+        verifiedSha256,
+        decryptMs,
+      };
+    }
+
+    const view = new Uint8Array(plainBuffer);
+    const textContent = new TextDecoder('utf-8', { fatal: false }).decode(view);
+    view.fill(0);
+
+    return {
+      kind: 'text',
+      textContent,
+      restoredName,
+      verifiedSha256,
+      decryptMs,
+    };
+  } catch {
+    throw new Error(
+      "Échec d'authentification AES-256-GCM lors de l'ouverture en RAM."
+    );
+  }
 }
 
 /**
@@ -451,6 +661,350 @@ export async function decryptStoredVaultItem(
       "Échec d'authentification AES-256-GCM : mot de passe incorrect ou données altérées."
     );
   }
+}
+
+/**
+ * Audite l'intégrité cryptographique (Tag GCM 128b + AAD + SHA-256 du clair) de tous les objets du coffre
+ * en purgeant immédiatement chaque tampon mémoire après vérification.
+ */
+export async function verifyAllVaultItemsIntegrity(
+  userId: string,
+  password: string
+): Promise<{
+  allValid: boolean;
+  totalChecked: number;
+  totalMs: number;
+  results: Record<string, { valid: boolean; ms: number }>;
+}> {
+  const subtle = ensureWebCrypto();
+  const items = await listUserVaultItems(userId);
+  const tStart = performance.now();
+  const results: Record<string, { valid: boolean; ms: number }> = {};
+  let allValid = true;
+
+  for (const item of items) {
+    const itemStart = performance.now();
+    try {
+      const salt = hexToBytes(item.saltHex);
+      const iv = hexToBytes(item.ivHex);
+      const { key } = await deriveAesGcmKeyFromPassword(
+        password,
+        salt,
+        item.iterations
+      );
+      const aadBytes = buildAadBytes({
+        displayName: item.displayName,
+        mimeType: item.mimeType,
+        originalSize: item.originalSize,
+        createdAt: item.createdAt,
+      });
+
+      const plainBuffer = await subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: toArrayBuffer(iv),
+          additionalData: toArrayBuffer(aadBytes),
+          tagLength: 128,
+        },
+        key,
+        item.cipherBuffer
+      );
+
+      const digestBuffer = await subtle.digest('SHA-256', plainBuffer);
+      const computedPlainHex = bytesToHex(new Uint8Array(digestBuffer));
+      new Uint8Array(plainBuffer).fill(0);
+
+      const cipherDigest = await subtle.digest('SHA-256', item.cipherBuffer);
+      const computedCipherHex = bytesToHex(new Uint8Array(cipherDigest));
+
+      const ok =
+        computedPlainHex === item.sha256PlainHex &&
+        computedCipherHex === item.sha256CipherHex;
+      if (!ok) allValid = false;
+      results[item.id] = {
+        valid: ok,
+        ms: Math.max(1, Math.round(performance.now() - itemStart)),
+      };
+    } catch {
+      allValid = false;
+      results[item.id] = {
+        valid: false,
+        ms: Math.max(1, Math.round(performance.now() - itemStart)),
+      };
+    }
+  }
+
+  return {
+    allValid,
+    totalChecked: items.length,
+    totalMs: Math.max(1, Math.round(performance.now() - tStart)),
+    results,
+  };
+}
+
+/**
+ * Rotation atomique de la clé maîtresse et/ou de la dureté KDF PBKDF2 sur l'ensemble du coffre local.
+ * Chaque objet reçoit un nouveau sel aléatoire 128 bits et un nouveau vecteur IV 96 bits.
+ */
+export async function rotateVaultMasterKey(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+  newIterations: KdfStrengthPreset
+): Promise<{
+  rotatedCount: number;
+  kcvHex: string;
+  totalMs: number;
+}> {
+  const subtle = ensureWebCrypto();
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error(
+      'Le nouveau mot de passe maître doit comporter au moins 6 caractères.'
+    );
+  }
+
+  const t0 = performance.now();
+  const check = await verifyOrInitVaultPassword(userId, currentPassword);
+  if (!check.valid) {
+    throw new Error(
+      'Le mot de passe actuel est invalide : rotation refusée.'
+    );
+  }
+
+  const items = await listUserVaultItems(userId);
+  const reEncryptedItems: VaultStoredItem[] = [];
+
+  for (const item of items) {
+    const oldSalt = hexToBytes(item.saltHex);
+    const oldIv = hexToBytes(item.ivHex);
+    const { key: oldKey } = await deriveAesGcmKeyFromPassword(
+      currentPassword,
+      oldSalt,
+      item.iterations
+    );
+    const aadBytes = buildAadBytes({
+      displayName: item.displayName,
+      mimeType: item.mimeType,
+      originalSize: item.originalSize,
+      createdAt: item.createdAt,
+    });
+
+    const plainBuffer = await subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: toArrayBuffer(oldIv),
+        additionalData: toArrayBuffer(aadBytes),
+        tagLength: 128,
+      },
+      oldKey,
+      item.cipherBuffer
+    );
+
+    const freshSalt = window.crypto.getRandomValues(new Uint8Array(16));
+    const freshIv = window.crypto.getRandomValues(new Uint8Array(12));
+    const { key: nextKey } = await deriveAesGcmKeyFromPassword(
+      newPassword,
+      freshSalt,
+      newIterations
+    );
+
+    const nextCipherBuffer = await subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: toArrayBuffer(freshIv),
+        additionalData: toArrayBuffer(aadBytes),
+        tagLength: 128,
+      },
+      nextKey,
+      plainBuffer
+    );
+    new Uint8Array(plainBuffer).fill(0);
+
+    const sha256CipherDigest = await subtle.digest('SHA-256', nextCipherBuffer);
+    const sha256CipherHex = bytesToHex(new Uint8Array(sha256CipherDigest));
+    const previewBytes = new Uint8Array(
+      nextCipherBuffer.slice(0, Math.min(48, nextCipherBuffer.byteLength))
+    );
+
+    reEncryptedItems.push({
+      ...item,
+      iterations: newIterations,
+      saltHex: bytesToHex(freshSalt),
+      ivHex: bytesToHex(freshIv),
+      sha256CipherHex,
+      sealedSize: nextCipherBuffer.byteLength,
+      cipherPreviewHex: bytesToHex(previewBytes),
+      cipherBuffer: nextCipherBuffer,
+    });
+  }
+
+  for (const updated of reEncryptedItems) {
+    await saveItemToLocalVault(updated);
+  }
+
+  // Update KCV verifier for userId
+  const verifierSalt = window.crypto.getRandomValues(new Uint8Array(16));
+  const { kcvHex } = await deriveAesGcmKeyFromPassword(
+    newPassword,
+    verifierSalt,
+    newIterations
+  );
+  const nextVerifier: VaultVerifierRecord = {
+    saltHex: bytesToHex(verifierSalt),
+    iterations: newIterations,
+    kcvHex,
+    updatedAt: Date.now(),
+  };
+  localStorage.setItem(
+    `${VERIFIER_PREFIX}${userId}`,
+    JSON.stringify(nextVerifier)
+  );
+
+  return {
+    rotatedCount: reEncryptedItems.length,
+    kcvHex,
+    totalMs: Math.max(1, Math.round(performance.now() - t0)),
+  };
+}
+
+/**
+ * Exporte une archive complète zéro-connaissance (`.rvault-archive.json`) contenant uniquement les enveloppes chiffrées.
+ */
+export async function exportEncryptedVaultArchive(
+  userId: string
+): Promise<{ blob: Blob; count: number }> {
+  const items = await listUserVaultItems(userId);
+  const archive: EncryptedVaultArchiveV1 = {
+    schema: 'renumerate-vault-archive-v1',
+    exportedAt: new Date().toISOString(),
+    itemCount: items.length,
+    entries: items.map((item) => ({
+      header: {
+        version: item.version,
+        alg: item.alg,
+        kdf: item.kdf,
+        iterations: item.iterations,
+        saltHex: item.saltHex,
+        ivHex: item.ivHex,
+        sha256PlainHex: item.sha256PlainHex,
+        sha256CipherHex: item.sha256CipherHex,
+        originalName: item.originalName,
+        displayName: item.displayName,
+        mimeType: item.mimeType,
+        originalSize: item.originalSize,
+        createdAt: item.createdAt,
+        itemKind: item.itemKind,
+        secretCategory: item.secretCategory,
+      },
+      transferStatus: item.transferStatus,
+      transferredAt: item.transferredAt,
+      transferredNodeIp: item.transferredNodeIp,
+      cipherBase64: arrayBufferToBase64(item.cipherBuffer),
+    })),
+  };
+
+  const blob = new Blob([JSON.stringify(archive, null, 2)], {
+    type: 'application/json;charset=utf-8',
+  });
+  return { blob, count: items.length };
+}
+
+/**
+ * Importe et authentifie une archive `.rvault-archive.json` dans le coffre de l'opérateur.
+ */
+export async function importEncryptedVaultArchive(
+  userId: string,
+  file: File,
+  password: string
+): Promise<{ importedCount: number; skippedCount: number }> {
+  const subtle = ensureWebCrypto();
+  const rawText = await file.text();
+  let parsed: EncryptedVaultArchiveV1;
+  try {
+    parsed = JSON.parse(rawText) as EncryptedVaultArchiveV1;
+  } catch {
+    throw new Error('Fichier JSON d’archive de coffre illisible.');
+  }
+
+  if (
+    parsed.schema !== 'renumerate-vault-archive-v1' ||
+    !Array.isArray(parsed.entries)
+  ) {
+    throw new Error(
+      'Schéma d’archive non reconnu (attendu : renumerate-vault-archive-v1).'
+    );
+  }
+
+  const existing = await listUserVaultItems(userId);
+  const existingCipherSet = new Set(existing.map((e) => e.sha256CipherHex));
+
+  let importedCount = 0;
+  let skippedCount = 0;
+
+  for (const entry of parsed.entries) {
+    if (existingCipherSet.has(entry.header.sha256CipherHex)) {
+      skippedCount++;
+      continue;
+    }
+
+    const cipherBuffer = base64ToArrayBuffer(entry.cipherBase64);
+    const salt = hexToBytes(entry.header.saltHex);
+    const iv = hexToBytes(entry.header.ivHex);
+    const { key } = await deriveAesGcmKeyFromPassword(
+      password,
+      salt,
+      entry.header.iterations
+    );
+    const aadBytes = buildAadBytes({
+      displayName: entry.header.displayName,
+      mimeType: entry.header.mimeType,
+      originalSize: entry.header.originalSize,
+      createdAt: entry.header.createdAt,
+    });
+
+    // Authenticate GCM tag with active session password before persisting
+    try {
+      const plain = await subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: toArrayBuffer(iv),
+          additionalData: toArrayBuffer(aadBytes),
+          tagLength: 128,
+        },
+        key,
+        cipherBuffer
+      );
+      new Uint8Array(plain).fill(0);
+    } catch {
+      throw new Error(
+        `Clé incompatible avec l’objet "${entry.header.displayName}" de l’archive.`
+      );
+    }
+
+    const randomTag = bytesToHex(
+      window.crypto.getRandomValues(new Uint8Array(4))
+    );
+    const previewBytes = new Uint8Array(
+      cipherBuffer.slice(0, Math.min(48, cipherBuffer.byteLength))
+    );
+
+    const restoredItem: VaultStoredItem = {
+      ...entry.header,
+      id: `vault-${entry.header.createdAt}-${randomTag}`,
+      userId,
+      sealedSize: cipherBuffer.byteLength,
+      transferStatus: entry.transferStatus || 'local_only',
+      transferredAt: entry.transferredAt,
+      transferredNodeIp: entry.transferredNodeIp,
+      cipherPreviewHex: bytesToHex(previewBytes),
+      cipherBuffer,
+    };
+
+    await saveItemToLocalVault(restoredItem);
+    importedCount++;
+  }
+
+  return { importedCount, skippedCount };
 }
 
 /**
