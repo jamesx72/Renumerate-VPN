@@ -5,7 +5,6 @@ import {
   Lock,
   Wallet,
   History,
-  Sparkles,
   Activity,
   ShieldCheck,
   ShieldAlert,
@@ -60,9 +59,10 @@ export const EarningsCard: React.FC<Props> = ({
   useEffect(() => {
     if (isConnected) {
       const interval = setInterval(() => {
-        setNetworkLoad((prev) =>
-          Math.max(15, Math.min(98, prev + (Math.random() * 8 - 4)))
-        );
+        const byte = new Uint8Array(1);
+        window.crypto.getRandomValues(byte);
+        const delta = ((byte[0] % 9) - 4);
+        setNetworkLoad((prev) => Math.max(15, Math.min(98, prev + delta)));
       }, 3000);
       return () => clearInterval(interval);
     }
@@ -167,8 +167,8 @@ export const EarningsCard: React.FC<Props> = ({
             </button>
           )}
           {isEarning && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
-              <Sparkles className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 pl-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               Actif
             </span>
           )}

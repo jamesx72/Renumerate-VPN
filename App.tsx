@@ -1859,6 +1859,10 @@ function App() {
                 onIpv6Toggle={(enabled) =>
                   updateAppSettings('ipv6LeakProtection', enabled)
                 }
+                webrtcLeakShield={appSettings.webrtcLeakShield}
+                onWebrtcToggle={(enabled) =>
+                  updateAppSettings('webrtcLeakShield', enabled)
+                }
                 obfuscationLevel={appSettings.obfuscationLevel}
                 onObfuscationLevelChange={(lvl) =>
                   updateAppSettings('obfuscationLevel', lvl)
@@ -1869,6 +1873,21 @@ function App() {
                     ...appSettings.fingerprintProtection,
                     [fpKey]: !appSettings.fingerprintProtection[fpKey],
                   })
+                }
+                onHarmonizeFingerprints={() =>
+                  patchAppSettings(
+                    {
+                      ipv6LeakProtection: true,
+                      webrtcLeakShield: true,
+                      fingerprintProtection: {
+                        canvasNoise: true,
+                        webglMask: true,
+                        audioContextSpoof: true,
+                        timezoneSync: true,
+                      },
+                    },
+                    'Harmonisation intégrale des 6 boucliers navigateur & WebRTC'
+                  )
                 }
                 isRefreshingSecurity={isRefreshingSecurity}
                 onRefreshSecurity={() => {
@@ -1920,6 +1939,32 @@ function App() {
                 location={currentIdentity.country}
                 settings={appSettings}
                 onOpenSystemCenter={() => setActiveSection('system')}
+                onAutoRemediate={() =>
+                  patchAppSettings(
+                    {
+                      killSwitch: true,
+                      killSwitchMode: 'strict',
+                      postQuantumKex:
+                        appSettings.postQuantumKex === 'classic-x25519'
+                          ? 'ml-kem-1024'
+                          : appSettings.postQuantumKex,
+                      dnsLeakProtection: true,
+                      ipv6LeakProtection: true,
+                      webrtcLeakShield: true,
+                      blockQuicUdp443: true,
+                      arpSpoofGuard: true,
+                      strictReversePathFilter: true,
+                      strictMemoryLock: true,
+                      fingerprintProtection: {
+                        canvasNoise: true,
+                        webglMask: true,
+                        audioContextSpoof: true,
+                        timezoneSync: true,
+                      },
+                    },
+                    'Remédiation automatique de la matrice sortie & noyau (8/8 conformes)'
+                  )
+                }
               />
               <SystemLogs
                 logs={logs}
@@ -2149,6 +2194,20 @@ function App() {
             setConnectionHistory([]);
             if (user?.id) {
               dbService.clearSessions(user.id).catch(() => {});
+            }
+            addLog('Historique des sessions VPN purgé', 'info');
+          }}
+          onReconnectIp={(targetIp) => {
+            const matchedNode = nodes.find((n) => n.ip === targetIp);
+            if (matchedNode) {
+              handleConnectNode(matchedNode.id);
+              return;
+            }
+            const matchedIdentity = MOCK_IDENTITIES.find(
+              (id) => id.ip === targetIp
+            );
+            if (matchedIdentity) {
+              handleSelectIdentity(matchedIdentity);
             }
           }}
         />

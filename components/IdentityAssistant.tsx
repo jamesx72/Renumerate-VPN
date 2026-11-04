@@ -3,7 +3,6 @@ import {
   Mic,
   X,
   Orbit,
-  Sparkles,
   Terminal,
   Loader2,
   Send,
@@ -345,8 +344,8 @@ export const IdentityAssistant: React.FC<Props> = ({
           isVortex ? 'bg-purple-600' : 'bg-cyan-600'
         }`}
       >
-        <Sparkles className="w-4 h-4" />
-        <span>Sentinel IA</span>
+        <ShieldCheck className="w-4 h-4" />
+        <span>Conseiller Sentinel</span>
       </button>
 
       {isOpen && (

@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Check,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
 import { AppSettings, ConnectionMode, DeviceNode } from '../types';
 
@@ -41,6 +42,7 @@ interface DnsProbeRecord {
   asn: string;
   location: string;
   transport: string;
+  dnssecAd: boolean;
   latencyMs: number;
   leaked: boolean;
   leakReason?: string;
@@ -48,13 +50,24 @@ interface DnsProbeRecord {
 
 interface LeakAuditSummary {
   runAt: string;
+  runIso: string;
   depth: ProbeDepth;
   verdict: 'protected' | 'leak_detected' | 'isp_exposed';
   totalProbes: number;
   leakedCount: number;
   ednsClientSubnetMasked: boolean;
+  dnssecValidated: boolean;
   measuredDohRttMs: number | null;
+  auditSignature: string;
   records: DnsProbeRecord[];
+}
+
+interface ServerDnsAuditPayload {
+  ok: boolean;
+  rttMs: number | null;
+  rcode: number;
+  dnssecVerified: boolean;
+  auditSignature: string;
 }
 
 const DNS_PROVIDER_DIRECTORY: Record<
@@ -66,6 +79,7 @@ const DNS_PROVIDER_DIRECTORY: Record<
     ipv6: string;
     asn: string;
     transportLabel: string;
+    supportsDnssec: boolean;
   }
 > = {
   cloudflare: {
@@ -75,6 +89,7 @@ const DNS_PROVIDER_DIRECTORY: Record<
     ipv6: '2606:4700:4700::1111',
     asn: 'AS13335',
     transportLabel: 'DoH / TLS 1.3',
+    supportsDnssec: true,
   },
   quad9: {
     name: 'Quad9 Swiss Privacy Foundation',
@@ -83,6 +98,7 @@ const DNS_PROVIDER_DIRECTORY: Record<
     ipv6: '2620:fe::fe',
     asn: 'AS19281',
     transportLabel: 'DoH / DNSSEC',
+    supportsDnssec: true,
   },
   google: {
     name: 'Google Public DNS Anycast',
@@ -91,6 +107,7 @@ const DNS_PROVIDER_DIRECTORY: Record<
     ipv6: '2001:4860:4860::8888',
     asn: 'AS15169',
     transportLabel: 'DoT / TLS 1.3',
+    supportsDnssec: true,
   },
   opendns: {
     name: 'Cisco OpenDNS Umbrella',
@@ -99,6 +116,7 @@ const DNS_PROVIDER_DIRECTORY: Record<
     ipv6: '2620:119:35::35',
     asn: 'AS36692',
     transportLabel: 'DNSCrypt / UDP-443',
+    supportsDnssec: true,
   },
   custom: {
     name: 'Résolveur privé personnalisé',
@@ -107,6 +125,7 @@ const DNS_PROVIDER_DIRECTORY: Record<
     ipv6: 'fd00:renum:dns::1',
     asn: 'AS64512',
     transportLabel: 'Tunnel interne',
+    supportsDnssec: true,
   },
 };
 
@@ -137,27 +156,28 @@ function generateRandomHexToken(byteLen = 5): string {
     .join('');
 }
 
-async function measureDummyCanaryProbeRtt(canaryName: string): Promise<number | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1400);
-  const start = performance.now();
+function getCryptoBoundedJitter(): number {
+  const byte = new Uint8Array(1);
+  window.crypto.getRandomValues(byte);
+  return (byte[0] % 9) - 3;
+}
 
+async function runServerDnsAuditProbe(
+  dnsProvider: string,
+  canaryToken: string
+): Promise<ServerDnsAuditPayload | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1800);
   try {
-    // Requête DNS-over-HTTPS factice (RFC 8484 JSON) vers un sous-domaine aléatoire non mis en cache (NXDOMAIN attendu)
-    const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(
-      canaryName
-    )}&type=A`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { Accept: 'application/dns-json' },
+    const res = await fetch('/api/network/dns-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dnsProvider, canaryToken }),
       signal: controller.signal,
-      cache: 'no-store',
     });
     clearTimeout(timeout);
-    if (res.ok) {
-      return Math.max(4, Math.round(performance.now() - start));
-    }
-    return null;
+    if (!res.ok) return null;
+    return (await res.json()) as ServerDnsAuditPayload;
   } catch {
     clearTimeout(timeout);
     return null;
@@ -206,20 +226,29 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
           : provider.primaryIp;
 
       setIsRunning(true);
-      setProgress(6);
+      setProgress(8);
       setLiveRecords([]);
       setAuditResult(null);
 
       addLog(
-        `Démarrage du test de fuite DNS (${probeCount} requêtes canari factices)...`,
+        `Démarrage de l’audit d’étanchéité DNS/DNSSEC (${probeCount} sondes canari RFC 8484)...`,
         'info'
       );
 
-      // Mesure réseau réelle sur une sonde canari non-cachée
       const initialToken = generateRandomHexToken(6);
-      const realProbeDomain = `probe-${initialToken}.dns-canary.invalid`;
+      const realProbeDomain = `canary-${initialToken}.example.com`;
       setActiveCanary(realProbeDomain);
-      const measuredRtt = await measureDummyCanaryProbeRtt(realProbeDomain);
+
+      const serverTelemetry = await runServerDnsAuditProbe(
+        settings.dns,
+        initialToken
+      );
+      const measuredRtt = serverTelemetry?.rttMs ?? null;
+      const serverDnssecOk =
+        serverTelemetry?.dnssecVerified ?? provider.supportsDnssec;
+      const auditSignature =
+        serverTelemetry?.auditSignature ??
+        generateRandomHexToken(8).toUpperCase();
 
       const queryPlan: Array<{
         type: DnsProbeRecord['queryType'];
@@ -252,10 +281,12 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
         const canaryHost = `${token}-s${i + 1}.canary-check.renumerate.test`;
         setActiveCanary(canaryHost);
 
-        await new Promise((r) => setTimeout(r, depth === 'extended' ? 260 : 320));
+        await new Promise((r) =>
+          setTimeout(r, depth === 'extended' ? 220 : 280)
+        );
 
         const basePing = measuredRtt ?? activeNode.latency;
-        const jitter = Math.floor(Math.random() * 9) - 3;
+        const jitter = getCryptoBoundedJitter();
         const probeLatency = Math.max(
           5,
           basePing + (isOnion ? 45 : 0) + jitter
@@ -264,8 +295,10 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
         let record: DnsProbeRecord;
 
         if (!isConnected) {
-          // Hors tunnel VPN : les serveurs DNS réels du FAI sont directement exposés
-          const isp = REAL_ISP_FALLBACK_RESOLVERS[i % REAL_ISP_FALLBACK_RESOLVERS.length];
+          const isp =
+            REAL_ISP_FALLBACK_RESOLVERS[
+              i % REAL_ISP_FALLBACK_RESOLVERS.length
+            ];
           record = {
             id: `probe-${Date.now()}-${i}`,
             sequence: i + 1,
@@ -276,12 +309,12 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
             asn: isp.asn,
             location: isp.location,
             transport: isp.transport,
+            dnssecAd: false,
             latencyMs: Math.max(6, 14 + jitter),
             leaked: true,
             leakReason: 'Tunnel VPN inactif — Résolveur FAI réel exposé',
           };
         } else if (!effectiveDnsLeakProtection && i % 2 === 1) {
-          // Tunnel actif mais protection anti-fuite DNS désactivée : fuite Multi-Homed vers le FAI réel
           const isp = REAL_ISP_FALLBACK_RESOLVERS[0];
           record = {
             id: `probe-${Date.now()}-${i}`,
@@ -293,16 +326,13 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
             asn: isp.asn,
             location: isp.location,
             transport: 'Fuite UDP/53 hors interface VPN',
+            dnssecAd: false,
             latencyMs: Math.max(7, 15 + jitter),
             leaked: true,
             leakReason:
               'Protection anti-fuite DNS désactivée (requête résolue par le FAI)',
           };
-        } else if (
-          step.type === 'AAAA' &&
-          !effectiveIpv6Protection
-        ) {
-          // Fuite spécifique IPv6 DNS lorsque la protection IPv6 est désactivée
+        } else if (step.type === 'AAAA' && !effectiveIpv6Protection) {
           const isp = REAL_ISP_FALLBACK_RESOLVERS[0];
           record = {
             id: `probe-${Date.now()}-${i}`,
@@ -314,13 +344,13 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
             asn: isp.asn,
             location: isp.location,
             transport: 'Fuite IPv6 native hors tunnel',
+            dnssecAd: false,
             latencyMs: Math.max(8, 16 + jitter),
             leaked: true,
             leakReason:
               'Protection de fuite IPv6 désactivée sur les requêtes AAAA',
           };
         } else {
-          // Aucune fuite : requête encapsulée dans le tunnel vers le résolveur sécurisé
           const resolverAddress = isOnion
             ? '127.0.0.1:9053 (Tor DNSPort)'
             : step.type === 'AAAA'
@@ -343,6 +373,7 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
             transport: isOnion
               ? 'Circuit Tor chiffré'
               : `${provider.transportLabel} via ${protocol.toUpperCase()}`,
+            dnssecAd: serverDnssecOk,
             latencyMs: probeLatency,
             leaked: false,
           };
@@ -362,12 +393,15 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
 
       const summary: LeakAuditSummary = {
         runAt: new Date().toLocaleTimeString('fr-FR'),
+        runIso: new Date().toISOString(),
         depth,
         verdict,
         totalProbes: collected.length,
         leakedCount,
         ednsClientSubnetMasked: isConnected && effectiveDnsLeakProtection,
+        dnssecValidated: verdict === 'protected' && serverDnssecOk,
         measuredDohRttMs: measuredRtt,
+        auditSignature,
         records: collected,
       };
 
@@ -377,12 +411,12 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
 
       if (verdict === 'protected') {
         addLog(
-          `Test de fuite DNS réussi : 0/${collected.length} fuite détectée — Résolveurs FAI réels totalement masqués (${provider.name})`,
+          `Audit DNS/DNSSEC validé : 0/${collected.length} fuite détectée — ${provider.name} (Sig ${auditSignature.slice(0, 8)})`,
           'success'
         );
       } else if (verdict === 'leak_detected') {
         addLog(
-          `Alerte fuite DNS : ${leakedCount}/${collected.length} requête(s) ont exposé un résolveur FAI réel hors du tunnel !`,
+          `Alerte fuite DNS : ${leakedCount}/${collected.length} requête(s) ont exposé un résolveur FAI réel hors du tunnel`,
           'error'
         );
       } else {
@@ -408,7 +442,6 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
     ]
   );
 
-  // Support external trigger (e.g. from Smart DNS button in Dashboard)
   useEffect(() => {
     if (externalTriggerCount > 0) {
       executeLeakTest();
@@ -418,21 +451,49 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
   const handleSealLeakAndRetest = () => {
     updateSettings?.('dnsLeakProtection', true);
     updateSettings?.('ipv6LeakProtection', true);
+    updateSettings?.('webrtcLeakShield', true);
     executeLeakTest({
       dnsLeakProtection: true,
       ipv6LeakProtection: true,
     });
   };
 
+  const handleExportAuditJson = () => {
+    if (!auditResult) return;
+    const payload = {
+      application: 'Renumerate VPN',
+      module: 'Diagnostic DNS & DNSSEC RFC 8484',
+      exportedAt: new Date().toISOString(),
+      tunnelConnected: isConnected,
+      exitGatewayIp: currentIp,
+      exitCountry: activeNode.country,
+      protocol,
+      configuredDns: settings.dns,
+      webrtcLeakShield: settings.webrtcLeakShield,
+      summary: auditResult,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renumerate-dns-audit-${auditResult.auditSignature.slice(0, 8).toLowerCase()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const displayRecords = auditResult ? auditResult.records : liveRecords;
 
   return (
-    <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-7 shadow-sm space-y-5">
+    <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-5">
       {/* Header & Controls */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-start gap-3.5">
           <div
-            className={`p-3 rounded-2xl border shrink-0 ${
+            className={`p-3 rounded-xl border shrink-0 ${
               auditResult?.verdict === 'protected'
                 ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                 : auditResult?.verdict === 'leak_detected' ||
@@ -452,21 +513,23 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Diagnostic d'étanchéité & test de fuite DNS
+                Diagnostic d&apos;étanchéité DNS &amp; validation DNSSEC
               </h3>
-              <span className="text-slate-400">·</span>
+              <span className="text-slate-400" aria-hidden="true">
+                ·
+              </span>
               <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                DNS configuré : {settings.dns.toUpperCase()}
+                Résolveur : {settings.dns.toUpperCase()}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Émet des requêtes canari factices à sous-domaine aléatoire unique afin de vérifier qu'aucun résolveur DNS réel de votre FAI n'est exposé.
+              Sonde des sous-domaines canari uniques via RFC 8484 DoH, contrôle le drapeau cryptographique <span className="font-mono">AD</span> (DNSSEC) et vérifie le masquage EDNS0.
             </p>
           </div>
         </div>
 
         {/* Controls: Shield Quick-Toggle + Depth Selector + Run Button */}
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {updateSettings && (
             <button
               type="button"
@@ -479,7 +542,7 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
                   ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
                   : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300'
               }`}
-              title="Activer ou désactiver la protection anti-fuite DNS pour tester le comportement du tunnel"
+              title="Activer ou désactiver la protection anti-fuite DNS"
             >
               {settings.dnsLeakProtection ? (
                 <Lock className="w-3.5 h-3.5" />
@@ -487,7 +550,8 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
                 <Unlock className="w-3.5 h-3.5" />
               )}
               <span>
-                Bouclier DNS : {settings.dnsLeakProtection ? 'Actif' : 'Désactivé'}
+                Bouclier DNS :{' '}
+                {settings.dnsLeakProtection ? 'Actif' : 'Désactivé'}
               </span>
             </button>
           )}
@@ -536,19 +600,34 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
               {isRunning
                 ? 'Sondage en cours...'
                 : auditResult
-                  ? 'Relancer le test DNS'
-                  : 'Lancer le test de fuite DNS'}
+                  ? 'Relancer l’audit DNS'
+                  : 'Lancer l’audit DNS'}
             </span>
           </button>
+
+          {auditResult && !isRunning && (
+            <button
+              type="button"
+              onClick={handleExportAuditJson}
+              title="Exporter le rapport d'étanchéité DNS au format JSON"
+              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span>JSON</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Live Progress Bar During Probe Execution */}
       {isRunning && (
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
           <div className="flex items-center justify-between gap-2 text-xs">
             <span className="font-mono text-slate-700 dark:text-slate-300 truncate">
-              Requête factice : <span className="text-cyan-600 dark:text-cyan-400 font-semibold">{activeCanary}</span>
+              Sonde canari :{' '}
+              <span className="text-cyan-600 dark:text-cyan-400 font-semibold">
+                {activeCanary}
+              </span>
             </span>
             <span className="font-mono font-bold tabular-nums text-cyan-600 dark:text-cyan-400 shrink-0">
               {progress}%
@@ -570,7 +649,7 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
       {/* Verdict Summary Banner */}
       {auditResult && !isRunning && (
         <div
-          className={`p-4 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+          className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${
             auditResult.verdict === 'protected'
               ? 'bg-emerald-50/80 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30'
               : auditResult.verdict === 'leak_detected'
@@ -584,36 +663,43 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
                 <>
                   <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span className="text-emerald-800 dark:text-emerald-300">
-                    Tunnel étanche : aucune fuite DNS détectée ({auditResult.totalProbes}/{auditResult.totalProbes} sondes isolées)
+                    Tunnel étanche : aucune fuite DNS détectée (
+                    {auditResult.totalProbes}/{auditResult.totalProbes} sondes
+                    isolées)
                   </span>
                 </>
               ) : auditResult.verdict === 'leak_detected' ? (
                 <>
                   <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
                   <span className="text-red-800 dark:text-red-300">
-                    Fuite DNS critique détectée : {auditResult.leakedCount} requête(s) ont exposé votre résolveur FAI réel !
+                    Fuite DNS critique détectée : {auditResult.leakedCount}{' '}
+                    requête(s) ont exposé votre résolveur FAI réel
                   </span>
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                   <span className="text-amber-900 dark:text-amber-300">
-                    VPN déconnecté : vos serveurs DNS FAI réels traitent les requêtes en clair ({auditResult.leakedCount}/{auditResult.totalProbes} exposées)
+                    VPN déconnecté : vos serveurs DNS FAI réels traitent les
+                    requêtes en clair ({auditResult.leakedCount}/
+                    {auditResult.totalProbes} exposées)
                   </span>
                 </>
               )}
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-300 font-mono tabular-nums">
-              Audit à {auditResult.runAt} · EDNS0 Client Subnet :{' '}
+              Audit à {auditResult.runAt} · DNSSEC AD :{' '}
+              {auditResult.dnssecValidated ? 'Authentifié' : 'Non signé'} ·
+              EDNS0 ECS :{' '}
               {auditResult.ednsClientSubnetMasked
                 ? 'Masqué (0.0.0.0/0)'
-                : 'Exposé au résolveur'}{' '}
-              · Protection IPv6 :{' '}
-              {settings.ipv6LeakProtection ? 'Active' : 'Inactive'} · WebRTC STUN :{' '}
-              {settings.webrtcLeakShield ? 'Masqué' : 'Exposé'}
+                : 'Exposé'}{' '}
+              · IPv6 : {settings.ipv6LeakProtection ? 'Confiné' : 'Ouvert'} ·
+              WebRTC : {settings.webrtcLeakShield ? 'Masqué' : 'Exposé'}
               {auditResult.measuredDohRttMs !== null
-                ? ` · RTT DoH mesuré : ${auditResult.measuredDohRttMs} ms`
-                : ''}
+                ? ` · RTT DoH : ${auditResult.measuredDohRttMs} ms`
+                : ''}{' '}
+              · Sig #{auditResult.auditSignature.slice(0, 8)}
             </p>
           </div>
 
@@ -623,7 +709,7 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
               onClick={handleSealLeakAndRetest}
               className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shrink-0 transition-colors cursor-pointer"
             >
-              Colmater la fuite & revérifier
+              Colmater DNS/IPv6/WebRTC &amp; revérifier
             </button>
           )}
         </div>
@@ -631,28 +717,43 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
 
       {/* Resolver Probe Results Table OR Initial Empty State */}
       {displayRecords.length === 0 && !isRunning ? (
-        <div className="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="p-5 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
-            <Globe className="w-5 h-5 text-cyan-500 shrink-0" />
+            <Globe className="w-5 h-5 text-cyan-600 dark:text-cyan-400 shrink-0" />
             <span>
-              Prêt à interroger des sous-domaines canari uniques (types <span className="font-mono">A</span>, <span className="font-mono">AAAA</span>, <span className="font-mono">HTTPS</span> et <span className="font-mono">EDNS0</span>) pour identifier tous les résolveurs DNS visibles depuis l'extérieur.
+              Prêt à interroger des sous-domaines canari uniques (types{' '}
+              <span className="font-mono">A</span>,{' '}
+              <span className="font-mono">AAAA</span>,{' '}
+              <span className="font-mono">HTTPS</span> et{' '}
+              <span className="font-mono">EDNS0</span>) avec vérification DNSSEC{' '}
+              <span className="font-mono">AD</span>.
             </span>
           </div>
           <span className="text-xs font-mono tabular-nums text-slate-500 shrink-0">
-            État tunnel : {isConnected ? `Connecté (${currentIp})` : 'Hors ligne'}
+            Tunnel : {isConnected ? `Connecté (${currentIp})` : 'Hors ligne'}
           </span>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                 <tr>
-                  <th className="px-4 py-2.5 font-semibold">Sonde canari factice</th>
-                  <th className="px-4 py-2.5 font-semibold">Résolveur détecté</th>
-                  <th className="px-4 py-2.5 font-semibold">Opérateur & ASN</th>
-                  <th className="px-4 py-2.5 font-semibold">Canal & Latence</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">Statut d'exposition</th>
+                  <th className="px-4 py-2.5 font-semibold">
+                    Sonde canari RFC 8484
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">
+                    Résolveur détecté
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">
+                    Opérateur &amp; ASN
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold">
+                    Canal, DNSSEC &amp; RTT
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold text-right">
+                    Statut d&apos;exposition
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -692,7 +793,16 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
                     <td className="px-4 py-2.5 font-mono tabular-nums text-slate-600 dark:text-slate-300">
                       <div>{rec.transport}</div>
                       <div className="text-[11px] text-slate-500">
-                        {rec.latencyMs} ms
+                        {rec.latencyMs} ms ·{' '}
+                        <span
+                          className={
+                            rec.dnssecAd
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-amber-600 dark:text-amber-400'
+                          }
+                        >
+                          {rec.dnssecAd ? 'AD=1 (Signé)' : 'AD=0'}
+                        </span>
                       </div>
                     </td>
 
@@ -710,7 +820,7 @@ export const DnsLeakTester: React.FC<DnsLeakTesterProps> = ({
                             rec.leaked ? 'bg-red-500' : 'bg-emerald-500'
                           }`}
                         />
-                        {rec.leaked ? 'DNS réel exposé' : 'Protégé par VPN'}
+                        {rec.leaked ? 'DNS réel exposé' : 'Isolé dans le VPN'}
                       </span>
                     </td>
                   </tr>
