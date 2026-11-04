@@ -19,7 +19,10 @@ import {
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
-import { NetworkView } from './components/NetworkView';
+import {
+  NetworkView,
+  CircuitDeploymentPayload,
+} from './components/NetworkView';
 import { LocalVault } from './components/LocalVault';
 import { SystemCenter } from './components/SystemCenter';
 import { PricingModal } from './components/PricingModal';
@@ -659,7 +662,13 @@ function App() {
             ? 1.05
             : 1.0;
       const queueBoost = appSettings.multiQueueTun ? 1.08 : 1.0;
-      const factor = powerBoost * tcpBoost * queueBoost;
+      const xdpBoost = appSettings.ebpfXdpAcceleration ? 1.1 : 1.0;
+      const chaffShaping =
+        appSettings.trafficPaddingJitterMs > 0
+          ? Math.max(0.88, 1 - appSettings.trafficPaddingJitterMs * 0.0012)
+          : 1.0;
+      const factor =
+        powerBoost * tcpBoost * queueBoost * xdpBoost * chaffShaping;
 
       const interval = setInterval(() => {
         setThroughput({
@@ -677,6 +686,8 @@ function App() {
     appSettings.powerProfile,
     appSettings.tcpCongestionControl,
     appSettings.multiQueueTun,
+    appSettings.ebpfXdpAcceleration,
+    appSettings.trafficPaddingJitterMs,
   ]);
 
   // Rotation dynamique automatique d'identité (IP + MAC + UA selon le niveau d'anonymat)
@@ -1171,6 +1182,37 @@ function App() {
     addLog(`Profil d'autonomie ajusté (${profile})`, 'info');
   };
 
+  const handleDeployCircuit = (payload: CircuitDeploymentPayload) => {
+    const nextMode =
+      payload.hopCount === 3
+        ? ConnectionMode.ONION_VORTEX
+        : payload.hopCount === 2
+          ? ConnectionMode.DOUBLE_HOP
+          : ConnectionMode.STANDARD;
+
+    setMode(nextMode);
+    patchAppSettings({
+      vortexCircuitLength: Math.max(payload.hopCount, 3),
+      vortexEntryNodeCountry:
+        payload.hopCount >= 2 ? payload.entryNode.country : 'auto',
+      vortexExitNodeCountry: payload.exitNode.country,
+    });
+
+    const hopsLabel =
+      payload.hopCount === 3 && payload.relayNode
+        ? `${payload.entryNode.name} → ${payload.relayNode.name} → ${payload.exitNode.name}`
+        : payload.hopCount === 2
+          ? `${payload.entryNode.name} → ${payload.exitNode.name}`
+          : payload.exitNode.name;
+
+    addLog(
+      `Circuit ${nextMode} déployé (${payload.hopCount} saut${payload.hopCount > 1 ? 's' : ''}) : ${hopsLabel}`,
+      'success',
+      payload.exitNode.ip
+    );
+    handleConnectNode(payload.exitNode.id);
+  };
+
   const handleProcessPayment = async (
     plan: PlanTier
   ): Promise<{ success: boolean; redirect: boolean }> => {
@@ -1283,6 +1325,38 @@ function App() {
         addLog(
           `Protocole Panic [Ctrl+Shift+X] défini sur ${String(value).toUpperCase()}`,
           'info'
+        );
+      } else if (key === 'ebpfXdpAcceleration') {
+        addLog(
+          `Accélération noyau eBPF/XDP Zero-Copy ${value ? 'activée' : 'désactivée'}`,
+          value ? 'success' : 'info'
+        );
+      } else if (key === 'tlsClientHelloFragmentation') {
+        addLog(
+          `Fragmentation TLS ClientHello Anti-DPI ${value ? 'activée' : 'désactivée'}`,
+          value ? 'success' : 'info'
+        );
+      } else if (key === 'trafficPaddingJitterMs') {
+        addLog(
+          Number(value) === 0
+            ? 'Bourrage temporel Chaff désactivé (latence nominale)'
+            : `Bourrage Chaff Anti-Corrélation réglé sur ${String(value)} ms`,
+          'info'
+        );
+      } else if (key === 'ephemeralRekeyMinutes') {
+        addLog(
+          `Cadence de re-cléage éphémère PFS réglée sur ${String(value)} min`,
+          'info'
+        );
+      } else if (key === 'strictMemoryLock') {
+        addLog(
+          `Verrouillage mémoire RAM mlockall ${value ? 'activé (anti-swap)' : 'relâché'}`,
+          value ? 'success' : 'warning'
+        );
+      } else if (key === 'ntpDriftProtection') {
+        addLog(
+          `Confinement horloge NTP/NTS au tunnel ${value ? 'activé' : 'désactivé'}`,
+          value ? 'success' : 'warning'
         );
       }
     },
@@ -1841,10 +1915,10 @@ function App() {
           <div className="space-y-6">
             <div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                Topologie du réseau &amp; relais actifs
+                Topologie réseau, sanctuaires &amp; circuits multi-sauts
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Explorez les nœuds disponibles, ajustez leurs profils d&apos;autonomie et simulez des transferts sécurisés.
+                Composez des circuits géodésiques 1 à 3 sauts, filtrez les juridictions 5/14-Eyes, sondez la latence BGP en direct et pilotez l’autonomie RNC de la flotte.
               </p>
             </div>
             <NetworkView
@@ -1853,8 +1927,26 @@ function App() {
               isConnected={isConnected}
               mode={mode}
               isDark={isDark}
+              settings={appSettings}
+              onUpdateJurisdictionPolicy={(policy) =>
+                updateAppSettings('excludeEyesJurisdictions', policy)
+              }
+              onDeployCircuit={handleDeployCircuit}
+              onNodesProbed={(updatedNodes) => {
+                setNodes(updatedNodes);
+                const refreshedActive = updatedNodes.find(
+                  (n) => n.ip === currentIdentity.ip
+                );
+                if (refreshedActive) {
+                  setCurrentIdentity((prev) => ({
+                    ...prev,
+                    latency: refreshedActive.latency,
+                  }));
+                }
+              }}
               onConnectNode={handleConnectNode}
               onAutonomyUpdate={handleAutonomyUpdate}
+              addLog={addLog}
             />
           </div>
         )}

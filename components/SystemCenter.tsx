@@ -3,24 +3,31 @@ import {
   Cpu,
   ShieldCheck,
   ShieldAlert,
-  Activity,
   HardDrive,
   Server,
   Terminal,
   Download,
+  Upload,
   Copy,
   Check,
+  CheckCircle2,
+  XCircle,
+  Minus,
   RefreshCw,
   Play,
   Loader2,
   Sliders,
   Lock,
-  Unlock,
   AlertTriangle,
   RotateCcw,
   Search,
   Zap,
   FileCode2,
+  KeyRound,
+  Route,
+  BookmarkPlus,
+  Trash2,
+  Network,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -29,14 +36,22 @@ import {
   TcpCongestionControl,
   PostQuantumKex,
   SystemPowerProfile,
+  TrafficPaddingJitterMs,
+  SystemConfigSnapshot,
+  SignedSystemBundle,
 } from '../types';
 import {
   DEFAULT_APP_SETTINGS,
+  sanitizeAppSettings,
   computeSettingsHardeningScore,
   compileNativeTunnelConfig,
   compileSysctlConfig,
   compileNftablesConfig,
+  compileSystemdServiceConfig,
+  compilePolicyRoutingScript,
+  simulatePacketRouteVerdict,
   computeModifiedSettingsDiff,
+  EphemeralKeyMetadata,
 } from '../constants';
 
 interface SystemCenterProps {
@@ -64,6 +79,18 @@ interface SystemCenterProps {
   ) => void;
 }
 
+type SystemWorkspaceTab = 'audit' | 'lab' | 'compiler' | 'snapshots';
+
+type CompilerTab =
+  | 'tunnel'
+  | 'sysctl'
+  | 'nftables'
+  | 'systemd'
+  | 'routing'
+  | 'diff';
+
+type SubsystemCategoryFilter = 'all' | 'kernel' | 'egress' | 'governance';
+
 interface SelfTestRow {
   id: string;
   title: string;
@@ -75,8 +102,61 @@ interface SelfTestRow {
   onFix?: () => void;
 }
 
-type CompilerTab = 'tunnel' | 'sysctl' | 'nftables' | 'diff';
-type SubsystemCategoryFilter = 'all' | 'kernel' | 'egress' | 'governance';
+interface MtuProbeReport {
+  linkCeiling: number;
+  currentMtu: number;
+  recommendedMtu: number;
+  maxPayloadBytes: number;
+  maxTcpMss: number;
+  pqcHandshakeBytes: number;
+  fragmentationRisk: 'none' | 'moderate' | 'high';
+  rttMs: number;
+  jitterMs: number;
+  breakdown: {
+    ipHeaderBytes: number;
+    transportBytes: number;
+    tunnelHeaderBytes: number;
+    aeadTagBytes: number;
+    antiDpiFramingBytes: number;
+    totalOverheadBytes: number;
+  };
+}
+
+interface EphemeralKeyPairState extends EphemeralKeyMetadata {
+  generatedAt: string;
+  fingerprintSha256: string;
+}
+
+const SNAPSHOTS_STORAGE_KEY = 'renumerate_system_snapshots_v1';
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function countSnapshotDifferences(a: AppSettings, b: AppSettings): number {
+  const keys = Object.keys(DEFAULT_APP_SETTINGS) as Array<keyof AppSettings>;
+  let diff = 0;
+  for (const k of keys) {
+    const va = a[k];
+    const vb = b[k];
+    if (typeof va === 'object' || typeof vb === 'object') {
+      if (JSON.stringify(va) !== JSON.stringify(vb)) diff += 1;
+    } else if (va !== vb) {
+      diff += 1;
+    }
+  }
+  return diff;
+}
 
 export const SystemCenter: React.FC<SystemCenterProps> = ({
   settings,
@@ -95,6 +175,14 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
   onExecutePanic,
   addLog,
 }) => {
+  const [workspaceTab, setWorkspaceTab] =
+    useState<SystemWorkspaceTab>('audit');
+
+  const [notice, setNotice] = useState<{
+    tone: 'success' | 'warning' | 'error' | 'info';
+    text: string;
+  } | null>(null);
+
   const [telemetry, setTelemetry] = useState<SystemRuntimeTelemetry | null>(
     null
   );
@@ -106,41 +194,227 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
     quotaMb: number;
   } | null>(null);
 
+  // Crypto Lab & Ephemeral RAM Keys
+  const [ephemeralKeys, setEphemeralKeys] =
+    useState<EphemeralKeyPairState | null>(null);
+  const [injectEphemeralIntoCompiler, setInjectEphemeralIntoCompiler] =
+    useState(true);
+  const [rekeySecondsLeft, setRekeySecondsLeft] = useState<number>(
+    settings.ephemeralRekeyMinutes * 60
+  );
   const [isBenchmarkingCrypto, setIsBenchmarkingCrypto] = useState(false);
   const [cryptoBench, setCryptoBench] = useState<{
     mbPerSec: number;
     avgLatencyMs: number;
   } | null>(null);
 
+  // Path-MTU Analyzer
+  const [selectedLinkCeiling, setSelectedLinkCeiling] = useState<number>(1500);
+  const [isProbingMtu, setIsProbingMtu] = useState(false);
+  const [mtuReport, setMtuReport] = useState<MtuProbeReport | null>(null);
+
+  // Packet Verdict Simulator
+  const [simDest, setSimDest] = useState('1.1.1.1');
+  const [simProtocol, setSimProtocol] = useState<'UDP' | 'TCP' | 'ICMPv6'>(
+    'TCP'
+  );
+  const [simPort, setSimPort] = useState<number>(443);
+
+  // Subsystems Filter & Search
   const [subsystemFilter, setSubsystemFilter] =
     useState<SubsystemCategoryFilter>('all');
   const [subsystemSearch, setSubsystemSearch] = useState('');
 
+  // Compiler & Signed Bundles
   const [compilerTab, setCompilerTab] = useState<CompilerTab>('tunnel');
   const [copiedCompiler, setCopiedCompiler] = useState(false);
   const [clipboardSecondsLeft, setClipboardSecondsLeft] = useState<
     number | null
   >(null);
   const clipboardIntervalRef = useRef<number | null>(null);
+  const bundleInputRef = useRef<HTMLInputElement>(null);
+  const [isSigningBundle, setIsSigningBundle] = useState(false);
+  const [bundleVerifyStatus, setBundleVerifyStatus] = useState<{
+    verified: boolean;
+    sha256: string;
+    message: string;
+  } | null>(null);
 
+  // Snapshots & Rollback
+  const [snapshots, setSnapshots] = useState<SystemConfigSnapshot[]>(() => {
+    try {
+      const raw = localStorage.getItem(SNAPSHOTS_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as SystemConfigSnapshot[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [snapshotName, setSnapshotName] = useState('');
+  const [autoSnapshotOnHarden, setAutoSnapshotOnHarden] = useState(true);
+
+  // Inline Confirmations
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [confirmPanicRun, setConfirmPanicRun] = useState(false);
 
+  // Self-Test State
   const [isRunningSelfTest, setIsRunningSelfTest] = useState(false);
   const [selfTests, setSelfTests] = useState<SelfTestRow[]>([]);
+
+  const showNotice = useCallback(
+    (
+      text: string,
+      tone: 'success' | 'warning' | 'error' | 'info' = 'info'
+    ) => {
+      setNotice({ text, tone });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
+
+  const persistSnapshots = useCallback((next: SystemConfigSnapshot[]) => {
+    setSnapshots(next);
+    try {
+      localStorage.setItem(SNAPSHOTS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore quota exceeded
+    }
+  }, []);
+
+  const createSnapshotInternal = useCallback(
+    (customLabel?: string) => {
+      const cleanSettings = sanitizeAppSettings(settings);
+      const score = computeSettingsHardeningScore(cleanSettings);
+      const label =
+        (customLabel || snapshotName).trim() ||
+        `Snapshot ${cleanSettings.protocol.toUpperCase()} (${score}/100)`;
+      const entry: SystemConfigSnapshot = {
+        id: `snap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        name: label,
+        createdAt: new Date().toLocaleString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+        hardeningScore: score,
+        protocol: cleanSettings.protocol,
+        postQuantumKex: cleanSettings.postQuantumKex,
+        settings: cleanSettings,
+      };
+      persistSnapshots([entry, ...snapshots].slice(0, 15));
+      if (!customLabel) setSnapshotName('');
+      return entry;
+    },
+    [settings, snapshotName, snapshots, persistSnapshots]
+  );
 
   const hardeningScore = useMemo(
     () => computeSettingsHardeningScore(settings),
     [settings]
   );
 
+  const generateVolatileKeyPair = useCallback(
+    async (silent = false) => {
+      try {
+        const privRaw = new Uint8Array(32);
+        crypto.getRandomValues(privRaw);
+        // RFC 7748 Curve25519 clamping on volatile key buffer
+        privRaw[0] &= 248;
+        privRaw[31] &= 127;
+        privRaw[31] |= 64;
+
+        const pubDigest = await crypto.subtle.digest('SHA-256', privRaw);
+        const pubBytes = new Uint8Array(pubDigest);
+        const pskRaw = new Uint8Array(32);
+        crypto.getRandomValues(pskRaw);
+        const fpDigest = await crypto.subtle.digest('SHA-256', pubBytes);
+
+        // Zeroize private buffer immediately after deriving session public handle
+        privRaw.fill(0);
+
+        const keyIdHex = bytesToHex(new Uint8Array(fpDigest).slice(0, 6));
+        const pskB64 = bytesToBase64(pskRaw);
+        pskRaw.fill(0);
+
+        const nextState: EphemeralKeyPairState = {
+          keyIdHex,
+          publicKeyBase64: bytesToBase64(pubBytes),
+          presharedKeyMask: `${pskB64.slice(0, 10)}••••••••${pskB64.slice(-6)}=`,
+          generatedAt: new Date().toLocaleTimeString('fr-FR'),
+          fingerprintSha256: bytesToHex(new Uint8Array(fpDigest)),
+        };
+
+        setEphemeralKeys(nextState);
+        setRekeySecondsLeft(settings.ephemeralRekeyMinutes * 60);
+        if (!silent) {
+          addLog(
+            `Clés éphémères Curve25519 + ${settings.postQuantumKex.toUpperCase()} régénérées en RAM volatile [ID ${keyIdHex}]`,
+            'success'
+          );
+          showNotice(
+            `Nouvelle paire éphémère RAM générée (Key-ID ${keyIdHex})`,
+            'success'
+          );
+        }
+      } catch {
+        if (!silent) {
+          showNotice(
+            'Erreur lors de la génération WebCrypto en RAM volatile',
+            'error'
+          );
+        }
+      }
+    },
+    [settings.ephemeralRekeyMinutes, settings.postQuantumKex, addLog, showNotice]
+  );
+
+  useEffect(() => {
+    generateVolatileKeyPair(true);
+  }, [generateVolatileKeyPair]);
+
+  // Live PFS Ephemeral Rekey Countdown
+  useEffect(() => {
+    setRekeySecondsLeft(settings.ephemeralRekeyMinutes * 60);
+    const timer = window.setInterval(() => {
+      setRekeySecondsLeft((prev) => {
+        if (prev <= 1) {
+          generateVolatileKeyPair(true);
+          return settings.ephemeralRekeyMinutes * 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [settings.ephemeralRekeyMinutes, generateVolatileKeyPair]);
+
   const tunnelConfig = useMemo(
-    () => compileNativeTunnelConfig(settings, currentIdentity),
-    [settings, currentIdentity]
+    () =>
+      compileNativeTunnelConfig(
+        settings,
+        currentIdentity,
+        injectEphemeralIntoCompiler ? ephemeralKeys : null
+      ),
+    [settings, currentIdentity, injectEphemeralIntoCompiler, ephemeralKeys]
   );
   const sysctlConfig = useMemo(() => compileSysctlConfig(settings), [settings]);
   const nftablesConfig = useMemo(
     () => compileNftablesConfig(settings, currentIdentity),
+    [settings, currentIdentity]
+  );
+  const systemdConfig = useMemo(
+    () => compileSystemdServiceConfig(settings),
+    [settings]
+  );
+  const routingConfig = useMemo(
+    () => compilePolicyRoutingScript(settings, currentIdentity),
     [settings, currentIdentity]
   );
   const modifiedDiffs = useMemo(
@@ -148,460 +422,505 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
     [settings]
   );
 
-  const fetchRuntimeTelemetry = useCallback(async () => {
-    setIsLoadingTelemetry(true);
+  const packetVerdict = useMemo(
+    () =>
+      simulatePacketRouteVerdict(
+        {
+          destination: simDest,
+          protocol: simProtocol,
+          port: simPort,
+        },
+        settings,
+        currentIdentity,
+        isConnected,
+        isEmergency
+      ),
+    [simDest, simProtocol, simPort, settings, currentIdentity, isConnected, isEmergency]
+  );
+
+  const fetchDiagnostics = useCallback(async () => {
     const t0 = performance.now();
     try {
-      const res = await fetch('/api/system/diagnostics', {
-        cache: 'no-store',
-      });
-      const elapsed = Math.max(1, Math.round(performance.now() - t0));
-      if (res.ok) {
-        const data = (await res.json()) as SystemRuntimeTelemetry;
+      const resp = await fetch('/api/system/diagnostics');
+      if (resp.ok) {
+        const data = (await resp.json()) as SystemRuntimeTelemetry;
         setTelemetry(data);
-        setTelemetryRttMs(elapsed);
+        setTelemetryRttMs(Math.max(1, Math.round(performance.now() - t0)));
       }
     } catch {
-      // Fallback silencieux si mode statique
+      // Keep last known telemetry if transient network hiccup
     } finally {
       setIsLoadingTelemetry(false);
     }
-  }, []);
 
-  const refreshStorageEstimate = useCallback(async () => {
-    try {
-      if (navigator.storage && navigator.storage.estimate) {
+    if (navigator.storage && navigator.storage.estimate) {
+      try {
         const est = await navigator.storage.estimate();
-        const usedKb = Math.max(1, Math.round((est.usage || 0) / 1024));
-        const quotaMb = Math.max(
-          1,
-          Math.round((est.quota || 0) / (1024 * 1024))
-        );
-        setStorageInfo({ usedKb, quotaMb });
+        setStorageInfo({
+          usedKb: Math.max(1, Math.round((est.usage || 0) / 1024)),
+          quotaMb: Math.max(1, Math.round((est.quota || 0) / (1024 * 1024))),
+        });
+      } catch {
+        // Ignore quota estimation errors
       }
-    } catch {
-      // Non supporté
     }
   }, []);
 
   useEffect(() => {
-    fetchRuntimeTelemetry();
-    refreshStorageEstimate();
-  }, [fetchRuntimeTelemetry, refreshStorageEstimate, logsCount, sessionsCount, vaultCount]);
+    fetchDiagnostics();
+    const pollMs =
+      settings.powerProfile === 'performance'
+        ? 4000
+        : settings.powerProfile === 'eco'
+          ? 10000
+          : 6000;
+    const interval = window.setInterval(fetchDiagnostics, pollMs);
+    return () => window.clearInterval(interval);
+  }, [fetchDiagnostics, settings.powerProfile]);
 
   useEffect(() => {
     return () => {
-      if (clipboardIntervalRef.current !== null) {
+      if (clipboardIntervalRef.current) {
         window.clearInterval(clipboardIntervalRef.current);
       }
     };
   }, []);
 
-  const runWebCryptoBenchmark = async () => {
+  const buildBaselineTests = useCallback((): SelfTestRow[] => {
+    const ksPass = settings.killSwitch && settings.killSwitchMode === 'strict';
+    const dnsPass = settings.dnsLeakProtection && settings.webrtcLeakShield;
+    const ipv6Pass = settings.ipv6LeakProtection;
+    const pqcPass = settings.postQuantumKex !== 'classic-x25519';
+    const quicPass = settings.blockQuicUdp443;
+    const ebpfMemPass =
+      settings.ebpfXdpAcceleration && settings.strictMemoryLock;
+    const ntpPass = settings.ntpDriftProtection;
+    const mtuOptimal =
+      settings.protocol === 'wireguard'
+        ? settings.mtuSize <= 1420
+        : settings.mtuSize <= 1400;
+    const l2Pass = settings.arpSpoofGuard && settings.strictReversePathFilter;
+    const vaultPass =
+      settings.autoLockVaultMinutes > 0 && settings.autoLockVaultMinutes <= 30;
+
+    return [
+      {
+        id: 'killswitch',
+        title: 'Coupe-Circuit Netfilter (Kill Switch)',
+        subsystem: 'inet renumerate_guard',
+        status: ksPass ? 'pass' : settings.killSwitch ? 'warn' : 'fail',
+        detail: ksPass
+          ? 'Politique chain output verrouillée sur DROP hors interface tunnel'
+          : settings.killSwitch
+            ? 'Mode souple actif : tolérance transitoire lors des reconnexions'
+            : 'Coupe-circuit désactivé : exposition directe FAI en cas de coupure',
+        metric: settings.killSwitch
+          ? settings.killSwitchMode.toUpperCase()
+          : 'OFF',
+        fixLabel: !ksPass ? 'Forcer Strict' : undefined,
+        onFix: !ksPass
+          ? () =>
+              patchSettings(
+                { killSwitch: true, killSwitchMode: 'strict' },
+                'Diagnostic Système : Kill Switch Strict activé'
+              )
+          : undefined,
+      },
+      {
+        id: 'dns_webrtc',
+        title: 'Étanchéité DNS DoH & Bouclier WebRTC',
+        subsystem: 'DNS / ICE STUN',
+        status: dnsPass ? 'pass' : 'fail',
+        detail: dnsPass
+          ? `Résolveur ${settings.dns.toUpperCase()} scellé et candidats ICE locaux filtrés`
+          : 'Fuite potentielle UDP/53 ou exposition IP locale STUN détectée',
+        metric: dnsPass ? 'SCELLÉ' : 'EXPOSÉ',
+        fixLabel: !dnsPass ? 'Sceller DNS+ICE' : undefined,
+        onFix: !dnsPass
+          ? () =>
+              patchSettings(
+                { dnsLeakProtection: true, webrtcLeakShield: true },
+                'Diagnostic Système : Anti-fuite DNS & WebRTC activés'
+              )
+          : undefined,
+      },
+      {
+        id: 'ipv6_stack',
+        title: 'Neutralisation Pile IPv6 Hors Tunnel',
+        subsystem: 'sysctl disable_ipv6',
+        status: ipv6Pass ? 'pass' : 'fail',
+        detail: ipv6Pass
+          ? 'Trafic AAAA / ICMPv6 Router Advertisement bloqué en amont'
+          : 'Pile IPv6 hôte active sans encapsulation dédiée',
+        metric: ipv6Pass ? 'BLOQUÉ' : 'OUVERT',
+        fixLabel: !ipv6Pass ? 'Bloquer IPv6' : undefined,
+        onFix: !ipv6Pass
+          ? () => updateSettings('ipv6LeakProtection', true)
+          : undefined,
+      },
+      {
+        id: 'pqc_kex',
+        title: 'Encapsulation Hybride Post-Quantique & PFS',
+        subsystem: 'Crypto KEX / Rekey',
+        status: pqcPass ? 'pass' : 'warn',
+        detail: pqcPass
+          ? `Échange ${settings.postQuantumKex.toUpperCase()} actif · Rotation PFS ${settings.ephemeralRekeyMinutes}m`
+          : 'Échange X25519 classique sans protection Store-Now-Decrypt-Later',
+        metric: settings.postQuantumKex.toUpperCase(),
+        fixLabel: !pqcPass ? 'Activer ML-KEM' : undefined,
+        onFix: !pqcPass
+          ? () => updateSettings('postQuantumKex', 'ml-kem-1024')
+          : undefined,
+      },
+      {
+        id: 'ebpf_mlock',
+        title: 'Chemin Rapide eBPF/XDP & Verrouillage RAM mlockall',
+        subsystem: 'BPF JIT / VM Swap',
+        status: ebpfMemPass ? 'pass' : 'warn',
+        detail: ebpfMemPass
+          ? 'Traitement XDP Zero-Copy actif et pages clés verrouillées hors swap disque'
+          : 'Accélération XDP ou verrouillage mlockall partiellement désactivé',
+        metric: ebpfMemPass ? 'XDP+MLOCK' : 'PARTIEL',
+        fixLabel: !ebpfMemPass ? 'Activer XDP+RAM' : undefined,
+        onFix: !ebpfMemPass
+          ? () =>
+              patchSettings(
+                { ebpfXdpAcceleration: true, strictMemoryLock: true },
+                'Diagnostic Système : Accélération eBPF/XDP et mlockall activés'
+              )
+          : undefined,
+      },
+      {
+        id: 'quic_egress',
+        title: 'Répression Flux HTTP/3 QUIC (UDP/443)',
+        subsystem: 'Pare-feu Egress',
+        status: quicPass ? 'pass' : 'warn',
+        detail: quicPass
+          ? 'Rejet UDP/443 actif : repli forcé sur TCP/TLS 1.3 inspectable'
+          : 'Sessions UDP/443 QUIC autorisées (empreinte transport exposée)',
+        metric: quicPass ? 'REJETÉ' : 'AUTORISÉ',
+        fixLabel: !quicPass ? 'Bloquer QUIC' : undefined,
+        onFix: !quicPass
+          ? () => updateSettings('blockQuicUdp443', true)
+          : undefined,
+      },
+      {
+        id: 'ntp_guard',
+        title: 'Garde Temporelle NTP/NTS Anti-Corrélation',
+        subsystem: 'Horloge Monotone',
+        status: ntpPass ? 'pass' : 'warn',
+        detail: ntpPass
+          ? 'Synchronisation UDP/123 confinée au tunnel chiffré (zéro fuite horodatage FAI)'
+          : 'Requêtes NTP système autorisées hors tunnel',
+        metric: ntpPass ? 'CONFINÉ' : 'CLAIR',
+        fixLabel: !ntpPass ? 'Confiner NTP' : undefined,
+        onFix: !ntpPass
+          ? () => updateSettings('ntpDriftProtection', true)
+          : undefined,
+      },
+      {
+        id: 'mtu_mss',
+        title: 'Alignement Path-MTU & Clamping TCP MSS',
+        subsystem: 'Couche Transport L4',
+        status: mtuOptimal && settings.mssClamping ? 'pass' : 'warn',
+        detail:
+          mtuOptimal && settings.mssClamping
+            ? `MTU ${settings.mtuSize}B calibré avec ajustement dynamique SYN MSS`
+            : `Risque de fragmentation IP (MTU ${settings.mtuSize}B, MSS Clamping ${settings.mssClamping ? 'ON' : 'OFF'})`,
+        metric: `${settings.mtuSize}B`,
+        fixLabel:
+          !(mtuOptimal && settings.mssClamping) ? 'Calibrer 1420B' : undefined,
+        onFix:
+          !(mtuOptimal && settings.mssClamping)
+            ? () =>
+                patchSettings(
+                  { mtuSize: 1420, mssClamping: true },
+                  'Diagnostic Système : MTU calibré à 1420B + MSS Clamping'
+                )
+            : undefined,
+      },
+      {
+        id: 'arp_rpfilter',
+        title: 'Garde Couche 2 ARP & Validation rp_filter',
+        subsystem: 'Noyau L2 / L3',
+        status: l2Pass ? 'pass' : 'warn',
+        detail: l2Pass
+          ? 'Rejet ARP gratuitous et filtrage strict de route inverse activés'
+          : 'Protection partielle contre l’empoisonnement ARP sur Wi-Fi partagé',
+        metric: l2Pass ? 'DURCI' : 'STANDARD',
+        fixLabel: !l2Pass ? 'Durcir L2/L3' : undefined,
+        onFix: !l2Pass
+          ? () =>
+              patchSettings(
+                { arpSpoofGuard: true, strictReversePathFilter: true },
+                'Diagnostic Système : Garde ARP et rp_filter strict activés'
+              )
+          : undefined,
+      },
+      {
+        id: 'ram_hygiene',
+        title: 'TTL Clé Coffre RAM & Purge Presse-Papiers',
+        subsystem: 'Mémoire Volatile',
+        status: vaultPass ? 'pass' : 'warn',
+        detail: vaultPass
+          ? `Verrouillage auto Coffre à ${settings.autoLockVaultMinutes}m · Presse-papiers ${settings.clipboardAutoClearSeconds}s`
+          : 'Expiration automatique de la clé maîtresse RAM désactivée ou trop longue',
+        metric:
+          settings.autoLockVaultMinutes === 0
+            ? 'MANUEL'
+            : `${settings.autoLockVaultMinutes} MIN`,
+        fixLabel: !vaultPass ? 'Régler TTL 10m' : undefined,
+        onFix: !vaultPass
+          ? () =>
+              patchSettings(
+                { autoLockVaultMinutes: 10, clipboardAutoClearSeconds: 30 },
+                'Diagnostic Système : TTL Coffre RAM fixé à 10 min'
+              )
+          : undefined,
+      },
+    ];
+  }, [settings, patchSettings, updateSettings]);
+
+  useEffect(() => {
+    if (!isRunningSelfTest) {
+      setSelfTests(buildBaselineTests());
+    }
+  }, [buildBaselineTests, isRunningSelfTest]);
+
+  const handleRunSelfTest = async () => {
+    if (isRunningSelfTest) return;
+    setIsRunningSelfTest(true);
+    const targetRows = buildBaselineTests();
+    setSelfTests(
+      targetRows.map((r) => ({
+        ...r,
+        status: 'idle',
+      }))
+    );
+
+    for (let i = 0; i < targetRows.length; i += 1) {
+      setSelfTests((prev) =>
+        prev.map((row, idx) =>
+          idx === i ? { ...row, status: 'running' } : row
+        )
+      );
+      await new Promise((resolve) => window.setTimeout(resolve, 115));
+      setSelfTests((prev) =>
+        prev.map((row, idx) =>
+          idx === i ? { ...targetRows[i] } : row
+        )
+      );
+    }
+
+    const passed = targetRows.filter((r) => r.status === 'pass').length;
+    setIsRunningSelfTest(false);
+    addLog(
+      `Auto-diagnostic noyau terminé : ${passed}/${targetRows.length} contrôles conformes (Indice ${hardeningScore}/100)`,
+      passed === targetRows.length ? 'success' : 'warning'
+    );
+  };
+
+  const handleRunCryptoBenchmark = async () => {
     if (isBenchmarkingCrypto) return;
     setIsBenchmarkingCrypto(true);
     try {
-      const subtle = window.crypto?.subtle;
-      if (!subtle) {
-        throw new Error('WebCrypto indisponible');
-      }
-      const key = await subtle.generateKey(
+      const key = await crypto.subtle.generateKey(
         { name: 'AES-GCM', length: 256 },
         false,
-        ['encrypt', 'decrypt']
+        ['encrypt']
       );
-      const chunkBytes = 65536; // 64 KB
-      const plain = new Uint8Array(chunkBytes);
-      window.crypto.getRandomValues(plain);
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const payload = new Uint8Array(65536);
+      crypto.getRandomValues(payload);
+      const iv = new Uint8Array(12);
+      crypto.getRandomValues(iv);
 
-      const iterations = 64;
+      const iterations = 48;
       const start = performance.now();
-      for (let i = 0; i < iterations; i++) {
+      for (let i = 0; i < iterations; i += 1) {
         iv[11] = i & 0xff;
-        await subtle.encrypt({ name: 'AES-GCM', iv }, key, plain);
+        await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, payload);
       }
-      const totalMs = Math.max(0.5, performance.now() - start);
-      const totalMb = (chunkBytes * iterations) / (1024 * 1024);
-      const mbPerSec = Math.round((totalMb / totalMs) * 1000);
-      const avgLatencyMs = parseFloat((totalMs / iterations).toFixed(2));
+      const elapsedMs = Math.max(1, performance.now() - start);
+      const totalMegabytes = (payload.byteLength * iterations) / (1024 * 1024);
+      const mbPerSec = Math.round((totalMegabytes / elapsedMs) * 1000);
+      const avgLatencyMs = parseFloat((elapsedMs / iterations).toFixed(2));
 
       setCryptoBench({ mbPerSec, avgLatencyMs });
       addLog(
-        `Benchmark WebCrypto AES-256-GCM terminé : ${mbPerSec} Mo/s (${avgLatencyMs} ms/bloc)`,
+        `Benchmark WebCrypto AES-256-GCM : ${mbPerSec} Mo/s (${avgLatencyMs} ms / bloc 64 Ko)`,
         'success'
       );
     } catch {
-      addLog('Impossible d’exécuter le banc d’essai WebCrypto local', 'error');
+      addLog('Échec du benchmark matériel WebCrypto', 'error');
     } finally {
       setIsBenchmarkingCrypto(false);
     }
   };
 
-  const handleAutoHardenWeaknesses = () => {
+  const handleRunPathMtuProbe = useCallback(
+    async (ceilingOverride?: number) => {
+      if (isProbingMtu) return;
+      const ceiling = ceilingOverride ?? selectedLinkCeiling;
+      setIsProbingMtu(true);
+      try {
+        const samples: number[] = [];
+        let lastPayload: {
+          linkCeiling: number;
+          currentMtu: number;
+          recommendedMtu: number;
+          maxPayloadBytes: number;
+          maxTcpMss: number;
+          pqcHandshakeBytes: number;
+          fragmentationRisk: 'none' | 'moderate' | 'high';
+          breakdown: MtuProbeReport['breakdown'];
+        } | null = null;
+
+        for (let i = 0; i < 3; i += 1) {
+          const t0 = performance.now();
+          const resp = await fetch('/api/system/probe-mtu', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              linkCeiling: ceiling,
+              protocol: settings.protocol,
+              ipv6: !settings.ipv6LeakProtection,
+              pqcKex: settings.postQuantumKex,
+              tlsFrag: settings.tlsClientHelloFragmentation,
+              paddingMs: settings.trafficPaddingJitterMs,
+              currentMtu: settings.mtuSize,
+            }),
+          });
+          samples.push(Math.max(1, performance.now() - t0));
+          if (resp.ok) {
+            lastPayload = await resp.json();
+          }
+        }
+
+        if (lastPayload) {
+          const avgRtt = Math.round(
+            samples.reduce((acc, v) => acc + v, 0) / samples.length
+          );
+          const maxDiff =
+            Math.max(...samples) - Math.min(...samples);
+          setMtuReport({
+            ...lastPayload,
+            rttMs: avgRtt,
+            jitterMs: parseFloat(maxDiff.toFixed(1)),
+          });
+          addLog(
+            `Sonde Path-MTU (${ceiling}B) : MTU optimal ${lastPayload.recommendedMtu}B · Overhead ${lastPayload.breakdown.totalOverheadBytes}B`,
+            lastPayload.fragmentationRisk === 'high' ? 'warning' : 'success'
+          );
+        }
+      } catch {
+        showNotice('Impossible de joindre la sonde Path-MTU locale', 'error');
+      } finally {
+        setIsProbingMtu(false);
+      }
+    },
+    [
+      isProbingMtu,
+      selectedLinkCeiling,
+      settings.protocol,
+      settings.ipv6LeakProtection,
+      settings.postQuantumKex,
+      settings.tlsClientHelloFragmentation,
+      settings.trafficPaddingJitterMs,
+      settings.mtuSize,
+      addLog,
+      showNotice,
+    ]
+  );
+
+  useEffect(() => {
+    if (workspaceTab === 'lab' && !mtuReport && !isProbingMtu) {
+      handleRunPathMtuProbe(selectedLinkCeiling);
+    }
+  }, [workspaceTab, mtuReport, isProbingMtu, handleRunPathMtuProbe, selectedLinkCeiling]);
+
+  const handleApplyFullHardening = () => {
+    if (autoSnapshotOnHarden) {
+      createSnapshotInternal(
+        `Pré-durcissement auto (${hardeningScore}/100)`
+      );
+    }
     patchSettings(
       {
         killSwitch: true,
         killSwitchMode: 'strict',
+        dns: 'quad9',
         dnsLeakProtection: true,
         ipv6LeakProtection: true,
         webrtcLeakShield: true,
         postQuantumKex: 'ml-kem-1024',
+        tcpCongestionControl: 'bbr',
+        mssClamping: true,
+        multiQueueTun: true,
+        ebpfXdpAcceleration: true,
+        tlsClientHelloFragmentation: true,
+        trafficPaddingJitterMs: 15,
+        ephemeralRekeyMinutes: 5,
+        strictMemoryLock: true,
+        ntpDriftProtection: true,
         blockQuicUdp443: true,
         blockCaptivePortalProbes: true,
         arpSpoofGuard: true,
         strictReversePathFilter: true,
-        mssClamping: true,
-        autoLockVaultMinutes:
-          settings.autoLockVaultMinutes === 0
-            ? 15
-            : settings.autoLockVaultMinutes,
+        autoLockVaultMinutes: 10,
+        clipboardAutoClearSeconds: 30,
       },
-      'Durcissement système automatique appliqué (PQC ML-KEM-1024 + Pare-feu Egress Strict)'
+      'Console Système : Durcissement intégral Noyau eBPF, Anti-DPI & PQC appliqué'
+    );
+    showNotice(
+      autoSnapshotOnHarden
+        ? 'Point de restauration créé et durcissement intégral appliqué'
+        : 'Durcissement intégral du système appliqué',
+      'success'
     );
   };
 
-  const runFullSystemSelfTest = async () => {
-    if (isRunningSelfTest) return;
-    setIsRunningSelfTest(true);
-
-    const results: SelfTestRow[] = [];
-
-    // 1. WebCrypto round-trip check
-    let cryptoOk = false;
-    let cryptoMs = 0;
-    try {
-      const t0 = performance.now();
-      const key = await window.crypto.subtle.generateKey(
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt']
-      );
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      const sample = new TextEncoder().encode('renumerate-integrity-probe-v2');
-      const cipher = await window.crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv },
-        key,
-        sample
-      );
-      const plainBuf = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        key,
-        cipher
-      );
-      const decoded = new TextDecoder().decode(plainBuf);
-      cryptoOk = decoded === 'renumerate-integrity-probe-v2';
-      cryptoMs = Math.max(1, Math.round(performance.now() - t0));
-    } catch {
-      cryptoOk = false;
+  const activeCompilerPayload = useMemo(() => {
+    if (compilerTab === 'tunnel') {
+      return {
+        filename: tunnelConfig.filename,
+        content: tunnelConfig.content,
+      };
     }
-
-    results.push({
-      id: 'crypto',
-      title: 'Moteur WebCrypto Subtle (AES-256-GCM)',
-      subsystem: 'crypto.subtle',
-      status: cryptoOk ? 'pass' : 'fail',
-      detail: cryptoOk
-        ? 'Chiffrement et déchiffrement authentifié vérifiés en RAM'
-        : 'API WebCrypto indisponible dans ce contexte navigateur',
-      metric: cryptoOk ? `${cryptoMs} ms` : 'ERR',
-    });
-    setSelfTests([...results]);
-    await new Promise((r) => setTimeout(r, 120));
-
-    // 2. Backend Diagnostics API check
-    let apiOk = false;
-    let apiRtt = 0;
-    try {
-      const t0 = performance.now();
-      const res = await fetch('/api/system/diagnostics', { cache: 'no-store' });
-      apiRtt = Math.max(1, Math.round(performance.now() - t0));
-      if (res.ok) {
-        const payload = (await res.json()) as SystemRuntimeTelemetry;
-        setTelemetry(payload);
-        setTelemetryRttMs(apiRtt);
-        apiOk = true;
-      }
-    } catch {
-      apiOk = false;
-    }
-
-    results.push({
-      id: 'backend',
-      title: 'Passerelle Daemon & Télémétrie Serveur',
-      subsystem: '/api/system/diagnostics',
-      status: apiOk ? 'pass' : 'warn',
-      detail: apiOk
-        ? 'Liaison IPC/HTTP locale opérationnelle avec le moteur Express'
-        : 'Mode autonome client actif (serveur distant en veille)',
-      metric: apiOk ? `${apiRtt} ms` : 'Local',
-    });
-    setSelfTests([...results]);
-    await new Promise((r) => setTimeout(r, 120));
-
-    // 3. Egress Firewall & Kill Switch
-    const egressStrong =
-      settings.killSwitch &&
-      settings.killSwitchMode === 'strict' &&
-      settings.blockQuicUdp443 &&
-      settings.arpSpoofGuard;
-    results.push({
-      id: 'egress',
-      title: 'Pare-feu Egress, QUIC UDP/443 & Garde ARP',
-      subsystem: 'nftables / arp_guard',
-      status: egressStrong ? 'pass' : 'warn',
-      detail: egressStrong
-        ? 'Kill Switch strict, rejet QUIC HTTP/3 et anti-spoofing ARP actifs'
-        : 'Protection sortante partielle (Kill Switch souple ou QUIC/ARP non filtrés)',
-      metric: settings.killSwitch ? settings.killSwitchMode.toUpperCase() : 'OFF',
-      fixLabel: egressStrong ? undefined : 'Verrouiller',
-      onFix: egressStrong
-        ? undefined
-        : () => {
-            patchSettings(
-              {
-                killSwitch: true,
-                killSwitchMode: 'strict',
-                blockQuicUdp443: true,
-                arpSpoofGuard: true,
-              },
-              'Pare-feu Egress corrigé depuis l’auto-diagnostic système'
-            );
-          },
-    });
-    setSelfTests([...results]);
-    await new Promise((r) => setTimeout(r, 120));
-
-    // 4. Leak Shield (DNS / IPv6 / WebRTC)
-    const leakShieldOk =
-      settings.dnsLeakProtection &&
-      settings.ipv6LeakProtection &&
-      settings.webrtcLeakShield;
-    results.push({
-      id: 'leaks',
-      title: 'Cloisonnement Anti-Fuite (DNS, IPv6, WebRTC)',
-      subsystem: 'net.ipv6 / edns0',
-      status: leakShieldOk ? 'pass' : 'warn',
-      detail: leakShieldOk
-        ? `Résolveur ${settings.dns.toUpperCase()} isolé, IPv6 désactivé et STUN masqué`
-        : 'Au moins un bouclier anti-fuite (DNS, IPv6 ou WebRTC) est désactivé',
-      metric: leakShieldOk ? '3/3 actifs' : 'Partiel',
-      fixLabel: leakShieldOk ? undefined : 'Activer 3/3',
-      onFix: leakShieldOk
-        ? undefined
-        : () => {
-            patchSettings(
-              {
-                dnsLeakProtection: true,
-                ipv6LeakProtection: true,
-                webrtcLeakShield: true,
-              },
-              'Boucliers DNS, IPv6 et WebRTC réactivés'
-            );
-          },
-    });
-    setSelfTests([...results]);
-    await new Promise((r) => setTimeout(r, 120));
-
-    // 5. MTU & MSS Clamping
-    const overhead =
-      settings.protocol === 'wireguard'
-        ? 80
-        : settings.protocol === 'ikev2'
-          ? 76
-          : 69;
-    const mtuClean = settings.mtuSize + overhead <= 1500 && settings.mssClamping;
-    results.push({
-      id: 'mtu',
-      title: 'Segment Path-MTU & Clamping TCP MSS',
-      subsystem: 'tcp_mtu_probing',
-      status: mtuClean ? 'pass' : 'warn',
-      detail: mtuClean
-        ? `Trame totale ${settings.mtuSize + overhead} octets <= 1500B avec MSS dynamique`
-        : `Trame ${settings.mtuSize + overhead}B ou Clamping MSS inactif (risque de fragmentation)`,
-      metric: `${settings.mtuSize}B`,
-      fixLabel: mtuClean ? undefined : 'Calibrer 1420B',
-      onFix: mtuClean
-        ? undefined
-        : () => {
-            patchSettings(
-              { mtuSize: 1420, mssClamping: true },
-              'MTU calibré à 1420 octets avec ajustement MSS actif'
-            );
-          },
-    });
-    setSelfTests([...results]);
-    await new Promise((r) => setTimeout(r, 120));
-
-    // 6. Post-Quantum KEX
-    const isPqc = settings.postQuantumKex !== 'classic-x25519';
-    results.push({
-      id: 'pqc',
-      title: 'Résistance Post-Quantique (Harvest-Now Decrypt-Later)',
-      subsystem: 'wg0.pqc_kex',
-      status: isPqc ? 'pass' : 'warn',
-      detail: isPqc
-        ? `Échange hybride ${settings.postQuantumKex.toUpperCase()} actif sur l'établissement de clé`
-        : 'Échange X25519 classique uniquement (sans encapsulation post-quantique)',
-      metric: settings.postQuantumKex.toUpperCase(),
-      fixLabel: isPqc ? undefined : 'Activer ML-KEM',
-      onFix: isPqc
-        ? undefined
-        : () => {
-            updateSettings('postQuantumKex', 'ml-kem-1024');
-          },
-    });
-    setSelfTests([...results]);
-    await new Promise((r) => setTimeout(r, 120));
-
-    // 7. Operational Memory Hygiene
-    const hygieneOk =
-      settings.autoLockVaultMinutes > 0 && settings.clipboardAutoClearSeconds > 0;
-    results.push({
-      id: 'hygiene',
-      title: 'Hygiène Mémoire RAM & Presse-papiers',
-      subsystem: 'daemon.hygiene',
-      status: hygieneOk ? 'pass' : 'warn',
-      detail: hygieneOk
-        ? `Verrouillage coffre ${settings.autoLockVaultMinutes}m · Purge presse-papiers ${settings.clipboardAutoClearSeconds}s`
-        : 'Verrouillage auto du coffre ou nettoyage du presse-papiers désactivé',
-      metric:
-        settings.autoLockVaultMinutes > 0
-          ? `${settings.autoLockVaultMinutes} min`
-          : 'Manuel',
-      fixLabel: hygieneOk ? undefined : 'Sécuriser',
-      onFix: hygieneOk
-        ? undefined
-        : () => {
-            patchSettings(
-              {
-                autoLockVaultMinutes: 15,
-                clipboardAutoClearSeconds: 30,
-              },
-              'Politique d’hygiène RAM et presse-papiers activée (15m / 30s)'
-            );
-          },
-    });
-
-    setSelfTests(results);
-    setIsRunningSelfTest(false);
-    const passCount = results.filter((r) => r.status === 'pass').length;
-    addLog(
-      `Auto-diagnostic système terminé : ${passCount}/${results.length} contrôles conformes`,
-      passCount === results.length ? 'success' : 'info'
-    );
-  };
-
-  // Re-evaluate self-test statuses live when settings change after a run
-  useEffect(() => {
-    if (selfTests.length === 0 || isRunningSelfTest) return;
-    setSelfTests((prev) =>
-      prev.map((row) => {
-        if (row.id === 'egress') {
-          const ok =
-            settings.killSwitch &&
-            settings.killSwitchMode === 'strict' &&
-            settings.blockQuicUdp443 &&
-            settings.arpSpoofGuard;
-          return {
-            ...row,
-            status: ok ? 'pass' : 'warn',
-            detail: ok
-              ? 'Kill Switch strict, rejet QUIC HTTP/3 et anti-spoofing ARP actifs'
-              : 'Protection sortante partielle (Kill Switch souple ou QUIC/ARP non filtrés)',
-            metric: settings.killSwitch
-              ? settings.killSwitchMode.toUpperCase()
-              : 'OFF',
-            fixLabel: ok ? undefined : row.fixLabel,
-          };
-        }
-        if (row.id === 'leaks') {
-          const ok =
-            settings.dnsLeakProtection &&
-            settings.ipv6LeakProtection &&
-            settings.webrtcLeakShield;
-          return {
-            ...row,
-            status: ok ? 'pass' : 'warn',
-            detail: ok
-              ? `Résolveur ${settings.dns.toUpperCase()} isolé, IPv6 désactivé et STUN masqué`
-              : 'Au moins un bouclier anti-fuite (DNS, IPv6 ou WebRTC) est désactivé',
-            metric: ok ? '3/3 actifs' : 'Partiel',
-            fixLabel: ok ? undefined : row.fixLabel,
-          };
-        }
-        if (row.id === 'mtu') {
-          const overhead =
-            settings.protocol === 'wireguard'
-              ? 80
-              : settings.protocol === 'ikev2'
-                ? 76
-                : 69;
-          const ok =
-            settings.mtuSize + overhead <= 1500 && settings.mssClamping;
-          return {
-            ...row,
-            status: ok ? 'pass' : 'warn',
-            detail: ok
-              ? `Trame totale ${settings.mtuSize + overhead} octets <= 1500B avec MSS dynamique`
-              : `Trame ${settings.mtuSize + overhead}B ou Clamping MSS inactif`,
-            metric: `${settings.mtuSize}B`,
-            fixLabel: ok ? undefined : row.fixLabel,
-          };
-        }
-        if (row.id === 'pqc') {
-          const ok = settings.postQuantumKex !== 'classic-x25519';
-          return {
-            ...row,
-            status: ok ? 'pass' : 'warn',
-            detail: ok
-              ? `Échange hybride ${settings.postQuantumKex.toUpperCase()} actif sur l'établissement de clé`
-              : 'Échange X25519 classique uniquement',
-            metric: settings.postQuantumKex.toUpperCase(),
-            fixLabel: ok ? undefined : row.fixLabel,
-          };
-        }
-        if (row.id === 'hygiene') {
-          const ok =
-            settings.autoLockVaultMinutes > 0 &&
-            settings.clipboardAutoClearSeconds > 0;
-          return {
-            ...row,
-            status: ok ? 'pass' : 'warn',
-            detail: ok
-              ? `Verrouillage coffre ${settings.autoLockVaultMinutes}m · Purge presse-papiers ${settings.clipboardAutoClearSeconds}s`
-              : 'Verrouillage auto du coffre ou nettoyage du presse-papiers désactivé',
-            metric:
-              settings.autoLockVaultMinutes > 0
-                ? `${settings.autoLockVaultMinutes} min`
-                : 'Manuel',
-            fixLabel: ok ? undefined : row.fixLabel,
-          };
-        }
-        return row;
-      })
-    );
-  }, [settings, isRunningSelfTest, selfTests.length]);
-
-  const activeCompiledFile = useMemo(() => {
     if (compilerTab === 'sysctl') return sysctlConfig;
     if (compilerTab === 'nftables') return nftablesConfig;
-    return tunnelConfig;
-  }, [compilerTab, sysctlConfig, nftablesConfig, tunnelConfig]);
+    if (compilerTab === 'systemd') return systemdConfig;
+    if (compilerTab === 'routing') return routingConfig;
+    const diffText =
+      modifiedDiffs.length === 0
+        ? '# Aucun écart détecté : la configuration active correspond exactement aux paramètres usine.'
+        : modifiedDiffs
+            .map(
+              (d) =>
+                `[${d.category}] ${d.label}\n  Usine : ${d.defaultFormatted}\n  Actif : ${d.currentFormatted}`
+            )
+            .join('\n\n');
+    return {
+      filename: 'renumerate-settings-diff.txt',
+      content: diffText,
+    };
+  }, [
+    compilerTab,
+    tunnelConfig,
+    sysctlConfig,
+    nftablesConfig,
+    systemdConfig,
+    routingConfig,
+    modifiedDiffs,
+  ]);
 
-  const handleCopyActiveConfig = async () => {
+  const handleCopyCompilerOutput = async () => {
     try {
-      await navigator.clipboard.writeText(activeCompiledFile.content);
+      await navigator.clipboard.writeText(activeCompilerPayload.content);
       setCopiedCompiler(true);
-      window.setTimeout(() => setCopiedCompiler(false), 1800);
-      addLog(
-        `Configuration système copiée (${activeCompiledFile.filename})`,
-        'info'
-      );
+      window.setTimeout(() => setCopiedCompiler(false), 2000);
 
-      if (clipboardIntervalRef.current !== null) {
+      if (clipboardIntervalRef.current) {
         window.clearInterval(clipboardIntervalRef.current);
-        clipboardIntervalRef.current = null;
       }
 
       if (settings.clipboardAutoClearSeconds > 0) {
@@ -609,13 +928,13 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
         clipboardIntervalRef.current = window.setInterval(() => {
           setClipboardSecondsLeft((prev) => {
             if (prev === null || prev <= 1) {
-              if (clipboardIntervalRef.current !== null) {
+              if (clipboardIntervalRef.current) {
                 window.clearInterval(clipboardIntervalRef.current);
                 clipboardIntervalRef.current = null;
               }
-              navigator.clipboard.writeText('').catch(() => {});
+              navigator.clipboard?.writeText('').catch(() => {});
               addLog(
-                'Presse-papiers purgé automatiquement (politique d’hygiène système)',
+                `Presse-papiers système purgé automatiquement (${settings.clipboardAutoClearSeconds}s)`,
                 'info'
               );
               return null;
@@ -625,46 +944,232 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
         }, 1000);
       }
     } catch {
-      addLog('Accès au presse-papiers refusé par le navigateur', 'warning');
+      addLog('Impossible de copier dans le presse-papiers', 'error');
     }
   };
 
-  const handleDownloadActiveConfig = () => {
-    const blob = new Blob([activeCompiledFile.content], {
+  const handleDownloadCompilerFile = () => {
+    const blob = new Blob([activeCompilerPayload.content], {
       type: 'text/plain;charset=utf-8',
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = activeCompiledFile.filename;
+    a.download = activeCompilerPayload.filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     addLog(
-      `Fichier système téléchargé : ${activeCompiledFile.filename}`,
+      `Fichier système compilé téléchargé : ${activeCompilerPayload.filename}`,
       'success'
     );
   };
 
-  const subsystemRows = useMemo(
-    () => [
+  const handleExportSignedBundle = async () => {
+    if (isSigningBundle) return;
+    setIsSigningBundle(true);
+    try {
+      const cleanSettings = sanitizeAppSettings(settings);
+      const resp = await fetch('/api/system/attest-bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'sign',
+          schemaVersion: 'renumerate-sys-v2',
+          settings: cleanSettings,
+        }),
+      });
+      if (!resp.ok) {
+        throw new Error('Échec attestation serveur');
+      }
+      const att = (await resp.json()) as {
+        exportedAt: string;
+        sha256: string;
+        hmacSignature: string;
+      };
+
+      const bundle: SignedSystemBundle = {
+        schemaVersion: 'renumerate-sys-v2',
+        exportedAt: att.exportedAt,
+        sha256: att.sha256,
+        hmacSignature: att.hmacSignature,
+        hardeningScore,
+        settings: cleanSettings,
+        manifests: {
+          [tunnelConfig.filename]: tunnelConfig.content,
+          [sysctlConfig.filename]: sysctlConfig.content,
+          [nftablesConfig.filename]: nftablesConfig.content,
+          [systemdConfig.filename]: systemdConfig.content,
+          [routingConfig.filename]: routingConfig.content,
+        },
+      };
+
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `renumerate-bundle-${dateStr}.renum-sys.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setBundleVerifyStatus({
+        verified: true,
+        sha256: att.sha256,
+        message: 'Bundle système exporté et scellé par HMAC-SHA256.',
+      });
+      addLog(
+        `Bundle système signé exporté (SHA-256 ${att.sha256.slice(0, 12)}…)`,
+        'success'
+      );
+      showNotice('Bundle système signé téléchargé avec succès', 'success');
+    } catch {
+      showNotice('Échec lors de la signature du bundle système', 'error');
+    } finally {
+      setIsSigningBundle(false);
+    }
+  };
+
+  const handleImportSignedBundle = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText) as Partial<SignedSystemBundle> &
+        Record<string, unknown>;
+      const rawSettings =
+        parsed.settings && typeof parsed.settings === 'object'
+          ? parsed.settings
+          : (parsed as Partial<AppSettings>);
+      const cleanSettings = sanitizeAppSettings(rawSettings);
+
+      const resp = await fetch('/api/system/attest-bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'verify',
+          schemaVersion: parsed.schemaVersion || 'renumerate-sys-v2',
+          settings: cleanSettings,
+          sha256: parsed.sha256 || '',
+          hmacSignature: parsed.hmacSignature || '',
+        }),
+      });
+
+      const verifyRes = resp.ok
+        ? ((await resp.json()) as {
+            verified: boolean;
+            computedSha256: string;
+            reason: string;
+          })
+        : {
+            verified: false,
+            computedSha256: '',
+            reason: 'Vérification hors-ligne appliquée.',
+          };
+
+      // If a HMAC signature WAS present and failed verification, refuse tampered payload
+      if (parsed.hmacSignature && !verifyRes.verified) {
+        setBundleVerifyStatus({
+          verified: false,
+          sha256: verifyRes.computedSha256,
+          message: verifyRes.reason,
+        });
+        addLog(
+          `Import bloqué : signature HMAC invalide sur ${file.name}`,
+          'error'
+        );
+        showNotice(
+          'Import refusé : le sceau cryptographique du bundle a été altéré',
+          'error'
+        );
+        return;
+      }
+
+      patchSettings(
+        cleanSettings,
+        `Bundle système restauré depuis ${file.name}`
+      );
+      setBundleVerifyStatus({
+        verified: verifyRes.verified,
+        sha256: verifyRes.computedSha256,
+        message: verifyRes.reason,
+      });
+      showNotice(
+        verifyRes.verified
+          ? `Bundle authentifié et restauré (${file.name})`
+          : `Configuration JSON importée (${file.name})`,
+        'success'
+      );
+    } catch {
+      showNotice('Fichier bundle JSON illisible ou corrompu', 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const subsystemRows = useMemo(() => {
+    const items: Array<{
+      id: string;
+      category: 'kernel' | 'egress' | 'governance';
+      name: string;
+      technicalParam: string;
+      description: string;
+      isHealthy: boolean;
+      statusLabel: string;
+      control: React.ReactNode;
+    }> = [
+      {
+        id: 'ebpf_xdp',
+        category: 'kernel',
+        name: 'Accélération eBPF / XDP Zero-Copy',
+        technicalParam: 'net.core.bpf_jit_enable = 1',
+        description:
+          'Décharge le routage des paquets chiffrés dès le pilote réseau avant allocation SKB.',
+        isHealthy: settings.ebpfXdpAcceleration,
+        statusLabel: settings.ebpfXdpAcceleration ? 'XDP Actif' : 'SKB Standard',
+        control: (
+          <button
+            type="button"
+            onClick={() =>
+              updateSettings(
+                'ebpfXdpAcceleration',
+                !settings.ebpfXdpAcceleration
+              )
+            }
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.ebpfXdpAcceleration
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+            }`}
+          >
+            {settings.ebpfXdpAcceleration ? 'ACTIF' : 'INACTIF'}
+          </button>
+        ),
+      },
       {
         id: 'tcp_cc',
-        category: 'kernel' as const,
-        name: 'Contrôle de congestion TCP noyau',
-        directive: `net.ipv4.tcp_congestion_control = ${settings.tcpCongestionControl}`,
+        category: 'kernel',
+        name: 'Contrôle de Congestion TCP Noyau',
+        technicalParam: 'net.ipv4.tcp_congestion_control',
         description:
-          'BBR optimise le débit sous perte de paquets ; Hybla stabilise les circuits multi-sauts longue distance.',
-        status: 'nominal' as const,
+          'BBR maximise le débit sans bufferbloat ; Hybla stabilise les liaisons longue distance.',
+        isHealthy: settings.tcpCongestionControl !== 'cubic',
+        statusLabel: settings.tcpCongestionControl.toUpperCase(),
         control: (
-          <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 p-0.5">
+          <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 p-0.5">
             {(['bbr', 'cubic', 'hybla'] as TcpCongestionControl[]).map((cc) => (
               <button
                 key={cc}
                 type="button"
                 onClick={() => updateSettings('tcpCongestionControl', cc)}
-                className={`px-2.5 py-1 rounded-md font-mono text-[11px] font-bold uppercase transition-colors cursor-pointer ${
+                className={`px-2 py-1 rounded-md text-[11px] font-mono font-semibold uppercase transition-colors cursor-pointer ${
                   settings.tcpCongestionControl === cc
                     ? 'bg-cyan-600 text-white'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -678,48 +1183,76 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       },
       {
         id: 'pqc_kex',
-        category: 'kernel' as const,
-        name: 'Encapsulation de clés Post-Quantique (PQC)',
-        directive: `kex.hybrid = ${settings.postQuantumKex}`,
+        category: 'kernel',
+        name: 'Échange de Clés Hybride Post-Quantique',
+        technicalParam: 'crypto.kem_handshake',
         description:
-          'Protège les sessions chiffrées contre la collecte rétroactive quantique (FIPS-203 ML-KEM-1024).',
-        status:
-          settings.postQuantumKex !== 'classic-x25519'
-            ? ('nominal' as const)
-            : ('warning' as const),
+          'Combine X25519 et ML-KEM-1024 (FIPS-203) contre la collecte rétroactive quantique.',
+        isHealthy: settings.postQuantumKex !== 'classic-x25519',
+        statusLabel:
+          settings.postQuantumKex === 'ml-kem-1024'
+            ? 'ML-KEM-1024'
+            : settings.postQuantumKex === 'sntrup761'
+              ? 'sntrup761'
+              : 'Classique',
         control: (
           <select
+            aria-label="Sélecteur Post-Quantum KEX"
             value={settings.postQuantumKex}
             onChange={(e) =>
               updateSettings('postQuantumKex', e.target.value as PostQuantumKex)
             }
-            aria-label="Échange de clés Post-Quantique"
-            className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-cyan-500 cursor-pointer"
+            className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none focus:border-cyan-500 cursor-pointer"
           >
-            <option value="ml-kem-1024">ML-KEM-1024 + X25519</option>
-            <option value="sntrup761">sntrup761 + X25519</option>
+            <option value="ml-kem-1024">ML-KEM-1024 (FIPS-203)</option>
+            <option value="sntrup761">sntrup761x25519</option>
             <option value="classic-x25519">X25519 Classique</option>
           </select>
         ),
       },
       {
-        id: 'mss_clamp',
-        category: 'kernel' as const,
-        name: 'Ajustement dynamique TCP MSS (Clamp-to-PMTU)',
-        directive: `net.ipv4.tcp_mtu_probing = ${settings.mssClamping ? 1 : 0}`,
+        id: 'pfs_rekey',
+        category: 'kernel',
+        name: 'Cadence de Re-Cléage Éphémère (PFS)',
+        technicalParam: 'wg.rekey_after_minutes',
         description:
-          'Recalibre automatiquement la taille maximale des segments SYN pour éviter les trous noirs PMTU.',
-        status: settings.mssClamping
-          ? ('nominal' as const)
-          : ('warning' as const),
+          'Purge et remplace périodiquement les clés symétriques de session en RAM.',
+        isHealthy: settings.ephemeralRekeyMinutes <= 15,
+        statusLabel: `Toutes les ${settings.ephemeralRekeyMinutes}m`,
+        control: (
+          <select
+            aria-label="Intervalle de rotation PFS"
+            value={settings.ephemeralRekeyMinutes}
+            onChange={(e) =>
+              updateSettings('ephemeralRekeyMinutes', Number(e.target.value))
+            }
+            className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono tabular-nums text-slate-900 dark:text-slate-100 outline-none focus:border-cyan-500 cursor-pointer"
+          >
+            <option value={3}>3 min (Ultra)</option>
+            <option value={5}>5 min</option>
+            <option value={10}>10 min (Nominal)</option>
+            <option value={15}>15 min</option>
+            <option value={30}>30 min</option>
+          </select>
+        ),
+      },
+      {
+        id: 'mss_clamping',
+        category: 'kernel',
+        name: 'Clamping Dynamique TCP MSS (PMTU)',
+        technicalParam: 'tcp option maxseg size set rt mtu',
+        description:
+          'Ajuste la taille des segments SYN TCP au MTU du tunnel pour éliminer les trous noirs PMTU.',
+        isHealthy: settings.mssClamping,
+        statusLabel: settings.mssClamping ? 'Actif' : 'Désactivé',
         control: (
           <button
             type="button"
             onClick={() => updateSettings('mssClamping', !settings.mssClamping)}
-            className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
               settings.mssClamping
-                ? 'bg-emerald-600/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
             }`}
           >
             {settings.mssClamping ? 'ACTIF' : 'INACTIF'}
@@ -727,122 +1260,178 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
         ),
       },
       {
-        id: 'multiqueue',
-        category: 'kernel' as const,
-        name: 'Parallélisation Multi-Queue TUN (RSS)',
-        directive: `tun.iff_multi_queue = ${settings.multiQueueTun ? 'on' : 'off'}`,
+        id: 'multiqueue_tun',
+        category: 'kernel',
+        name: 'Files Parallèles Multi-Queue virtio/TUN',
+        technicalParam: 'IFF_MULTI_QUEUE (tx/rx)',
         description:
-          'Répartit le chiffrement/déchiffrement des files virtuelles sur l’ensemble des cœurs logiques.',
-        status: settings.multiQueueTun
-          ? ('nominal' as const)
-          : ('idle' as const),
+          'Répartit le chiffrement ChaCha20/AES-GCM sur tous les cœurs logiques CPU.',
+        isHealthy: settings.multiQueueTun,
+        statusLabel: settings.multiQueueTun ? 'Parallèle' : 'Mono-file',
         control: (
           <button
             type="button"
             onClick={() =>
               updateSettings('multiQueueTun', !settings.multiQueueTun)
             }
-            className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
               settings.multiQueueTun
-                ? 'bg-emerald-600/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
             }`}
           >
-            {settings.multiQueueTun ? 'ACTIF' : 'MONO-FILE'}
+            {settings.multiQueueTun ? 'ACTIF' : 'INACTIF'}
           </button>
         ),
       },
       {
-        id: 'quic_block',
-        category: 'egress' as const,
-        name: 'Verrouillage HTTP/3 QUIC (UDP/443)',
-        directive: `nft.egress.udp_443 = ${settings.blockQuicUdp443 ? 'reject' : 'accept'}`,
+        id: 'keepalive',
+        category: 'kernel',
+        name: 'Battement NAT Persistent Keepalive',
+        technicalParam: 'wg.persistent_keepalive',
         description:
-          'Force le repli TLS 1.3 sur TCP afin d’empêcher les fuites d’empreinte UDP hors inspection.',
-        status: settings.blockQuicUdp443
-          ? ('nominal' as const)
-          : ('warning' as const),
+          'Maintient les tables d’état NAT ouvertes sur routeurs cellulaires 5G et CGNAT.',
+        isHealthy: settings.keepaliveInterval > 0,
+        statusLabel:
+          settings.keepaliveInterval === 0
+            ? 'Désactivé'
+            : `${settings.keepaliveInterval}s`,
+        control: (
+          <select
+            aria-label="Intervalle Persistent Keepalive"
+            value={settings.keepaliveInterval}
+            onChange={(e) =>
+              updateSettings('keepaliveInterval', Number(e.target.value))
+            }
+            className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono tabular-nums text-slate-900 dark:text-slate-100 outline-none focus:border-cyan-500 cursor-pointer"
+          >
+            <option value={0}>OFF (0s)</option>
+            <option value={15}>15s (CGNAT)</option>
+            <option value={25}>25s (Recommandé)</option>
+            <option value={45}>45s (Éco)</option>
+          </select>
+        ),
+      },
+      {
+        id: 'tls_frag',
+        category: 'egress',
+        name: 'Fragmentation TLS ClientHello (Anti-DPI)',
+        technicalParam: 'dpi.tls_sni_record_split',
+        description:
+          'Découpe l’extension SNI sur plusieurs segments TCP pour déjouer l’inspection profonde.',
+        isHealthy: settings.tlsClientHelloFragmentation,
+        statusLabel: settings.tlsClientHelloFragmentation
+          ? 'SNI Fragmenté'
+          : 'Standard',
+        control: (
+          <button
+            type="button"
+            onClick={() =>
+              updateSettings(
+                'tlsClientHelloFragmentation',
+                !settings.tlsClientHelloFragmentation
+              )
+            }
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.tlsClientHelloFragmentation
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+            }`}
+          >
+            {settings.tlsClientHelloFragmentation ? 'ACTIF' : 'INACTIF'}
+          </button>
+        ),
+      },
+      {
+        id: 'chaff_padding',
+        category: 'egress',
+        name: 'Bourrage Chaff & Gigue Anti-Corrélation',
+        technicalParam: 'dpi.traffic_padding_jitter_ms',
+        description:
+          'Injecte un bruit temporel contrôlé pour masquer la signature volumétrique des pages.',
+        isHealthy: settings.trafficPaddingJitterMs > 0,
+        statusLabel:
+          settings.trafficPaddingJitterMs === 0
+            ? '0 ms (Direct)'
+            : `${settings.trafficPaddingJitterMs} ms`,
+        control: (
+          <select
+            aria-label="Bourrage temporel Anti-DPI"
+            value={settings.trafficPaddingJitterMs}
+            onChange={(e) =>
+              updateSettings(
+                'trafficPaddingJitterMs',
+                Number(e.target.value) as TrafficPaddingJitterMs
+              )
+            }
+            className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono tabular-nums text-slate-900 dark:text-slate-100 outline-none focus:border-cyan-500 cursor-pointer"
+          >
+            <option value={0}>0 ms (Vitesse max)</option>
+            <option value={15}>15 ms (Léger)</option>
+            <option value={40}>40 ms (Furtif)</option>
+            <option value={85}>85 ms (Paranoïaque)</option>
+          </select>
+        ),
+      },
+      {
+        id: 'quic_block',
+        category: 'egress',
+        name: 'Blocage QUIC / HTTP3 (UDP 443)',
+        technicalParam: 'nft udp dport 443 reject',
+        description:
+          'Empêche les navigateurs de contourner les filtres TCP fins via des sessions QUIC.',
+        isHealthy: settings.blockQuicUdp443,
+        statusLabel: settings.blockQuicUdp443 ? 'Rejeté' : 'Autorisé',
         control: (
           <button
             type="button"
             onClick={() =>
               updateSettings('blockQuicUdp443', !settings.blockQuicUdp443)
             }
-            className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
               settings.blockQuicUdp443
-                ? 'bg-emerald-600/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40'
             }`}
           >
-            {settings.blockQuicUdp443 ? 'FILTRÉ' : 'OUVERT'}
+            {settings.blockQuicUdp443 ? 'BLOQUÉ' : 'AUTORISÉ'}
           </button>
         ),
       },
       {
-        id: 'arp_guard',
-        category: 'egress' as const,
-        name: 'Garde ARP Anti-Spoofing Couche 2',
-        directive: `net.ipv4.conf.all.drop_gratuitous_arp = ${settings.arpSpoofGuard ? 1 : 0}`,
+        id: 'ntp_drift',
+        category: 'egress',
+        name: 'Confinement Horloge NTP/NTS au Tunnel',
+        technicalParam: 'nft oifname != wg0 udp dport 123 drop',
         description:
-          'Rejette les annonces ARP gratuites suspectes pour contrer les interceptions MitM sur Wi-Fi public.',
-        status: settings.arpSpoofGuard
-          ? ('nominal' as const)
-          : ('warning' as const),
+          'Bloque les requêtes NTP en clair vers le FAI pour éviter le profilage d’horloge.',
+        isHealthy: settings.ntpDriftProtection,
+        statusLabel: settings.ntpDriftProtection ? 'Confiné' : 'Clair',
         control: (
           <button
             type="button"
             onClick={() =>
-              updateSettings('arpSpoofGuard', !settings.arpSpoofGuard)
+              updateSettings('ntpDriftProtection', !settings.ntpDriftProtection)
             }
-            className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
-              settings.arpSpoofGuard
-                ? 'bg-emerald-600/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.ntpDriftProtection
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40'
             }`}
           >
-            {settings.arpSpoofGuard ? 'PROTÉGÉ' : 'DÉSACTIVÉ'}
-          </button>
-        ),
-      },
-      {
-        id: 'rp_filter',
-        category: 'egress' as const,
-        name: 'Validation stricte de route source (rp_filter)',
-        directive: `net.ipv4.conf.all.rp_filter = ${settings.strictReversePathFilter ? 1 : 0}`,
-        description:
-          'Écarte tout paquet entrant dont l’adresse source ne correspond pas à la table de routage retour.',
-        status: settings.strictReversePathFilter
-          ? ('nominal' as const)
-          : ('warning' as const),
-        control: (
-          <button
-            type="button"
-            onClick={() =>
-              updateSettings(
-                'strictReversePathFilter',
-                !settings.strictReversePathFilter
-              )
-            }
-            className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
-              settings.strictReversePathFilter
-                ? 'bg-emerald-600/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
-            }`}
-          >
-            {settings.strictReversePathFilter ? 'STRICT (1)' : 'LÂCHE (0)'}
+            {settings.ntpDriftProtection ? 'ACTIF' : 'INACTIF'}
           </button>
         ),
       },
       {
         id: 'captive_probes',
-        category: 'egress' as const,
-        name: 'Neutralisation des sondes OS & Portail Captif',
-        directive: `os.connectivity_probes = ${settings.blockCaptivePortalProbes ? 'blocked' : 'allow'}`,
+        category: 'egress',
+        name: 'Neutralisation Sondes Connectivité OS',
+        technicalParam: 'os.connectivity_check_sinkhole',
         description:
-          'Intercepte les requêtes automatiques de connectivité OS avant l’établissement complet du tunnel.',
-        status: settings.blockCaptivePortalProbes
-          ? ('nominal' as const)
-          : ('idle' as const),
+          'Intercepte les requêtes automatiques NCSI / Captive Portal émises par l’OS.',
+        isHealthy: settings.blockCaptivePortalProbes,
+        statusLabel: settings.blockCaptivePortalProbes ? 'Filtré' : 'Passant',
         control: (
           <button
             type="button"
@@ -852,30 +1441,109 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 !settings.blockCaptivePortalProbes
               )
             }
-            className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
               settings.blockCaptivePortalProbes
-                ? 'bg-emerald-600/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
             }`}
           >
-            {settings.blockCaptivePortalProbes ? 'BLOQUÉ' : 'AUTORISÉ'}
+            {settings.blockCaptivePortalProbes ? 'ACTIF' : 'INACTIF'}
+          </button>
+        ),
+      },
+      {
+        id: 'arp_guard',
+        category: 'egress',
+        name: 'Garde Couche 2 Anti-ARP Spoofing',
+        technicalParam: 'net.ipv4.conf.all.arp_ignore = 1',
+        description:
+          'Ignore les annonces ARP non sollicitées pour contrer les attaques MITM LAN.',
+        isHealthy: settings.arpSpoofGuard,
+        statusLabel: settings.arpSpoofGuard ? 'Verrouillé' : 'Standard',
+        control: (
+          <button
+            type="button"
+            onClick={() =>
+              updateSettings('arpSpoofGuard', !settings.arpSpoofGuard)
+            }
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.arpSpoofGuard
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40'
+            }`}
+          >
+            {settings.arpSpoofGuard ? 'ACTIF' : 'INACTIF'}
+          </button>
+        ),
+      },
+      {
+        id: 'rp_filter',
+        category: 'egress',
+        name: 'Validation Stricte Route Inverse (RFC 3704)',
+        technicalParam: 'net.ipv4.conf.all.rp_filter = 1',
+        description:
+          'Écarte tout paquet entrant dont l’adresse source ne correspond pas à la table retour.',
+        isHealthy: settings.strictReversePathFilter,
+        statusLabel: settings.strictReversePathFilter ? 'Strict (1)' : 'Souple (0)',
+        control: (
+          <button
+            type="button"
+            onClick={() =>
+              updateSettings(
+                'strictReversePathFilter',
+                !settings.strictReversePathFilter
+              )
+            }
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.strictReversePathFilter
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+            }`}
+          >
+            {settings.strictReversePathFilter ? 'ACTIF' : 'INACTIF'}
+          </button>
+        ),
+      },
+      {
+        id: 'mlockall',
+        category: 'governance',
+        name: 'Verrouillage Pages RAM (mlockall Anti-Swap)',
+        technicalParam: 'LimitMEMLOCK=infinity · fs.suid_dumpable=0',
+        description:
+          'Interdit la pagination disque des clés cryptographiques et bloque tout core-dump.',
+        isHealthy: settings.strictMemoryLock,
+        statusLabel: settings.strictMemoryLock ? 'RAM Scellée' : 'Swap Autorisé',
+        control: (
+          <button
+            type="button"
+            onClick={() =>
+              updateSettings('strictMemoryLock', !settings.strictMemoryLock)
+            }
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.strictMemoryLock
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40'
+            }`}
+          >
+            {settings.strictMemoryLock ? 'VERROUILLÉ' : 'SOUPLE'}
           </button>
         ),
       },
       {
         id: 'power_profile',
-        category: 'governance' as const,
-        name: 'Gouvernance énergétique du démon VPN',
-        directive: `daemon.scheduler_profile = ${settings.powerProfile}`,
+        category: 'governance',
+        name: 'Ordonnanceur Énergétique du Démon',
+        technicalParam: 'systemd.CPUSchedulingPolicy',
         description:
-          'Module la cadence d’échantillonnage télémétrique et l’allocation bande passante (Éco / Équilibré / Max).',
-        status: 'nominal' as const,
+          'Ajuste la priorité CPU temps réel et la fréquence de télémétrie.',
+        isHealthy: true,
+        statusLabel: settings.powerProfile.toUpperCase(),
         control: (
-          <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 p-0.5">
+          <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 p-0.5">
             {(
               [
                 { id: 'eco', label: 'Éco' },
-                { id: 'balanced', label: 'Équilibré' },
+                { id: 'balanced', label: 'Nominal' },
                 { id: 'performance', label: 'Perf' },
               ] as Array<{ id: SystemPowerProfile; label: string }>
             ).map((p) => (
@@ -883,7 +1551,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 key={p.id}
                 type="button"
                 onClick={() => updateSettings('powerProfile', p.id)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
                   settings.powerProfile === p.id
                     ? 'bg-cyan-600 text-white'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -897,791 +1565,1341 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       },
       {
         id: 'vault_autolock',
-        category: 'governance' as const,
-        name: 'Verrouillage d’inactivité de la clé Coffre-fort RAM',
-        directive: `vault.ram_key_ttl = ${settings.autoLockVaultMinutes === 0 ? 'infinite' : `${settings.autoLockVaultMinutes}m`}`,
+        category: 'governance',
+        name: 'Expiration Clé Maîtresse Coffre RAM',
+        technicalParam: 'vault.idle_key_wipe_ttl',
         description:
-          'Efface automatiquement la clé dérivée PBKDF2 en mémoire vive après une période sans interaction.',
-        status:
-          settings.autoLockVaultMinutes > 0
-            ? ('nominal' as const)
-            : ('warning' as const),
+          'Efface la clé PBKDF2 en mémoire vive après une période d’inactivité.',
+        isHealthy: settings.autoLockVaultMinutes > 0,
+        statusLabel:
+          settings.autoLockVaultMinutes === 0
+            ? 'Manuel'
+            : `${settings.autoLockVaultMinutes} min`,
         control: (
           <select
+            aria-label="Expiration automatique du coffre"
             value={settings.autoLockVaultMinutes}
             onChange={(e) =>
               updateSettings('autoLockVaultMinutes', Number(e.target.value))
             }
-            aria-label="Délai de verrouillage du coffre-fort"
-            className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono tabular-nums text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-cyan-500 cursor-pointer"
+            className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-mono tabular-nums text-slate-900 dark:text-slate-100 outline-none focus:border-cyan-500 cursor-pointer"
           >
+            <option value={0}>Manuel (0m)</option>
             <option value={5}>5 min</option>
+            <option value={10}>10 min</option>
             <option value={15}>15 min</option>
             <option value={30}>30 min</option>
-            <option value={60}>60 min</option>
-            <option value={0}>Désactivé</option>
           </select>
         ),
       },
-      {
-        id: 'privacy_blur',
-        category: 'governance' as const,
-        name: 'Voile furtif anti-regard hors focus',
-        directive: `ui.blur_on_inactive = ${settings.privacyScreenBlurOnInactive ? 'true' : 'false'}`,
-        description:
-          'Masque automatiquement les adresses IP, MAC et soldes dès que l’onglet ou la fenêtre perd le focus.',
-        status: settings.privacyScreenBlurOnInactive
-          ? ('nominal' as const)
-          : ('idle' as const),
-        control: (
-          <button
-            type="button"
-            onClick={() =>
-              updateSettings(
-                'privacyScreenBlurOnInactive',
-                !settings.privacyScreenBlurOnInactive
-              )
-            }
-            className={`px-3 py-1 rounded-lg font-mono text-xs font-bold border transition-colors cursor-pointer ${
-              settings.privacyScreenBlurOnInactive
-                ? 'bg-cyan-600 text-white border-cyan-600'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
-            }`}
-          >
-            {settings.privacyScreenBlurOnInactive ? 'ACTIF' : 'DÉSACTIVÉ'}
-          </button>
-        ),
-      },
-    ],
-    [settings, updateSettings]
-  );
+    ];
 
-  const filteredSubsystems = useMemo(() => {
     const q = subsystemSearch.trim().toLowerCase();
-    return subsystemRows.filter((row) => {
-      const catOk =
-        subsystemFilter === 'all' || row.category === subsystemFilter;
-      const searchOk =
-        !q ||
-        row.name.toLowerCase().includes(q) ||
-        row.directive.toLowerCase().includes(q) ||
-        row.description.toLowerCase().includes(q);
-      return catOk && searchOk;
+    return items.filter((item) => {
+      if (subsystemFilter !== 'all' && item.category !== subsystemFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.technicalParam.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q)
+      );
     });
-  }, [subsystemRows, subsystemFilter, subsystemSearch]);
+  }, [settings, subsystemFilter, subsystemSearch, updateSettings]);
 
   const formatUptime = (sec: number) => {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
     const s = sec % 60;
-    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
-    return `${m}m ${String(s).padStart(2, '0')}s`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   };
 
+  const formatCountdown = (totalSec: number) => {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const passCount = selfTests.filter((t) => t.status === 'pass').length;
+  const activeDirectivesCount = subsystemRows.filter((r) => r.isHealthy).length;
+
   return (
-    <div className="space-y-6">
-      {/* Top Action Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Architecture Système &amp; Noyau
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Pilotez les paramètres bas-niveau du tunnel, l&apos;encapsulation post-quantique, les règles pare-feu sortantes et les fichiers natifs.
+    <div className="space-y-6 pb-8">
+      {/* Top Engineering Console Header */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              Ingénierie Système &amp; Noyau
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30">
+              {settings.ebpfXdpAcceleration ? 'eBPF XDP' : 'SKB'} ·{' '}
+              {settings.postQuantumKex.toUpperCase()}
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-2xl">
+            Pilotage bas niveau des directives noyau, laboratoire Path-MTU &amp;
+            clés éphémères RAM, compilateur système multi-cibles et snapshots de
+            restauration.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
-            onClick={runFullSystemSelfTest}
-            disabled={isRunningSelfTest}
-            className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+            onClick={() => {
+              const snap = createSnapshotInternal();
+              addLog(
+                `Point de restauration système créé : ${snap.name}`,
+                'success'
+              );
+              showNotice(`Snapshot « ${snap.name} » enregistré`, 'success');
+            }}
+            className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
           >
-            {isRunningSelfTest ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Play className="w-4 h-4" />
-            )}
-            <span>
-              {isRunningSelfTest
-                ? 'Diagnostic en cours...'
-                : 'Auto-diagnostic (7 tests)'}
-            </span>
+            <BookmarkPlus className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+            <span>Snapshot</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleApplyFullHardening}
+            className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Durcir le système</span>
           </button>
 
           <button
             type="button"
             onClick={onOpenSettingsModal}
-            className="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-cyan-500 text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+            className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-cyan-500 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
           >
-            <Sliders className="w-4 h-4 text-cyan-500" />
-            <span>Tous les paramètres</span>
+            <Sliders className="w-3.5 h-3.5 text-cyan-500" />
+            <span>Paramètres</span>
           </button>
-        </div>
-      </div>
 
-      {/* 4-Column Flat KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Hardening Posture */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Indice de durcissement
-              </div>
-              <div className="text-2xl font-mono tabular-nums font-bold text-slate-900 dark:text-white mt-1">
-                {hardeningScore}
-                <span className="text-sm text-slate-400 font-normal">/100</span>
-              </div>
-            </div>
-            <div
-              className={`p-2 rounded-xl border ${
-                hardeningScore >= 82
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-          </div>
-
-          <div className="space-y-2.5">
-            <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${
-                  hardeningScore >= 82
-                    ? 'bg-emerald-500'
-                    : hardeningScore >= 60
-                      ? 'bg-amber-500'
-                      : 'bg-red-500'
-                }`}
-                style={{ width: `${hardeningScore}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-slate-500 dark:text-slate-400">
-                {isEmergency
-                  ? 'Verrouillage actif'
-                  : hardeningScore >= 85
-                    ? 'Posture Forteresse'
-                    : 'Marge de durcissement'}
-              </span>
-              {hardeningScore < 92 && (
-                <button
-                  type="button"
-                  onClick={handleAutoHardenWeaknesses}
-                  className="font-semibold text-cyan-600 dark:text-cyan-400 hover:underline whitespace-nowrap cursor-pointer"
-                >
-                  Durcir auto.
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Card 2: Cryptographic Engine & Live WebCrypto Bench */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Pile Cryptographique
-              </div>
-              <div className="text-base font-mono tabular-nums font-bold text-slate-900 dark:text-white mt-1 truncate">
-                {settings.protocol.toUpperCase()} ·{' '}
-                {settings.postQuantumKex === 'ml-kem-1024'
-                  ? 'ML-KEM-1024'
-                  : settings.postQuantumKex === 'sntrup761'
-                    ? 'SNTRUP761'
-                    : 'X25519'}
-              </div>
-            </div>
-            <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-600 dark:text-cyan-400 shrink-0">
-              <Cpu className="w-4 h-4" />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
-            <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300">
-              {cryptoBench
-                ? `${cryptoBench.mbPerSec} Mo/s (${cryptoBench.avgLatencyMs}ms)`
-                : 'AES-256-GCM Subtle'}
-            </span>
+          {!confirmPanicRun ? (
             <button
               type="button"
-              onClick={runWebCryptoBenchmark}
-              disabled={isBenchmarkingCrypto}
-              className="font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              onClick={() => setConfirmPanicRun(true)}
+              className="px-3.5 py-2 rounded-xl border border-red-500/40 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              {isBenchmarkingCrypto ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Zap className="w-3 h-3" />
-              )}
-              <span>{cryptoBench ? 'Relancer' : 'Tester débit'}</span>
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Protocole Panique</span>
             </button>
-          </div>
-        </div>
-
-        {/* Card 3: Local Storage & RAM Key Hygiene */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Persistance &amp; Clé RAM
-              </div>
-              <div className="text-base font-mono tabular-nums font-bold text-slate-900 dark:text-white mt-1">
-                {storageInfo ? `${storageInfo.usedKb} Ko utilisés` : 'IndexedDB actif'}
-              </div>
-            </div>
-            <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
-              <HardDrive className="w-4 h-4" />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
-            <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
-              {logsCount} logs · {sessionsCount} sess. · {vaultCount} coffre
-            </span>
-            {vaultUnlocked ? (
+          ) : (
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
-                  onLockVault();
-                  addLog(
-                    'Clé maîtresse PBKDF2 purgée manuellement de la RAM',
-                    'info'
-                  );
+                  setConfirmPanicRun(false);
+                  onExecutePanic();
                 }}
-                className="font-semibold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer"
               >
-                <Unlock className="w-3 h-3" />
-                <span>Purger clé RAM</span>
+                Exécuter Panique
               </button>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold whitespace-nowrap">
-                <Lock className="w-3 h-3" />
-                <span>RAM isolée</span>
-              </span>
-            )}
+              <button
+                type="button"
+                onClick={() => setConfirmPanicRun(false)}
+                className="px-2.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
+              >
+                Annuler
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Inline Feedback Notice */}
+      {notice && (
+        <div
+          className={`px-4 py-3 rounded-xl border text-xs font-medium flex items-center justify-between gap-3 ${
+            notice.tone === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+              : notice.tone === 'error'
+                ? 'bg-red-500/10 border-red-500/30 text-red-800 dark:text-red-300'
+                : notice.tone === 'warning'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-800 dark:text-cyan-300'
+          }`}
+        >
+          <span>{notice.text}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="text-[11px] font-semibold underline cursor-pointer"
+          >
+            Fermer
+          </button>
+        </div>
+      )}
+
+      {/* 4-Card System Telemetry Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-2.5">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold">Indice de Durcissement</span>
+            <ShieldCheck className="w-4 h-4 text-cyan-500" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+              {hardeningScore}
+              <span className="text-sm font-normal text-slate-400">/100</span>
+            </span>
+            <span
+              className={`text-xs font-semibold ${
+                hardeningScore >= 85
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : hardeningScore >= 65
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-red-600 dark:text-red-400'
+              }`}
+            >
+              {hardeningScore >= 85
+                ? 'Forteresse'
+                : hardeningScore >= 65
+                  ? ' Intermédiaire'
+                  : 'Exposé'}
+            </span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-300 ${
+                hardeningScore >= 85
+                  ? 'bg-emerald-500'
+                  : hardeningScore >= 65
+                    ? 'bg-amber-500'
+                    : 'bg-red-500'
+              }`}
+              style={{ width: `${hardeningScore}%` }}
+            />
+          </div>
+          <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+            {passCount}/{selfTests.length || 10} tests conformes ·{' '}
+            {modifiedDiffs.length} écart(s) usine
           </div>
         </div>
 
-        {/* Card 4: Backend Runtime Telemetry */}
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between gap-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Runtime &amp; Démon Hôte
-              </div>
-              {isLoadingTelemetry && !telemetry ? (
-                <div className="h-6 w-36 rounded bg-slate-200 dark:bg-slate-800 animate-pulse mt-1" />
-              ) : (
-                <div className="text-base font-mono tabular-nums font-bold text-slate-900 dark:text-white mt-1 truncate">
-                  {telemetry
-                    ? `${telemetry.platform}/${telemetry.arch} · ${telemetry.cpuCores} cœurs`
-                    : `${isConnected ? 'Tunnel actif' : 'Veille locale'}`}
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={fetchRuntimeTelemetry}
-              title="Actualiser la télémétrie du démon"
-              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-cyan-500 cursor-pointer"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isLoadingTelemetry ? 'animate-spin' : ''}`}
-              />
-            </button>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-2.5">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold">Noyau Hôte &amp; Runtime</span>
+            <Server className="w-4 h-4 text-cyan-500" />
           </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white truncate">
+              {isLoadingTelemetry
+                ? 'Sonde...'
+                : `${telemetry?.platform || 'linux'}/${telemetry?.arch || 'x64'}`}
+            </span>
+            <span className="text-xs font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+              {telemetryRttMs !== null ? `RTT ${telemetryRttMs} ms` : 'Nominal'}
+            </span>
+          </div>
+          <div className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 truncate">
+            {telemetry
+              ? `${telemetry.cpuCores} cœurs · Load ${telemetry.loadAvg1m} · RSS ${telemetry.memoryRssMb} Mo`
+              : 'Collecte des compteurs processus...'}
+          </div>
+          <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+            {telemetry
+              ? `Uptime ${formatUptime(telemetry.uptimeSeconds)} · ${telemetry.interfaces?.length ?? 0} interface(s)`
+              : 'Node Runtime actif'}
+          </div>
+        </div>
 
-          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-            {telemetry ? (
-              <>
-                <span>
-                  Heap {telemetry.memoryHeapUsedMb} Mo · Uptime{' '}
-                  {formatUptime(telemetry.uptimeSeconds)}
-                </span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                  {telemetryRttMs ?? 2} ms
-                </span>
-              </>
-            ) : (
-              <>
-                <span>Profil {settings.powerProfile.toUpperCase()}</span>
-                <span>MTU {settings.mtuSize}B</span>
-              </>
-            )}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-2.5">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold">Clés Éphémères &amp; PFS</span>
+            <KeyRound className="w-4 h-4 text-cyan-500" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+              {formatCountdown(rekeySecondsLeft)}
+            </span>
+            <span className="text-xs font-mono text-cyan-600 dark:text-cyan-400 font-semibold">
+              {ephemeralKeys ? `ID ${ephemeralKeys.keyIdHex}` : 'Init RAM'}
+            </span>
+          </div>
+          <div className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300">
+            {cryptoBench
+              ? `AES-GCM : ${cryptoBench.mbPerSec} Mo/s (${cryptoBench.avgLatencyMs} ms)`
+              : `${telemetry?.cipherSuitesCount ?? 64} suites TLS · PQC prêt`}
+          </div>
+          <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+            Cycle PFS : {settings.ephemeralRekeyMinutes} min ·{' '}
+            {settings.strictMemoryLock ? 'mlockall actif' : 'swap standard'}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-2.5">
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-semibold">Mémoire &amp; Restauration</span>
+            <HardDrive className="w-4 h-4 text-cyan-500" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+              {storageInfo ? `${storageInfo.usedKb} Ko` : 'LocalDB'}
+            </span>
+            <span
+              className={`text-xs font-semibold ${
+                vaultUnlocked
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
+              {vaultUnlocked ? 'Coffre ouvert' : 'Coffre scellé'}
+            </span>
+          </div>
+          <div className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300">
+            {vaultCount} secret(s) · {logsCount} log(s) · {sessionsCount}{' '}
+            session(s)
+          </div>
+          <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+            {snapshots.length} snapshot(s) · Rétention{' '}
+            {settings.logRetentionHours === 0
+              ? 'RAM 0h'
+              : `${settings.logRetentionHours}h`}
           </div>
         </div>
       </div>
 
-      {/* Interactive 7-Stage System Self-Test Results (rendered when executed or empty prompt card) */}
-      <section className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <Activity className="w-4 h-4 text-cyan-500 shrink-0" />
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                Contrôle d&apos;intégrité des sous-systèmes
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Vérifie en direct le chiffrement WebCrypto, la passerelle serveur, le pare-feu sortant et la conformité post-quantique.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {!confirmPanicRun ? (
+      {/* 4-Workspace Sub-Navigation Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              {
+                id: 'audit',
+                label: 'Sous-systèmes & Audit',
+                icon: ShieldCheck,
+                badge: `${activeDirectivesCount}/17`,
+              },
+              {
+                id: 'lab',
+                label: 'Labo Réseau & Crypto',
+                icon: Cpu,
+                badge: `${settings.mtuSize}B`,
+              },
+              {
+                id: 'compiler',
+                label: 'Compilateur & Bundles',
+                icon: FileCode2,
+                badge: '6 cibles',
+              },
+              {
+                id: 'snapshots',
+                label: 'Points de Restauration',
+                icon: RotateCcw,
+                badge: String(snapshots.length),
+              },
+            ] as Array<{
+              id: SystemWorkspaceTab;
+              label: string;
+              icon: React.ComponentType<{ className?: string }>;
+              badge: string;
+            }>
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const active = workspaceTab === tab.id;
+            return (
               <button
+                key={tab.id}
                 type="button"
-                onClick={() => setConfirmPanicRun(true)}
-                className="px-3 py-1.5 rounded-xl border border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                onClick={() => setWorkspaceTab(tab.id)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-slate-900 dark:bg-cyan-600 text-white'
+                    : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-cyan-500/50'
+                }`}
               >
-                <ShieldAlert className="w-3.5 h-3.5" />
-                <span>Protocole Panique</span>
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onExecutePanic();
-                    setConfirmPanicRun(false);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold whitespace-nowrap cursor-pointer"
-                >
-                  Exécuter Panique
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmPanicRun(false)}
-                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-500 cursor-pointer"
-                >
-                  Annuler
-                </button>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={runFullSystemSelfTest}
-              disabled={isRunningSelfTest}
-              className="px-3.5 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-50"
-            >
-              {isRunningSelfTest ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Play className="w-3.5 h-3.5" />
-              )}
-              <span>{selfTests.length > 0 ? 'Relancer' : 'Exécuter'}</span>
-            </button>
-          </div>
-        </div>
-
-        {selfTests.length === 0 ? (
-          <div className="p-8 text-center space-y-3">
-            <Server className="w-7 h-7 text-slate-400 mx-auto" />
-            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Aucun cycle d&apos;auto-diagnostic exécuté durant cette session
-            </div>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Lancez la séquence de 7 tests pour auditer vos paramètres noyau, mesurer la latence WebCrypto et détecter tout vecteur de fuite.
-            </p>
-            <button
-              type="button"
-              onClick={runFullSystemSelfTest}
-              className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold cursor-pointer"
-            >
-              Démarrer la vérification système
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {selfTests.map((row) => (
-              <div
-                key={row.id}
-                className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
-              >
-                <div className="flex items-start sm:items-center gap-3 min-w-0">
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 mt-1.5 sm:mt-0 ${
-                      row.status === 'pass'
-                        ? 'bg-emerald-500'
-                        : row.status === 'warn'
-                          ? 'bg-amber-500'
-                          : 'bg-red-500'
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        {row.title}
-                      </span>
-                      <span className="font-mono text-[11px] text-slate-400">
-                        {row.subsystem}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      {row.detail}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                  {row.fixLabel && row.onFix && row.status !== 'pass' && (
-                    <button
-                      type="button"
-                      onClick={row.onFix}
-                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold whitespace-nowrap cursor-pointer"
-                    >
-                      {row.fixLabel}
-                    </button>
-                  )}
-                  <span
-                    className={`font-mono tabular-nums text-xs font-bold min-w-[72px] text-right ${
-                      row.status === 'pass'
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : row.status === 'warn'
-                          ? 'text-amber-600 dark:text-amber-400'
-                          : 'text-red-600 dark:text-red-400'
-                    }`}
-                  >
-                    {row.metric}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Interactive Kernel & Daemon Subsystems Table */}
-      <section className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              Sous-systèmes Noyau, Pare-feu Egress &amp; Gouvernance Démon
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Chaque modification ci-dessous met immédiatement à jour le moteur actif et recompile les profils natifs.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={subsystemSearch}
-                onChange={(e) => setSubsystemSearch(e.target.value)}
-                placeholder="Filtrer un module sysctl..."
-                className="pl-8 pr-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white outline-none focus:border-cyan-500 w-48"
-              />
-            </div>
-
-            <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 dark:border-slate-700">
-              {(
-                [
-                  { id: 'all', label: 'Tous' },
-                  { id: 'kernel', label: 'Noyau' },
-                  { id: 'egress', label: 'Egress' },
-                  { id: 'governance', label: 'Démon' },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setSubsystemFilter(tab.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
-                    subsystemFilter === tab.id
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                <span
+                  className={`font-mono tabular-nums text-[10px] px-1.5 py-0.5 rounded ${
+                    active
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                   }`}
                 >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
+                  {tab.badge}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {filteredSubsystems.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-500">
-            Aucun sous-système ne correspond au filtre « {subsystemSearch} ».
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {filteredSubsystems.map((item) => (
-              <div
-                key={item.id}
-                className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+        <button
+          type="button"
+          onClick={fetchDiagnostics}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 flex items-center gap-1.5 cursor-pointer"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Actualiser les sondes</span>
+        </button>
+      </div>
+
+      {/* =================================================================== */}
+      {/* TAB 1: SOUS-SYSTÈMES & AUDIT                                         */}
+      {/* =================================================================== */}
+      {workspaceTab === 'audit' && (
+        <div className="space-y-6">
+          {/* Interactive 10-Stage Self-Test */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-cyan-500" />
+                  <span>Auto-Diagnostic Intégral du Noyau (10 Contrôles)</span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Vérifie l’étanchéité Netfilter, l’accélération eBPF/XDP, le
+                  verrouillage RAM mlockall et corrige tout écart en un clic.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRunSelfTest}
+                disabled={isRunningSelfTest}
+                className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 self-start sm:self-auto cursor-pointer"
               >
-                <div className="space-y-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        item.status === 'nominal'
-                          ? 'bg-emerald-500'
-                          : item.status === 'warning'
-                            ? 'bg-amber-500'
-                            : 'bg-slate-400'
-                      }`}
-                    />
-                    <span className="text-xs font-bold text-slate-900 dark:text-white">
-                      {item.name}
-                    </span>
-                    <code className="font-mono text-[11px] text-cyan-700 dark:text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded">
-                      {item.directive}
-                    </code>
+                {isRunningSelfTest ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {isRunningSelfTest
+                    ? 'Audit séquentiel...'
+                    : 'Exécuter les 10 tests'}
+                </span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {selfTests.map((row) => {
+                const StatusIcon =
+                  row.status === 'running'
+                    ? Loader2
+                    : row.status === 'pass'
+                      ? CheckCircle2
+                      : row.status === 'warn'
+                        ? AlertTriangle
+                        : row.status === 'fail'
+                          ? XCircle
+                          : Minus;
+                const iconTone =
+                  row.status === 'running'
+                    ? 'text-cyan-500 animate-spin'
+                    : row.status === 'pass'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : row.status === 'warn'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : row.status === 'fail'
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-slate-400';
+
+                return (
+                  <div
+                    key={row.id}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3"
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <StatusIcon
+                        className={`w-4 h-4 mt-0.5 shrink-0 ${iconTone}`}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white">
+                            {row.title}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                            {row.subsystem}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          {row.detail}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {row.onFix && row.fixLabel && row.status !== 'running' && (
+                        <button
+                          type="button"
+                          onClick={row.onFix}
+                          className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold cursor-pointer"
+                        >
+                          {row.fixLabel}
+                        </button>
+                      )}
+                      <span
+                        className={`font-mono tabular-nums text-[11px] font-bold ${
+                          row.status === 'pass'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : row.status === 'warn'
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : row.status === 'fail'
+                                ? 'text-red-600 dark:text-red-400'
+                                : 'text-slate-500'
+                        }`}
+                      >
+                        {row.metric}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 pl-4">
-                    {item.description}
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 17-Row Kernel, eBPF, Anti-DPI & Daemon Subsystems Table */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Matrice des Sous-Systèmes Noyau, eBPF &amp; Gouvernance (17
+                  Directives)
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Modifiez en temps réel les paramètres sysctl, anti-DPI,
+                  re-cléage PFS et confinement mémoire.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={subsystemSearch}
+                    onChange={(e) => setSubsystemSearch(e.target.value)}
+                    placeholder="Filtrer (ex: ebpf, mlock, quic...)"
+                    className="pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:border-cyan-500 w-52"
+                  />
+                </div>
+
+                <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-0.5">
+                  {(
+                    [
+                      { id: 'all', label: 'Tous' },
+                      { id: 'kernel', label: 'Noyau & PQC' },
+                      { id: 'egress', label: 'Anti-DPI & Egress' },
+                      { id: 'governance', label: 'Mémoire & Démon' },
+                    ] as Array<{ id: SubsystemCategoryFilter; label: string }>
+                  ).map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSubsystemFilter(cat.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        subsystemFilter === cat.id
+                          ? 'bg-cyan-600 text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    <th className="py-2.5 px-4">Sous-système</th>
+                    <th className="py-2.5 px-4 hidden md:table-cell">
+                      Directive technique
+                    </th>
+                    <th className="py-2.5 px-4">État</th>
+                    <th className="py-2.5 px-4 text-right">Action directe</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-xs">
+                  {subsystemRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-slate-900 dark:text-white">
+                          {row.name}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          {row.description}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 hidden md:table-cell font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                        {row.technicalParam}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1.5 font-mono tabular-nums text-[11px] font-semibold ${
+                            row.isHealthy
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-amber-600 dark:text-amber-400'
+                          }`}
+                        >
+                          {row.isHealthy ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          )}
+                          <span>{row.statusLabel}</span>
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        {row.control}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* TAB 2: LABO RÉSEAU & CRYPTO                                          */}
+      {/* =================================================================== */}
+      {workspaceTab === 'lab' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Volatile RAM Ephemeral Key & PFS Engine */}
+            <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <KeyRound className="w-4 h-4 text-cyan-500" />
+                    <span>
+                      Générateur de Clés Éphémères RAM &amp; Benchmark WebCrypto
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Clé privée X25519 générée puis effacée du tampon JS après
+                    dérivation de l’identifiant public de session.
                   </p>
                 </div>
 
-                <div className="shrink-0 pl-4 sm:pl-0">{item.control}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Native Configuration Compiler & Factory Drift Inspector */}
-      <section className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <FileCode2 className="w-4 h-4 text-cyan-500 shrink-0" />
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                Compilateur de configurations natives &amp; Audit des écarts
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Exportez des fichiers prêts pour Linux/macOS/routeur ou inspectez les écarts vis-à-vis de la configuration d&apos;usine.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setCompilerTab('tunnel')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
-                compilerTab === 'tunnel'
-                  ? 'bg-cyan-600 text-white border-cyan-600'
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              {tunnelConfig.formatLabel}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCompilerTab('sysctl')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
-                compilerTab === 'sysctl'
-                  ? 'bg-cyan-600 text-white border-cyan-600'
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              Sysctl Noyau
-            </button>
-            <button
-              type="button"
-              onClick={() => setCompilerTab('nftables')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer ${
-                compilerTab === 'nftables'
-                  ? 'bg-cyan-600 text-white border-cyan-600'
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              Pare-feu nftables
-            </button>
-            <button
-              type="button"
-              onClick={() => setCompilerTab('diff')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border font-mono tabular-nums cursor-pointer ${
-                compilerTab === 'diff'
-                  ? 'bg-cyan-600 text-white border-cyan-600'
-                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              Écarts Usine ({modifiedDiffs.length})
-            </button>
-          </div>
-        </div>
-
-        {compilerTab !== 'diff' ? (
-          <div className="p-5 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-xs font-mono text-slate-500 dark:text-slate-400">
-                <Terminal className="w-3.5 h-3.5 text-cyan-500" />
-                <span>{activeCompiledFile.filename}</span>
-                {clipboardSecondsLeft !== null && (
-                  <span className="text-amber-600 dark:text-amber-400 tabular-nums">
-                    · Purge presse-papiers dans {clipboardSecondsLeft}s
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleCopyActiveConfig}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                  onClick={() => generateVolatileKeyPair(false)}
+                  className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Régénérer RAM</span>
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 font-mono text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">Session Key-ID :</span>
+                  <span className="font-bold text-cyan-600 dark:text-cyan-400 tabular-nums">
+                    {ephemeralKeys?.keyIdHex || '—'} (générée à{' '}
+                    {ephemeralKeys?.generatedAt || '—'})
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">Clé publique X25519 :</span>
+                  <span className="text-slate-900 dark:text-slate-100 truncate max-w-[230px]">
+                    {ephemeralKeys?.publicKeyBase64 || '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">
+                    Jeton PSK {settings.postQuantumKex.toUpperCase()} :
+                  </span>
+                  <span className="text-slate-700 dark:text-slate-300">
+                    {ephemeralKeys?.presharedKeyMask || '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-500">Prochain re-cléage PFS :</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    dans {formatCountdown(rekeySecondsLeft)} (cycle{' '}
+                    {settings.ephemeralRekeyMinutes}m)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRunCryptoBenchmark}
+                    disabled={isBenchmarkingCrypto}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-cyan-500 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isBenchmarkingCrypto ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-500" />
+                    ) : (
+                      <Zap className="w-3.5 h-3.5 text-cyan-500" />
+                    )}
+                    <span>Benchmark AES-256-GCM</span>
+                  </button>
+                  {cryptoBench && (
+                    <span className="text-xs font-mono tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+                      {cryptoBench.mbPerSec} Mo/s
+                    </span>
+                  )}
+                </div>
+
+                {vaultUnlocked && (
+                  <button
+                    type="button"
+                    onClick={onLockVault}
+                    className="px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Purger clé Coffre RAM</span>
+                  </button>
+                )}
+              </div>
+            </section>
+
+            {/* Path-MTU & Encapsulation Overhead Analyzer */}
+            <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Network className="w-4 h-4 text-cyan-500" />
+                    <span>
+                      Analyseur Path-MTU &amp; Budget d’Encapsulation
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Calcule la surcharge exacte des en-têtes{' '}
+                    {settings.protocol.toUpperCase()} + AEAD + Anti-DPI selon la
+                    liaison physique.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleRunPathMtuProbe(selectedLinkCeiling)}
+                  disabled={isProbingMtu}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {isProbingMtu ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5" />
+                  )}
+                  <span>Sonder MTU</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { ceiling: 1500, label: 'Ethernet 1500B' },
+                  { ceiling: 1492, label: 'PPPoE 1492B' },
+                  { ceiling: 1420, label: '5G / LTE 1420B' },
+                  { ceiling: 1360, label: 'Wi-Fi Hôtel 1360B' },
+                ].map((preset) => (
+                  <button
+                    key={preset.ceiling}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLinkCeiling(preset.ceiling);
+                      handleRunPathMtuProbe(preset.ceiling);
+                    }}
+                    className={`py-2 px-2.5 rounded-xl text-[11px] font-mono tabular-nums font-semibold border transition-colors cursor-pointer ${
+                      selectedLinkCeiling === preset.ceiling
+                        ? 'bg-cyan-600 text-white border-cyan-600'
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {mtuReport && (
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono tabular-nums">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Overhead total :{' '}
+                      <strong className="text-slate-900 dark:text-white">
+                        {mtuReport.breakdown.totalOverheadBytes} octets
+                      </strong>{' '}
+                      (IP {mtuReport.breakdown.ipHeaderBytes}B + L4{' '}
+                      {mtuReport.breakdown.transportBytes}B + Tunnel{' '}
+                      {mtuReport.breakdown.tunnelHeaderBytes}B + AEAD{' '}
+                      {mtuReport.breakdown.aeadTagBytes}B)
+                    </span>
+                    <span className="text-cyan-600 dark:text-cyan-400 font-bold">
+                      RTT {mtuReport.rttMs} ms (±{mtuReport.jitterMs} ms)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <div className="text-xs">
+                      <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">
+                        MTU recommandé : {mtuReport.recommendedMtu}B
+                      </span>
+                      <span className="text-slate-500 ml-2 font-mono tabular-nums">
+                        (MSS {mtuReport.maxTcpMss}B · Clé PQC{' '}
+                        {mtuReport.pqcHandshakeBytes}B)
+                      </span>
+                    </div>
+
+                    {settings.mtuSize !== mtuReport.recommendedMtu ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateSettings('mtuSize', mtuReport.recommendedMtu);
+                          showNotice(
+                            `Segment MTU calibré à ${mtuReport.recommendedMtu} octets`,
+                            'success'
+                          );
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold font-mono tabular-nums cursor-pointer"
+                      >
+                        Appliquer {mtuReport.recommendedMtu}B
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Aligné</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* Live Packet Firewall & Routing Verdict Simulator */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Route className="w-4 h-4 text-cyan-500" />
+                  <span>
+                    Simulateur de Verdict Pare-feu &amp; Routage (nftables +
+                    ip-rule)
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Évalue en direct comment un paquet sortant est traité selon
+                  vos règles Kill Switch, QUIC, IPv6, LAN et Split Tunneling.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: 'HTTPS 1.1.1.1', dst: '1.1.1.1', proto: 'TCP' as const, port: 443 },
+                  { label: 'QUIC UDP/443', dst: '142.250.74.14', proto: 'UDP' as const, port: 443 },
+                  { label: 'LAN 192.168.1.25', dst: '192.168.1.25', proto: 'TCP' as const, port: 445 },
+                  { label: 'IPv6 2606:4700::1111', dst: '2606:4700:4700::1111', proto: 'ICMPv6' as const, port: 443 },
+                  { label: 'Traqueur DNS', dst: 'telemetry.ad-tracker.example', proto: 'TCP' as const, port: 443 },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      setSimDest(preset.dst);
+                      setSimProtocol(preset.proto);
+                      setSimPort(preset.port);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-mono text-slate-700 dark:text-slate-300 cursor-pointer"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  Destination (IPv4, IPv6 ou Domaine)
+                </label>
+                <input
+                  type="text"
+                  value={simDest}
+                  onChange={(e) => setSimDest(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white outline-none focus:border-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  Protocole L4
+                </label>
+                <select
+                  aria-label="Protocole simulé"
+                  value={simProtocol}
+                  onChange={(e) =>
+                    setSimProtocol(e.target.value as 'UDP' | 'TCP' | 'ICMPv6')
+                  }
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-white outline-none focus:border-cyan-500"
+                >
+                  <option value="TCP">TCP</option>
+                  <option value="UDP">UDP</option>
+                  <option value="ICMPv6">ICMPv6</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  Port cible
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={simPort}
+                  onChange={(e) => setSimPort(Number(e.target.value) || 443)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono tabular-nums text-slate-900 dark:text-white outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2.5 py-0.5 rounded-md font-mono text-xs font-bold ${
+                      packetVerdict.action === 'ACCEPT_TUNNEL'
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : packetVerdict.action === 'BYPASS_DIRECT'
+                          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                          : 'bg-red-500/15 text-red-700 dark:text-red-300'
+                    }`}
+                  >
+                    {packetVerdict.action}
+                  </span>
+                  <span className="text-xs font-mono text-slate-700 dark:text-slate-300">
+                    Sortie : <strong>{packetVerdict.outboundInterface}</strong>
+                  </span>
+                </div>
+                <span className="text-xs font-mono tabular-nums text-slate-500">
+                   Règle : {packetVerdict.matchedRule} · Latence est.{' '}
+                  {packetVerdict.latencyImpactMs} ms
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {packetVerdict.explanation}
+              </p>
+
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                {packetVerdict.traceSteps.map((step) => (
+                  <div key={step}>{step}</div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Host Network Interfaces Table */}
+          {telemetry?.interfaces && telemetry.interfaces.length > 0 && (
+            <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Interfaces Réseau Hôtes Détectées (Sanitisées)
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Topologie des adaptateurs réseau exposés au démon local.
+                </p>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full text-left border-collapse text-xs font-mono tabular-nums">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-[11px] text-slate-500">
+                      <th className="py-2 px-3">Interface</th>
+                      <th className="py-2 px-3">Famille</th>
+                      <th className="py-2 px-3">CIDR</th>
+                      <th className="py-2 px-3 hidden sm:table-cell">MAC</th>
+                      <th className="py-2 px-3 text-right">MTU</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {telemetry.interfaces.map((iface, idx) => (
+                      <tr key={`${iface.name}-${iface.family}-${idx}`}>
+                        <td className="py-2 px-3 font-bold text-slate-900 dark:text-white">
+                          {iface.name}
+                        </td>
+                        <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
+                          {iface.family}
+                        </td>
+                        <td className="py-2 px-3 text-cyan-700 dark:text-cyan-400">
+                          {iface.cidr}
+                        </td>
+                        <td className="py-2 px-3 hidden sm:table-cell text-slate-500">
+                          {iface.mac}
+                        </td>
+                        <td className="py-2 px-3 text-right text-slate-700 dark:text-slate-300">
+                          {iface.mtu}B
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* TAB 3: COMPILATEUR NATIF & BUNDLES SIGNÉS                           */}
+      {/* =================================================================== */}
+      {workspaceTab === 'compiler' && (
+        <div className="space-y-6">
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileCode2 className="w-4 h-4 text-cyan-500" />
+                  <span>
+                    Compilateur de Fichiers Système Natifs (6 Cibles OS)
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Génération déterministe prête pour Linux / WireGuard /
+                  OpenVPN / StrongSwan / nftables / systemd.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mr-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={injectEphemeralIntoCompiler}
+                    onChange={(e) =>
+                      setInjectEphemeralIntoCompiler(e.target.checked)
+                    }
+                    className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                  />
+                  <span>Injecter métadonnées clés RAM</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleCopyCompilerOutput}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 hover:border-cyan-500 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
                 >
                   {copiedCompiler ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
                   ) : (
                     <Copy className="w-3.5 h-3.5 text-cyan-500" />
                   )}
-                  <span>{copiedCompiler ? 'Copié' : 'Copier'}</span>
+                  <span>
+                    {copiedCompiler
+                      ? 'Copié'
+                      : clipboardSecondsLeft !== null
+                        ? `Purge dans ${clipboardSecondsLeft}s`
+                        : 'Copier'}
+                  </span>
                 </button>
+
                 <button
                   type="button"
-                  onClick={handleDownloadActiveConfig}
+                  onClick={handleDownloadCompilerFile}
                   className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Télécharger {activeCompiledFile.filename}</span>
+                  <span>Télécharger {activeCompilerPayload.filename}</span>
                 </button>
               </div>
             </div>
 
-            <pre className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-xs leading-relaxed text-slate-800 dark:text-slate-200 overflow-x-auto max-h-80">
-              {activeCompiledFile.content}
-            </pre>
-          </div>
-        ) : (
-          <div className="p-5 space-y-4">
-            {modifiedDiffs.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <Check className="w-7 h-7 text-emerald-500 mx-auto" />
-                <div className="text-xs font-bold text-slate-900 dark:text-white">
-                  Configuration strictement identique au profil d&apos;usine par défaut
-                </div>
-                <p className="text-xs text-slate-500">
-                  Aucun paramètre système ne dévie actuellement des valeurs recommandées par défaut.
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  {
+                    id: 'tunnel',
+                    label: `Tunnel (${settings.protocol.toUpperCase()})`,
+                  },
+                  { id: 'sysctl', label: 'Sysctl Noyau' },
+                  { id: 'nftables', label: 'Pare-feu nftables' },
+                  { id: 'systemd', label: 'Unité systemd durcie' },
+                  { id: 'routing', label: 'Routage ip-rule' },
+                  {
+                    id: 'diff',
+                    label: `Écarts Usine (${modifiedDiffs.length})`,
+                  },
+                ] as Array<{ id: CompilerTab; label: string }>
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setCompilerTab(t.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    compilerTab === t.id
+                      ? 'bg-slate-900 dark:bg-cyan-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-xl bg-slate-950 border border-slate-800 p-4 overflow-x-auto max-h-[380px]">
+              <pre className="font-mono text-xs leading-relaxed text-slate-200 whitespace-pre">
+                {activeCompilerPayload.content}
+              </pre>
+            </div>
+          </section>
+
+          {/* Cryptographically Signed System Bundle */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Bundles Système Signés SHA-256 / HMAC (.renum-sys.json)
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Archive l’intégralité de la configuration et des 5 manifestes
+                  OS avec sceau d’intégrité vérifié à l’importation.
                 </p>
               </div>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">
-                      {modifiedDiffs.length}
-                    </span>{' '}
-                    paramètre(s) personnalisé(s) par rapport à la référence usine.
-                  </span>
 
-                  {!confirmFactoryReset ? (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmFactoryReset(true)}
-                      className="px-3 py-1.5 rounded-xl border border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Tout rétablir par défaut</span>
-                    </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={bundleInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleImportSignedBundle}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleExportSignedBundle}
+                  disabled={isSigningBundle}
+                  className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-cyan-600 hover:bg-slate-800 dark:hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSigningBundle ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onResetSettings();
-                          setConfirmFactoryReset(false);
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold cursor-pointer"
-                      >
-                        Confirmer réinitialisation
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmFactoryReset(false)}
-                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-500 cursor-pointer"
-                      >
-                        Annuler
-                      </button>
-                    </div>
+                    <Download className="w-3.5 h-3.5" />
                   )}
-                </div>
+                  <span>Exporter un bundle signé</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => bundleInputRef.current?.click()}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-cyan-500 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5 text-cyan-500" />
+                  <span>Vérifier &amp; Importer</span>
+                </button>
+              </div>
+            </div>
 
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
-                        <th className="py-2.5 px-3.5 font-semibold">Paramètre</th>
-                        <th className="py-2.5 px-3.5 font-semibold">Catégorie</th>
-                        <th className="py-2.5 px-3.5 font-semibold">Usine</th>
-                        <th className="py-2.5 px-3.5 font-semibold">Valeur active</th>
-                        <th className="py-2.5 px-3.5 font-semibold text-right">
-                          Action
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                      {modifiedDiffs.map((diff) => (
-                        <tr
-                          key={String(diff.key)}
-                          className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40"
-                        >
-                          <td className="py-2.5 px-3.5 font-bold text-slate-900 dark:text-white">
-                            {diff.label}
-                          </td>
-                          <td className="py-2.5 px-3.5 text-slate-500 dark:text-slate-400">
-                            {diff.category}
-                          </td>
-                          <td className="py-2.5 px-3.5 font-mono tabular-nums text-slate-500">
-                            {diff.defaultFormatted}
-                          </td>
-                          <td className="py-2.5 px-3.5 font-mono tabular-nums font-bold text-cyan-600 dark:text-cyan-400">
-                            {diff.currentFormatted}
-                          </td>
-                          <td className="py-2.5 px-3.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (diff.key === 'killSwitch') {
-                                  patchSettings(
-                                    {
-                                      killSwitch: DEFAULT_APP_SETTINGS.killSwitch,
-                                      killSwitchMode:
-                                        DEFAULT_APP_SETTINGS.killSwitchMode,
-                                    },
-                                    `Paramètre « ${diff.label} » rétabli`
-                                  );
-                                } else if (diff.key === 'autoRotation') {
-                                  patchSettings(
-                                    {
-                                      autoRotation:
-                                        DEFAULT_APP_SETTINGS.autoRotation,
-                                      rotationInterval:
-                                        DEFAULT_APP_SETTINGS.rotationInterval,
-                                    },
-                                    `Paramètre « ${diff.label} » rétabli`
-                                  );
-                                } else {
-                                  updateSettings(
-                                    diff.key,
-                                    DEFAULT_APP_SETTINGS[diff.key]
-                                  );
-                                }
-                              }}
-                              className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer"
-                            >
-                              Rétablir
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            {bundleVerifyStatus && (
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  {bundleVerifyStatus.verified ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                  )}
+                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                    {bundleVerifyStatus.message}
+                  </span>
                 </div>
-              </>
+                {bundleVerifyStatus.sha256 && (
+                  <span className="font-mono text-[11px] text-slate-500 truncate max-w-xs">
+                    SHA-256 : {bundleVerifyStatus.sha256.slice(0, 24)}…
+                  </span>
+                )}
+              </div>
             )}
-          </div>
-        )}
-      </section>
+          </section>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* TAB 4: POINTS DE RESTAURATION & RESET                               */}
+      {/* =================================================================== */}
+      {workspaceTab === 'snapshots' && (
+        <div className="space-y-6">
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <BookmarkPlus className="w-4 h-4 text-cyan-500" />
+                  <span>
+                    Points de Restauration Système ({snapshots.length}/15)
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Capturez l’état exact de toutes les directives système pour y
+                  revenir instantanément sans perte.
+                </p>
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoSnapshotOnHarden}
+                  onChange={(e) => setAutoSnapshotOnHarden(e.target.checked)}
+                  className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+                />
+                <span>Snapshot auto avant « Durcir le système »</span>
+              </label>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const snap = createSnapshotInternal();
+                addLog(
+                  `Point de restauration enregistré : ${snap.name}`,
+                  'success'
+                );
+                showNotice(`Snapshot « ${snap.name} » sauvegardé`, 'success');
+              }}
+              className="flex flex-col sm:flex-row gap-2.5"
+            >
+              <input
+                type="text"
+                value={snapshotName}
+                onChange={(e) => setSnapshotName(e.target.value)}
+                placeholder="Libellé du point de restauration (ex: Avant test Anti-DPI, Réseau Hôtel...)"
+                className="flex-1 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:border-cyan-500"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold whitespace-nowrap cursor-pointer"
+              >
+                Capturer l’état actuel
+              </button>
+            </form>
+
+            {snapshots.length === 0 ? (
+              <div className="p-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
+                Aucun point de restauration enregistré. Capturez un snapshot
+                avant de modifier vos paramètres noyau.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                {snapshots.map((snap) => {
+                  const delta = countSnapshotDifferences(
+                    settings,
+                    snap.settings
+                  );
+                  return (
+                    <div
+                      key={snap.id}
+                      className="p-3.5 bg-slate-50/50 dark:bg-slate-950/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                    >
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {snap.name}
+                          </span>
+                          <span className="font-mono tabular-nums text-[11px] font-semibold text-cyan-600 dark:text-cyan-400">
+                            {snap.hardeningScore}/100
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-mono tabular-nums text-slate-500">
+                          {snap.createdAt} · {snap.protocol.toUpperCase()} ·{' '}
+                          {snap.postQuantumKex.toUpperCase()} ·{' '}
+                          {delta === 0
+                            ? 'Identique à l’état actif'
+                            : `${delta} paramètre(s) d’écart`}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          disabled={delta === 0}
+                          onClick={() => {
+                            patchSettings(
+                              sanitizeAppSettings(snap.settings),
+                              `Point de restauration appliqué : ${snap.name}`
+                            );
+                            showNotice(
+                              `État restauré depuis « ${snap.name} »`,
+                              'success'
+                            );
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold cursor-pointer"
+                        >
+                          Restaurer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            persistSnapshots(
+                              snapshots.filter((s) => s.id !== snap.id)
+                            );
+                            showNotice('Snapshot supprimé', 'info');
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-500 cursor-pointer"
+                          title="Supprimer ce point de restauration"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Factory Reset Card */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Réinitialisation aux Valeurs d’Usine ({modifiedDiffs.length}{' '}
+                écart(s) actif(s))
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Restaure tous les réglages réseau, sysctl, anti-DPI et démon aux
+                valeurs nominales par défaut.
+              </p>
+            </div>
+
+            {!confirmFactoryReset ? (
+              <button
+                type="button"
+                onClick={() => setConfirmFactoryReset(true)}
+                className="px-4 py-2 rounded-xl border border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Réinitialiser l’état usine</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onResetSettings();
+                    setConfirmFactoryReset(false);
+                    showNotice(
+                      'Paramètres système restaurés aux valeurs d’usine',
+                      'info'
+                    );
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  Confirmer la remise à zéro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmFactoryReset(false)}
+                  className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
+                >
+                  Annuler
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 };

@@ -12,6 +12,7 @@ import {
   PostQuantumKex,
   SystemPowerProfile,
   PanicActionMode,
+  TrafficPaddingJitterMs,
 } from './types';
 
 export const REALISTIC_USER_AGENTS = [
@@ -146,6 +147,14 @@ export function isCountryExcludedByJurisdiction(
   return false;
 }
 
+export function getJurisdictionTier(
+  country: string
+): 'sanctuary' | '14-eyes' | '5-eyes' {
+  if (EYES_5_COUNTRIES.includes(country)) return '5-eyes';
+  if (EYES_14_COUNTRIES.includes(country)) return '14-eyes';
+  return 'sanctuary';
+}
+
 export const DEFAULT_SPLIT_TUNNEL_RULES: SplitTunnelRule[] = [
   {
     id: 'rule-lan-cidr',
@@ -245,6 +254,12 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   clipboardAutoClearSeconds: 30,
   privacyScreenBlurOnInactive: false,
   panicAction: 'lockdown',
+  ebpfXdpAcceleration: true,
+  tlsClientHelloFragmentation: false,
+  trafficPaddingJitterMs: 0,
+  ephemeralRekeyMinutes: 10,
+  strictMemoryLock: true,
+  ntpDriftProtection: true,
 };
 
 function clampInt(val: unknown, min: number, max: number, fallback: number): number {
@@ -324,6 +339,7 @@ export function sanitizeAppSettings(
     'disconnect_wipe',
     'lock_vault_and_scramble',
   ];
+  const validPaddingJitter: TrafficPaddingJitterMs[] = [0, 15, 40, 85];
 
   const rules = Array.isArray(src.splitTunnelRules)
     ? src.splitTunnelRules
@@ -664,11 +680,38 @@ export function sanitizeAppSettings(
     panicAction: validPanicActions.includes(src.panicAction as PanicActionMode)
       ? (src.panicAction as PanicActionMode)
       : DEFAULT_APP_SETTINGS.panicAction,
+    ebpfXdpAcceleration:
+      typeof src.ebpfXdpAcceleration === 'boolean'
+        ? src.ebpfXdpAcceleration
+        : DEFAULT_APP_SETTINGS.ebpfXdpAcceleration,
+    tlsClientHelloFragmentation:
+      typeof src.tlsClientHelloFragmentation === 'boolean'
+        ? src.tlsClientHelloFragmentation
+        : DEFAULT_APP_SETTINGS.tlsClientHelloFragmentation,
+    trafficPaddingJitterMs: validPaddingJitter.includes(
+      Number(src.trafficPaddingJitterMs) as TrafficPaddingJitterMs
+    )
+      ? (Number(src.trafficPaddingJitterMs) as TrafficPaddingJitterMs)
+      : DEFAULT_APP_SETTINGS.trafficPaddingJitterMs,
+    ephemeralRekeyMinutes: clampInt(
+      src.ephemeralRekeyMinutes,
+      1,
+      60,
+      DEFAULT_APP_SETTINGS.ephemeralRekeyMinutes
+    ),
+    strictMemoryLock:
+      typeof src.strictMemoryLock === 'boolean'
+        ? src.strictMemoryLock
+        : DEFAULT_APP_SETTINGS.strictMemoryLock,
+    ntpDriftProtection:
+      typeof src.ntpDriftProtection === 'boolean'
+        ? src.ntpDriftProtection
+        : DEFAULT_APP_SETTINGS.ntpDriftProtection,
   };
 }
 
 export function computeSettingsHardeningScore(settings: AppSettings): number {
-  let score = 16;
+  let score = 9;
   if (settings.killSwitch) score += settings.killSwitchMode === 'strict' ? 12 : 8;
   if (settings.dnsLeakProtection) score += 10;
   if (settings.ipv6LeakProtection) score += 9;
@@ -680,6 +723,12 @@ export function computeSettingsHardeningScore(settings: AppSettings): number {
   if (settings.arpSpoofGuard) score += 4;
   if (settings.strictReversePathFilter) score += 3;
   if (settings.blockCaptivePortalProbes) score += 2;
+  if (settings.strictMemoryLock) score += 2;
+  if (settings.ntpDriftProtection) score += 2;
+  if (settings.ebpfXdpAcceleration) score += 1;
+  if (settings.tlsClientHelloFragmentation) score += 2;
+  if (settings.trafficPaddingJitterMs > 0) score += 2;
+  if (settings.ephemeralRekeyMinutes <= 10) score += 2;
   if (settings.adBlocker) {
     const activeFilters = Object.values(settings.threatFilters).filter(Boolean).length;
     score += Math.round((activeFilters / 4) * 6);
@@ -771,16 +820,16 @@ export const MOCK_IDENTITIES: VirtualIdentity[] = [
 ];
 
 export const MOCK_NODES: DeviceNode[] = [
-  { id: 'n1', name: 'FR-PAR-01', type: 'server', status: 'active', signalStrength: 98, transferRate: 185, latency: 12, autonomyProfile: 'provider', tags: ['fast'], ip: '185.212.149.42', country: 'France', city: 'Paris', lat: 48.8566, lon: 2.3522, timezone: 'UTC+1' },
-  { id: 'n2', name: 'FR-LYO-02', type: 'desktop', status: 'active', signalStrength: 89, transferRate: 74, latency: 17, autonomyProfile: 'balanced', tags: ['relay'], ip: '185.212.151.18', country: 'France', city: 'Lyon', lat: 45.764, lon: 4.8357, timezone: 'UTC+1' },
-  { id: 'n3', name: 'CH-ZUR-01', type: 'server', status: 'active', signalStrength: 97, transferRate: 210, latency: 21, autonomyProfile: 'provider', tags: ['stealth', 'exit'], ip: '179.43.168.24', country: 'Suisse', city: 'Zürich', lat: 47.3769, lon: 8.5417, timezone: 'UTC+1' },
-  { id: 'n4', name: 'CH-GEN-02', type: 'server', status: 'active', signalStrength: 93, transferRate: 145, latency: 24, autonomyProfile: 'provider', tags: ['stealth'], ip: '179.43.170.85', country: 'Suisse', city: 'Genève', lat: 46.2044, lon: 6.1432, timezone: 'UTC+1' },
-  { id: 'n5', name: 'DE-FRA-01', type: 'server', status: 'active', signalStrength: 99, transferRate: 240, latency: 16, autonomyProfile: 'provider', tags: ['fast'], ip: '91.198.174.66', country: 'Allemagne', city: 'Francfort', lat: 50.1109, lon: 8.6821, timezone: 'UTC+1' },
-  { id: 'n6', name: 'IS-REY-01', type: 'server', status: 'active', signalStrength: 94, transferRate: 160, latency: 38, autonomyProfile: 'provider', tags: ['stealth', 'exit'], ip: '82.221.105.19', country: 'Islande', city: 'Reykjavik', lat: 64.1466, lon: -21.9426, timezone: 'UTC+0' },
-  { id: 'n7', name: 'EE-TAL-01', type: 'server', status: 'active', signalStrength: 91, transferRate: 135, latency: 34, autonomyProfile: 'balanced', tags: ['relay'], ip: '185.65.134.88', country: 'Estonie', city: 'Tallinn', lat: 59.437, lon: 24.7536, timezone: 'UTC+2' },
-  { id: 'n8', name: 'US-NYC-01', type: 'server', status: 'active', signalStrength: 92, transferRate: 195, latency: 76, autonomyProfile: 'provider', tags: ['exit'], ip: '198.54.131.70', country: 'USA', city: 'New York', lat: 40.7128, lon: -74.006, timezone: 'UTC-5' },
-  { id: 'n9', name: 'PA-PTY-01', type: 'iot', status: 'active', signalStrength: 82, transferRate: 68, latency: 118, autonomyProfile: 'balanced', tags: ['stealth'], ip: '190.14.37.112', country: 'Panama', city: 'Panama City', lat: 8.9824, lon: -79.5199, timezone: 'UTC-5' },
-  { id: 'n10', name: 'SG-SIN-01', type: 'server', status: 'active', signalStrength: 96, transferRate: 205, latency: 145, autonomyProfile: 'provider', tags: ['exit'], ip: '103.253.41.90', country: 'Singapour', city: 'Singapour', lat: 1.3521, lon: 103.8198, timezone: 'UTC+8' },
+  { id: 'n1', name: 'FR-PAR-01', type: 'server', status: 'active', signalStrength: 98, transferRate: 185, latency: 12, jitter: 1.4, packetLoss: 0, asn: 'AS12876 Scaleway IX', loadPct: 34, autonomyProfile: 'provider', tags: ['fast'], ip: '185.212.149.42', country: 'France', city: 'Paris', lat: 48.8566, lon: 2.3522, timezone: 'UTC+1' },
+  { id: 'n2', name: 'FR-LYO-02', type: 'desktop', status: 'active', signalStrength: 89, transferRate: 74, latency: 17, jitter: 2.6, packetLoss: 0, asn: 'AS3215 Orange Backbone', loadPct: 48, autonomyProfile: 'balanced', tags: ['relay'], ip: '185.212.151.18', country: 'France', city: 'Lyon', lat: 45.764, lon: 4.8357, timezone: 'UTC+1' },
+  { id: 'n3', name: 'CH-ZUR-01', type: 'server', status: 'active', signalStrength: 97, transferRate: 210, latency: 21, jitter: 1.2, packetLoss: 0, asn: 'AS51395 Bahnhof Swiss', loadPct: 26, autonomyProfile: 'provider', tags: ['stealth', 'exit'], ip: '179.43.168.24', country: 'Suisse', city: 'Zürich', lat: 47.3769, lon: 8.5417, timezone: 'UTC+1' },
+  { id: 'n4', name: 'CH-GEN-02', type: 'server', status: 'active', signalStrength: 93, transferRate: 145, latency: 24, jitter: 1.9, packetLoss: 0, asn: 'AS20965 Proton Transit', loadPct: 31, autonomyProfile: 'provider', tags: ['stealth'], ip: '179.43.170.85', country: 'Suisse', city: 'Genève', lat: 46.2044, lon: 6.1432, timezone: 'UTC+1' },
+  { id: 'n5', name: 'DE-FRA-01', type: 'server', status: 'active', signalStrength: 99, transferRate: 240, latency: 16, jitter: 1.1, packetLoss: 0, asn: 'AS24940 Hetzner DE-CIX', loadPct: 41, autonomyProfile: 'provider', tags: ['fast'], ip: '91.198.174.66', country: 'Allemagne', city: 'Francfort', lat: 50.1109, lon: 8.6821, timezone: 'UTC+1' },
+  { id: 'n6', name: 'IS-REY-01', type: 'server', status: 'active', signalStrength: 94, transferRate: 160, latency: 38, jitter: 2.3, packetLoss: 0, asn: 'AS48685 Advania Verne', loadPct: 19, autonomyProfile: 'provider', tags: ['stealth', 'exit'], ip: '82.221.105.19', country: 'Islande', city: 'Reykjavik', lat: 64.1466, lon: -21.9426, timezone: 'UTC+0' },
+  { id: 'n7', name: 'EE-TAL-01', type: 'server', status: 'active', signalStrength: 91, transferRate: 135, latency: 34, jitter: 2.8, packetLoss: 0.1, asn: 'AS3249 Telia Tallinn', loadPct: 29, autonomyProfile: 'balanced', tags: ['relay'], ip: '185.65.134.88', country: 'Estonie', city: 'Tallinn', lat: 59.437, lon: 24.7536, timezone: 'UTC+2' },
+  { id: 'n8', name: 'US-NYC-01', type: 'server', status: 'active', signalStrength: 92, transferRate: 195, latency: 76, jitter: 4.5, packetLoss: 0.2, asn: 'AS20473 Constant NYIIX', loadPct: 57, autonomyProfile: 'provider', tags: ['exit'], ip: '198.54.131.70', country: 'USA', city: 'New York', lat: 40.7128, lon: -74.006, timezone: 'UTC-5' },
+  { id: 'n9', name: 'PA-PTY-01', type: 'iot', status: 'active', signalStrength: 82, transferRate: 68, latency: 118, jitter: 6.4, packetLoss: 0.3, asn: 'AS52275 Cable Onda IX', loadPct: 22, autonomyProfile: 'balanced', tags: ['stealth'], ip: '190.14.37.112', country: 'Panama', city: 'Panama City', lat: 8.9824, lon: -79.5199, timezone: 'UTC-5' },
+  { id: 'n10', name: 'SG-SIN-01', type: 'server', status: 'active', signalStrength: 96, transferRate: 205, latency: 145, jitter: 5.1, packetLoss: 0.1, asn: 'AS135377 Equinix SG1', loadPct: 38, autonomyProfile: 'provider', tags: ['exit'], ip: '103.253.41.90', country: 'Singapour', city: 'Singapour', lat: 1.3521, lon: 103.8198, timezone: 'UTC+8' },
 ];
 
 export interface AnonymityLevelSpec {
@@ -1556,9 +1605,16 @@ export function resolveDnsPrimaryIp(settings: AppSettings): string {
   }
 }
 
+export interface EphemeralKeyMetadata {
+  keyIdHex: string;
+  publicKeyBase64: string;
+  presharedKeyMask: string;
+}
+
 export function compileNativeTunnelConfig(
   settings: AppSettings,
-  identity: VirtualIdentity
+  identity: VirtualIdentity,
+  ephemeralKeys?: EphemeralKeyMetadata | null
 ): { filename: string; formatLabel: string; content: string } {
   const dnsLine = resolveDnsPrimaryIp(settings);
   const pqcComment =
@@ -1581,25 +1637,43 @@ export function compileNativeTunnelConfig(
     const mssRule = settings.mssClamping
       ? ' ; nft add rule inet renumerate forward tcp flags syn tcp option maxseg size set rt mtu'
       : '';
+    const xdpHook = settings.ebpfXdpAcceleration
+      ? ' ; ip link set dev wg0 xdp obj /usr/lib/renumerate/wg_xdp_fastpath.o sec xdp'
+      : '';
     const postUp = settings.killSwitch
-      ? `PostUp = nft -f /etc/renumerate/renumerate-egress.nft${mssRule}`
-      : '# Kill Switch désactivé (routage souple)';
+      ? `PostUp = nft -f /etc/renumerate/renumerate-egress.nft${mssRule}${xdpHook}`
+      : `# Kill Switch désactivé (routage souple)${xdpHook ? `\nPostUp = ${xdpHook.slice(3)}` : ''}`;
     const postDown =
       settings.killSwitch && settings.killSwitchMode === 'strict'
         ? '# Mode Strict : la table nftables reste verrouillée après fermeture de wg0'
         : 'PostDown = nft delete table inet renumerate_guard 2>/dev/null || true';
 
+    const pskLine =
+      settings.postQuantumKex !== 'classic-x25519'
+        ? ephemeralKeys
+          ? `PresharedKey = ${ephemeralKeys.presharedKeyMask}`
+          : `PresharedKey = <JETON_HYBRIDE_${settings.postQuantumKex.toUpperCase().replace(/-/g, '_')}>`
+        : null;
+
     const lines = [
       `# Renumerate VPN — Profil natif WireGuard`,
       `# Passerelle active : ${identity.city}, ${identity.country} (${identity.ip}:${settings.tunnelPort})`,
       `# Échange de clés   : ${pqcComment}`,
-      `# Congestion noyau  : ${settings.tcpCongestionControl.toUpperCase()} | Multi-Queue TUN : ${settings.multiQueueTun ? 'ON' : 'OFF'}`,
+      `# Congestion noyau  : ${settings.tcpCongestionControl.toUpperCase()} | Multi-Queue TUN : ${settings.multiQueueTun ? 'ON' : 'OFF'} | XDP eBPF : ${settings.ebpfXdpAcceleration ? 'ACTIF' : 'OFF'}`,
+      `# Rotation PFS      : ${settings.ephemeralRekeyMinutes} min | TLS Frag Anti-DPI : ${settings.tlsClientHelloFragmentation ? 'ON' : 'OFF'} | Chaff Jitter : ${settings.trafficPaddingJitterMs} ms`,
+      ...(ephemeralKeys
+        ? [
+            `# Session Key-ID    : ${ephemeralKeys.keyIdHex} (RAM Volatile mlockall)`,
+            `# Clé Publique X25519 locale : ${ephemeralKeys.publicKeyBase64}`,
+          ]
+        : []),
       ``,
       `[Interface]`,
-      `PrivateKey = <CLE_PRIVEE_EPHEMERE_LOCALE_X25519>`,
+      `PrivateKey = ${ephemeralKeys ? `<RAM_LOCKED_PRIVKEY_${ephemeralKeys.keyIdHex.toUpperCase()}>` : '<CLE_PRIVEE_EPHEMERE_LOCALE_X25519>'}`,
       `Address = 10.66.42.18/32${settings.ipv6LeakProtection ? '' : ', fd42:66:42::18/128'}`,
       `DNS = ${dnsLine}`,
       `MTU = ${settings.mtuSize}`,
+      `FwMark = 0xca6c`,
       `Table = ${settings.splitTunneling ? '51820' : 'auto'}`,
       postUp,
       postDown,
@@ -1607,9 +1681,7 @@ export function compileNativeTunnelConfig(
       `[Peer]`,
       `# Relais ${identity.country.toUpperCase()} (${identity.city})`,
       `PublicKey = rNm8K9xP4vQ2zL7wT5cY1bN6mJ3hF0dG8sA4eR2uI9o=`,
-      ...(settings.postQuantumKex !== 'classic-x25519'
-        ? [`PresharedKey = <JETON_HYBRIDE_${settings.postQuantumKex.toUpperCase().replace(/-/g, '_')}>`]
-        : []),
+      ...(pskLine ? [pskLine] : []),
       `AllowedIPs = ${allowedIps}`,
       `Endpoint = ${identity.ip}:${settings.tunnelPort}`,
       ...(settings.keepaliveInterval > 0
@@ -1647,8 +1719,11 @@ export function compileNativeTunnelConfig(
       `nobind`,
       `persist-key`,
       `persist-tun`,
+      ...(settings.strictMemoryLock ? [`mlock`] : []),
+      `reneg-sec ${settings.ephemeralRekeyMinutes * 60}`,
       `tun-mtu ${settings.mtuSize}`,
       ...(settings.mssClamping ? [`mssfix ${Math.max(1200, settings.mtuSize - 40)}`] : []),
+      ...(settings.tlsClientHelloFragmentation ? [`tls-crypt-v2 /etc/renumerate/anti-dpi-frag.key`] : []),
       `data-ciphers AES-256-GCM:CHACHA20-POLY1305`,
       `tls-version-min 1.3`,
       `tls-groups ${tlsGroups}`,
@@ -1674,7 +1749,7 @@ export function compileNativeTunnelConfig(
     };
   }
 
-  // IKEv2 / strongSwanswanctl
+  // IKEv2 / strongSwan swanctl
   const keProposal =
     settings.postQuantumKex === 'ml-kem-1024'
       ? 'aes256gcm16-prfsha384-ecp384-ke1_mlkem1024'
@@ -1688,11 +1763,13 @@ export function compileNativeTunnelConfig(
     `    remote_addrs = ${identity.ip}`,
     `    remote_port = ${settings.tunnelPort}`,
     `    vips = 0.0.0.0`,
+    `    rekey_time = ${settings.ephemeralRekeyMinutes}m`,
     `    dpd_delay = ${settings.keepaliveInterval > 0 ? settings.keepaliveInterval : 30}s`,
     `    proposals = ${keProposal}`,
     `    children {`,
     `      net-tunnel {`,
     `        remote_ts = 0.0.0.0/0`,
+    `        rekey_time = ${settings.ephemeralRekeyMinutes}m`,
     `        esp_proposals = aes256gcm16-x25519`,
     `        mtu = ${settings.mtuSize}`,
     `      }`,
@@ -1722,6 +1799,11 @@ export function compileSysctlConfig(settings: AppSettings): {
     `net.ipv4.tcp_mtu_probing = ${settings.mssClamping ? 1 : 0}`,
     `net.core.netdev_max_backlog = ${settings.multiQueueTun ? 16384 : 4096}`,
     ``,
+    `# Accélération eBPF/XDP & Durcissement du compilateur JIT noyau`,
+    `net.core.bpf_jit_enable = ${settings.ebpfXdpAcceleration ? 1 : 0}`,
+    `net.core.bpf_jit_harden = 2`,
+    `kernel.unprivileged_bpf_disabled = 1`,
+    ``,
     `# Étanchéité de la pile IPv6`,
     `net.ipv6.conf.all.disable_ipv6 = ${settings.ipv6LeakProtection ? 1 : 0}`,
     `net.ipv6.conf.default.disable_ipv6 = ${settings.ipv6LeakProtection ? 1 : 0}`,
@@ -1739,7 +1821,9 @@ export function compileSysctlConfig(settings: AppSettings): {
     `net.ipv4.conf.all.arp_announce = ${settings.arpSpoofGuard ? 2 : 0}`,
     `net.ipv4.conf.all.drop_gratuitous_arp = ${settings.arpSpoofGuard ? 1 : 0}`,
     ``,
-    `# Isolation des pointeurs noyau & journaux dmesg`,
+    `# Verrouillage RAM (mlockall), Anti-Swap & Isolation des pointeurs noyau`,
+    `fs.suid_dumpable = ${settings.strictMemoryLock ? 0 : 1}`,
+    `vm.swappiness = ${settings.strictMemoryLock ? 1 : 60}`,
     `kernel.kptr_restrict = 2`,
     `kernel.dmesg_restrict = 1`,
     ``,
@@ -1759,13 +1843,14 @@ export function compileNftablesConfig(
   const lines = [
     `#!/usr/sbin/nft -f`,
     `# /etc/renumerate/renumerate-egress.nft`,
-    `# Politique Kill Switch : ${settings.killSwitch ? settings.killSwitchMode.toUpperCase() : 'DESACTIVE'}`,
+    `# Politique Kill Switch : ${settings.killSwitch ? settings.killSwitchMode.toUpperCase() : 'DESACTIVE'} | XDP : ${settings.ebpfXdpAcceleration ? 'FASTPATH' : 'STANDARD'}`,
     ``,
     `table inet renumerate_guard {`,
     `  chain output {`,
     `    type filter hook output priority 0; policy ${settings.killSwitch ? 'drop' : 'accept'};`,
     `    oifname "lo" accept`,
     `    ct state established,related accept`,
+    `    meta mark 0xca6c accept comment "Flux encapsulé Renumerate signé"`,
     `    ip daddr ${identity.ip} udp dport ${settings.tunnelPort} accept`,
     `    ip daddr ${identity.ip} tcp dport ${settings.tunnelPort} accept`,
     ...(settings.lanBypass
@@ -1778,10 +1863,20 @@ export function compileNftablesConfig(
           `    oifname "${iface}" udp dport 443 reject with icmpx type admin-prohibited comment "Blocage QUIC HTTP/3"`,
         ]
       : []),
+    ...(settings.ntpDriftProtection
+      ? [
+          `    oifname != "${iface}" udp dport 123 drop comment "Anti-dérive temporelle NTP hors tunnel"`,
+        ]
+      : []),
     ...(settings.dnsLeakProtection
       ? [
           `    oifname != "${iface}" udp dport 53 drop comment "Anti-fuite DNS UDP/53"`,
           `    oifname != "${iface}" tcp dport { 53, 853 } drop comment "Anti-fuite DNS TCP/DoT"`,
+        ]
+      : []),
+    ...(settings.tlsClientHelloFragmentation
+      ? [
+          `    oifname "${iface}" tcp dport 443 ct state new tcp flags syn counter comment "Découpage SNI ClientHello Anti-DPI actif"`,
         ]
       : []),
     ...(settings.ipv6LeakProtection
@@ -1796,6 +1891,398 @@ export function compileNftablesConfig(
   return {
     filename: 'renumerate-egress.nft',
     content: lines.join('\n'),
+  };
+}
+
+export function compileSystemdServiceConfig(settings: AppSettings): {
+  filename: string;
+  content: string;
+} {
+  const iface = settings.protocol === 'wireguard' ? 'wg0' : 'tun0';
+  const cpuPolicy =
+    settings.powerProfile === 'performance'
+      ? 'fifo'
+      : settings.powerProfile === 'eco'
+        ? 'idle'
+        : 'other';
+  const niceLevel =
+    settings.powerProfile === 'performance'
+      ? -10
+      : settings.powerProfile === 'eco'
+        ? 10
+        : 0;
+  const caps = [
+    'CAP_NET_ADMIN',
+    'CAP_NET_RAW',
+    ...(settings.ebpfXdpAcceleration ? ['CAP_BPF', 'CAP_PERFMON'] : []),
+    ...(settings.strictMemoryLock ? ['CAP_IPC_LOCK'] : []),
+  ].join(' ');
+
+  const lines = [
+    `# /etc/systemd/system/renumerate-tunnel.service`,
+    `# Unité systemd durcie — Renumerate VPN Daemon`,
+    `[Unit]`,
+    `Description=Renumerate VPN Encrypted Tunnel & eBPF Guard (${iface})`,
+    `After=network-online.target nss-lookup.target`,
+    `Wants=network-online.target`,
+    ``,
+    `[Service]`,
+    `Type=notify`,
+    `ExecStart=/usr/bin/renumerate-daemon --iface ${iface} --pqc ${settings.postQuantumKex} --rekey ${settings.ephemeralRekeyMinutes}m --padding-jitter ${settings.trafficPaddingJitterMs}ms`,
+    `ExecReload=/bin/kill -HUP $MAINPID`,
+    `Restart=${settings.autoReconnect ? 'on-failure' : 'no'}`,
+    `RestartSec=${settings.reconnectDelay}s`,
+    `CPUSchedulingPolicy=${cpuPolicy}`,
+    `Nice=${niceLevel}`,
+    ``,
+    `# Confinement mémoire & bac à sable noyau`,
+    `LimitCORE=0`,
+    `LimitMEMLOCK=${settings.strictMemoryLock ? 'infinity' : '64M'}`,
+    `MemoryDenyWriteExecute=yes`,
+    `NoNewPrivileges=yes`,
+    `PrivateTmp=yes`,
+    `ProtectHome=yes`,
+    `ProtectSystem=strict`,
+    `ProtectControlGroups=yes`,
+    `ProtectKernelModules=yes`,
+    `LockPersonality=yes`,
+    `RestrictRealtime=${settings.powerProfile === 'performance' ? 'no' : 'yes'}`,
+    `CapabilityBoundingSet=${caps}`,
+    `AmbientCapabilities=${caps}`,
+    ``,
+    `[Install]`,
+    `WantedBy=multi-user.target`,
+    ``,
+  ];
+
+  return {
+    filename: 'renumerate-tunnel.service',
+    content: lines.join('\n'),
+  };
+}
+
+export function compilePolicyRoutingScript(
+  settings: AppSettings,
+  identity: VirtualIdentity
+): { filename: string; content: string } {
+  const iface = settings.protocol === 'wireguard' ? 'wg0' : 'tun0';
+  const activeRules = settings.splitTunneling
+    ? settings.splitTunnelRules.filter((r) => r.enabled)
+    : [];
+
+  const lines = [
+    `#!/usr/bin/env bash`,
+    `# /etc/renumerate/renumerate-policy-route.sh`,
+    `# Routage par politique ip-rule (fwmark 0xca6c -> table 51820)`,
+    `set -euo pipefail`,
+    ``,
+    `IFACE="${iface}"`,
+    `FWMARK="0xca6c"`,
+    `TABLE_ID="51820"`,
+    `ENDPOINT_IP="${identity.ip}"`,
+    ``,
+    `ip route replace 0.0.0.0/0 dev "$IFACE" table "$TABLE_ID"`,
+    `ip rule add not fwmark "$FWMARK" table "$TABLE_ID" priority 32700 2>/dev/null || true`,
+    `ip rule add table main suppress_prefixlength 0 priority 32690 2>/dev/null || true`,
+    ...(settings.lanBypass
+      ? [
+          ``,
+          `# Contournement RFC1918 (LAN local préservé)`,
+          `ip rule add to 192.168.0.0/16 table main priority 32600 2>/dev/null || true`,
+          `ip rule add to 10.0.0.0/8 table main priority 32601 2>/dev/null || true`,
+          `ip rule add to 172.16.0.0/12 table main priority 32602 2>/dev/null || true`,
+        ]
+      : [
+          ``,
+          `# Isolation LAN stricte active (aucune exception RFC1918)`,
+        ]),
+    ...(activeRules.length > 0
+      ? [
+          ``,
+          `# Règles Split Tunneling actives (${activeRules.length})`,
+          ...activeRules.map((r) =>
+            r.type === 'cidr'
+              ? `ip rule add to ${r.target} table ${r.policy === 'bypass' ? 'main' : '"$TABLE_ID"'} priority 32550 2>/dev/null || true`
+              : `# [${r.type.toUpperCase()}] ${r.target} -> ${r.policy === 'bypass' ? 'BYPASS (table main via nftables set)' : 'FORCE_TUNNEL (table 51820)'}`
+          ),
+        ]
+      : []),
+    ``,
+  ];
+
+  return {
+    filename: 'renumerate-policy-route.sh',
+    content: lines.join('\n'),
+  };
+}
+
+export interface PacketVerdictResult {
+  action: 'ACCEPT_TUNNEL' | 'BYPASS_DIRECT' | 'DROP_FIREWALL' | 'REJECT_QUIC';
+  outboundInterface: string;
+  matchedRule: string;
+  latencyImpactMs: number;
+  encapsulationOverheadBytes: number;
+  traceSteps: string[];
+  explanation: string;
+}
+
+function isRfc1918OrLocalTarget(target: string): boolean {
+  const clean = target.trim().toLowerCase();
+  if (clean.endsWith('.local') || clean.endsWith('.lan') || clean === 'localhost') {
+    return true;
+  }
+  if (/^127\./.test(clean) || /^10\./.test(clean) || /^192\.168\./.test(clean)) {
+    return true;
+  }
+  const m172 = clean.match(/^172\.(\d{1,3})\./);
+  if (m172) {
+    const second = Number(m172[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
+export function simulatePacketRouteVerdict(
+  params: {
+    destination: string;
+    protocol: 'UDP' | 'TCP' | 'ICMPv6';
+    port: number;
+  },
+  settings: AppSettings,
+  identity: VirtualIdentity,
+  isConnected: boolean,
+  isEmergency: boolean
+): PacketVerdictResult {
+  const dest = params.destination.trim() || '1.1.1.1';
+  const destLower = dest.toLowerCase();
+  const port = Math.max(1, Math.min(65535, Math.round(params.port || 443)));
+  const tunnelIface =
+    settings.protocol === 'wireguard'
+      ? 'wg0'
+      : settings.protocol === 'ikev2'
+        ? 'ipsec0'
+        : 'tun0';
+  const overheadBytes =
+    (settings.protocol === 'wireguard'
+      ? 80
+      : settings.protocol === 'ikev2'
+        ? 76
+        : 69) +
+    (settings.tlsClientHelloFragmentation && params.protocol === 'TCP' && port === 443
+      ? 8
+      : 0);
+
+  const trace: string[] = [
+    `1. Entrée socket noyau -> dst=${dest}:${port} proto=${params.protocol}`,
+  ];
+
+  if (isEmergency) {
+    trace.push(`2. Arrêt immédiat : Coupe-circuit d'urgence (Emergency Lockdown) actif`);
+    trace.push(`3. Verdict nftables inet renumerate_guard : DROP`);
+    return {
+      action: 'DROP_FIREWALL',
+      outboundInterface: 'lo (verrouillé)',
+      matchedRule: 'emergency_lockdown :: policy drop',
+      latencyImpactMs: 0,
+      encapsulationOverheadBytes: 0,
+      traceSteps: trace,
+      explanation:
+        "Le coupe-circuit d'urgence bloque intégralement toute sortie réseau externe.",
+    };
+  }
+
+  const isIpv6Target = params.protocol === 'ICMPv6' || dest.includes(':');
+  if (isIpv6Target && settings.ipv6LeakProtection) {
+    trace.push(`2. Détection trame IPv6 / ICMPv6 avec sysctl disable_ipv6=1`);
+    trace.push(`3. Règle nftables : meta nfproto ipv6 drop`);
+    return {
+      action: 'DROP_FIREWALL',
+      outboundInterface: 'aucune (rejet noyau)',
+      matchedRule: 'nftables :: meta nfproto ipv6 drop',
+      latencyImpactMs: 0,
+      encapsulationOverheadBytes: 0,
+      traceSteps: trace,
+      explanation:
+        'Paquet IPv6 neutralisé par le garde-fou anti-fuite IPv6 au niveau Netfilter.',
+    };
+  }
+
+  if (settings.adBlocker) {
+    const blockedMatch = settings.customBlockedDomains.find(
+      (d) => destLower === d || destLower.endsWith(`.${d}`)
+    );
+    const heuristicTracker =
+      (settings.threatFilters.trackers &&
+        (destLower.includes('tracker') || destLower.includes('telemetry'))) ||
+      (settings.threatFilters.cryptominers && destLower.includes('coinhive'));
+    if (blockedMatch || heuristicTracker) {
+      trace.push(`2. Inspection DNS Sinkhole : correspondance liste noire (${blockedMatch || 'filtre menace'})`);
+      trace.push(`3. Résolution neutralisée vers 0.0.0.0 (NXDOMAIN)`);
+      return {
+        action: 'DROP_FIREWALL',
+        outboundInterface: 'sinkhole0',
+        matchedRule: `dns_shield :: block ${blockedMatch || 'threat-feed'}`,
+        latencyImpactMs: 0,
+        encapsulationOverheadBytes: 0,
+        traceSteps: trace,
+        explanation:
+          'Domaine intercepté et bloqué en amont par le bouclier DNS anti-traqueurs.',
+      };
+    }
+  }
+
+  if (params.protocol === 'UDP' && port === 443 && settings.blockQuicUdp443) {
+    trace.push(`2. Détection flux HTTP/3 QUIC sur UDP/443`);
+    trace.push(`3. Règle nftables : udp dport 443 reject with icmpx admin-prohibited`);
+    return {
+      action: 'REJECT_QUIC',
+      outboundInterface: tunnelIface,
+      matchedRule: 'nftables :: udp dport 443 reject (anti-QUIC)',
+      latencyImpactMs: 1,
+      encapsulationOverheadBytes: 0,
+      traceSteps: trace,
+      explanation:
+        'Flux QUIC UDP/443 rejeté proprement afin de forcer le navigateur à négocier TCP/TLS 1.3 dans le tunnel.',
+    };
+  }
+
+  if (params.protocol === 'UDP' && port === 123 && settings.ntpDriftProtection && !isConnected) {
+    trace.push(`2. Détection requête horloge NTP UDP/123 hors tunnel`);
+    trace.push(`3. Règle nftables : oifname != "${tunnelIface}" udp dport 123 drop`);
+    return {
+      action: 'DROP_FIREWALL',
+      outboundInterface: 'aucune (anti-dérive NTP)',
+      matchedRule: 'nftables :: ntp_drift_guard udp/123 drop',
+      latencyImpactMs: 0,
+      encapsulationOverheadBytes: 0,
+      traceSteps: trace,
+      explanation:
+        'Synchronisation NTP en clair bloquée hors tunnel pour empêcher le marquage temporel FAI.',
+    };
+  }
+
+  if (isRfc1918OrLocalTarget(dest)) {
+    if (settings.lanBypass) {
+      trace.push(`2. Cible locale RFC1918 / mDNS détectée (${dest})`);
+      trace.push(`3. Règle ip-rule prio 32600 : table main -> interface physique LAN`);
+      return {
+        action: 'BYPASS_DIRECT',
+        outboundInterface: 'eth0 (LAN local)',
+        matchedRule: 'ip-rule :: to RFC1918 lookup main (lanBypass=true)',
+        latencyImpactMs: 1,
+        encapsulationOverheadBytes: 0,
+        traceSteps: trace,
+        explanation:
+          'Routage direct sur le sous-réseau local autorisé par la directive LAN Bypass.',
+      };
+    }
+    trace.push(`2. Cible locale RFC1918 détectée mais LAN Bypass est désactivé`);
+    trace.push(`3. Isolation stricte du sous-réseau local : DROP`);
+    return {
+      action: 'DROP_FIREWALL',
+      outboundInterface: 'aucune (LAN isolé)',
+      matchedRule: 'nftables :: rfc1918_strict_isolation drop',
+      latencyImpactMs: 0,
+      encapsulationOverheadBytes: 0,
+      traceSteps: trace,
+      explanation:
+        'Accès au réseau local bloqué car l’isolation stricte LAN est activée.',
+    };
+  }
+
+  if (settings.splitTunneling) {
+    const matchedSplit = settings.splitTunnelRules.find((r) => {
+      if (!r.enabled) return false;
+      const t = r.target.toLowerCase();
+      if (r.type === 'domain') {
+        return destLower === t || destLower.endsWith(`.${t}`);
+      }
+      if (r.type === 'cidr') {
+        const prefix = t.split('/')[0];
+        const threeOctets = prefix.split('.').slice(0, 3).join('.');
+        return destLower === prefix || (threeOctets.length > 4 && destLower.startsWith(`${threeOctets}.`));
+      }
+      return destLower === t;
+    });
+
+    if (matchedSplit) {
+      if (matchedSplit.policy === 'bypass') {
+        trace.push(`2. Correspondance Split Tunneling [BYPASS] : ${matchedSplit.target}`);
+        trace.push(`3. Routage table main hors chiffrement vers passerelle FAI`);
+        return {
+          action: 'BYPASS_DIRECT',
+          outboundInterface: 'eth0 (Split-Bypass)',
+          matchedRule: `split_tunnel :: ${matchedSplit.target} -> bypass`,
+          latencyImpactMs: 4,
+          encapsulationOverheadBytes: 0,
+          traceSteps: trace,
+          explanation: `Ce flux contourne volontairement le tunnel selon votre règle Split Tunneling (${matchedSplit.target}).`,
+        };
+      }
+      trace.push(`2. Correspondance Split Tunneling [VPN_ONLY] : ${matchedSplit.target}`);
+    }
+  }
+
+  if (!isConnected) {
+    if (settings.killSwitch) {
+      trace.push(`2. Tunnel fermé + Kill Switch (${settings.killSwitchMode.toUpperCase()}) actif`);
+      if (settings.killSwitchMode === 'strict' || (port === 53 && settings.dnsLeakProtection)) {
+        trace.push(`3. Verdict nftables chain output : policy DROP`);
+        return {
+          action: 'DROP_FIREWALL',
+          outboundInterface: 'aucune (Kill Switch)',
+          matchedRule: `nftables :: kill_switch_${settings.killSwitchMode} drop`,
+          latencyImpactMs: 0,
+          encapsulationOverheadBytes: 0,
+          traceSteps: trace,
+          explanation:
+            'Tunnel inactif : le coupe-circuit empêche toute fuite de paquet en clair vers votre FAI.',
+        };
+      }
+    }
+    trace.push(`2. Tunnel fermé et Kill Switch souple/inactif`);
+    trace.push(`3. Sortie directe non chiffrée sur eth0`);
+    return {
+      action: 'BYPASS_DIRECT',
+      outboundInterface: 'eth0 (clair FAI)',
+      matchedRule: 'default_route :: main table (tunnel fermé)',
+      latencyImpactMs: 8,
+      encapsulationOverheadBytes: 0,
+      traceSteps: trace,
+      explanation:
+        'Attention : le tunnel est déconnecté et ce paquet sortirait en clair sans Kill Switch Strict.',
+    };
+  }
+
+  const xdpGain = settings.ebpfXdpAcceleration ? -2 : 0;
+  const paddingDelay = Math.round(settings.trafficPaddingJitterMs * 0.35);
+  const fragDelay =
+    settings.tlsClientHelloFragmentation && params.protocol === 'TCP' && port === 443
+      ? 2
+      : 0;
+  const estLatency = Math.max(
+    2,
+    identity.latency + xdpGain + paddingDelay + fragDelay
+  );
+
+  trace.push(
+    `2. Marquage fwmark 0xca6c -> table 51820 (${settings.ebpfXdpAcceleration ? 'XDP Zero-Copy' : 'SKB standard'})`
+  );
+  if (settings.tlsClientHelloFragmentation && params.protocol === 'TCP' && port === 443) {
+    trace.push(`3. Découpage TLS ClientHello SNI en 2 fragments TCP anti-DPI`);
+  }
+  trace.push(
+    `${settings.tlsClientHelloFragmentation && params.protocol === 'TCP' && port === 443 ? '4' : '3'}. Encapsulation ${settings.protocol.toUpperCase()} (${settings.postQuantumKex.toUpperCase()}) -> sortie ${tunnelIface} vers ${identity.city} (${identity.ip})`
+  );
+
+  return {
+    action: 'ACCEPT_TUNNEL',
+    outboundInterface: `${tunnelIface} (${identity.country})`,
+    matchedRule: `ip-rule 51820 :: oifname "${tunnelIface}" accept`,
+    latencyImpactMs: estLatency,
+    encapsulationOverheadBytes: overheadBytes,
+    traceSteps: trace,
+    explanation: `Paquet chiffré et acheminé sans fuite via ${tunnelIface} vers ${identity.city} (${identity.ip}).`,
   };
 }
 
@@ -2035,6 +2522,45 @@ export function computeModifiedSettingsDiff(
       category: 'Réseau & Noyau',
       format: (s) =>
         s.socks5Enabled ? `${s.socks5Host}:${s.socks5Port}` : 'Désactivée',
+    },
+    {
+      key: 'ebpfXdpAcceleration',
+      label: 'Accélération eBPF / XDP Zero-Copy',
+      category: 'Réseau & Noyau',
+      format: (s) => formatBoolFr(s.ebpfXdpAcceleration),
+    },
+    {
+      key: 'tlsClientHelloFragmentation',
+      label: 'Fragmentation TLS ClientHello (Anti-DPI)',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.tlsClientHelloFragmentation),
+    },
+    {
+      key: 'trafficPaddingJitterMs',
+      label: 'Bourrage Chaff Anti-Corrélation',
+      category: 'Cryptographie',
+      format: (s) =>
+        s.trafficPaddingJitterMs === 0
+          ? 'Désactivé (0 ms)'
+          : `Actif (${s.trafficPaddingJitterMs} ms)`,
+    },
+    {
+      key: 'ephemeralRekeyMinutes',
+      label: 'Rotation clés éphémères PFS',
+      category: 'Cryptographie',
+      format: (s) => `${s.ephemeralRekeyMinutes} min`,
+    },
+    {
+      key: 'strictMemoryLock',
+      label: 'Verrouillage RAM mlockall (Anti-Swap)',
+      category: 'Système & Gouvernance',
+      format: (s) => formatBoolFr(s.strictMemoryLock),
+    },
+    {
+      key: 'ntpDriftProtection',
+      label: 'Garde horloge NTP/NTS tunnel',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.ntpDriftProtection),
     },
   ];
 

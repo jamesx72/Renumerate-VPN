@@ -1,36 +1,87 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Search, Grid, List, Save, Trash2, Filter, Settings2, CircleCheck, 
-  ChevronDown, Signal, Activity, Smartphone, Monitor, Server, Cpu, 
-  Zap, Battery, LayoutTemplate, ArrowUpDown, Check, X, Pencil, RotateCcw,
-  ArrowRightLeft, ChevronUp, AlertTriangle, Info, Terminal, Download, ClipboardList, Globe2
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  Search,
+  Grid,
+  List,
+  Save,
+  Trash2,
+  Filter,
+  Settings2,
+  CircleCheck,
+  ChevronDown,
+  Signal,
+  Activity,
+  Smartphone,
+  Monitor,
+  Server,
+  Cpu,
+  Zap,
+  Battery,
+  LayoutTemplate,
+  ArrowUpDown,
+  Check,
+  X,
+  Pencil,
+  RotateCcw,
+  ArrowRightLeft,
+  ChevronUp,
+  AlertTriangle,
+  Info,
+  Terminal,
+  Download,
+  ClipboardList,
+  Globe2,
+  Route,
+  Radar,
+  ShieldCheck,
+  Sparkles,
+  Power,
 } from 'lucide-react';
-import { DeviceNode, ConnectionMode } from '../types';
-import { WorldNodeMap } from './WorldNodeMap';
+import { DeviceNode, ConnectionMode, AppSettings } from '../types';
+import {
+  DEFAULT_APP_SETTINGS,
+  getJurisdictionTier,
+  isCountryExcludedByJurisdiction,
+} from '../constants';
+import {
+  WorldNodeMap,
+  LOCAL_ORIGIN,
+  getNodeLonLat,
+  computeGeodesicDistanceKm,
+} from './WorldNodeMap';
 
 interface SavedViewConfig {
-    id: string;
-    name: string;
-    viewMode: 'grid' | 'list';
-    filterType: string;
-    searchQuery: string;
-    sortBy: 'name' | 'signal' | 'rate' | 'latency';
-    visibleColumns?: string[];
+  id: string;
+  name: string;
+  viewMode: 'grid' | 'list';
+  filterType: string;
+  jurisdictionFilter?: 'all' | 'compliant' | 'sanctuary';
+  searchQuery: string;
+  sortBy: 'name' | 'signal' | 'rate' | 'latency' | 'load';
+  visibleColumns?: string[];
 }
 
 interface NetworkViewState {
-    viewMode: 'grid' | 'list';
-    filterType: string;
-    sortBy: 'name' | 'signal' | 'rate' | 'latency';
-    visibleColumns: string[];
+  viewMode: 'grid' | 'list';
+  filterType: string;
+  jurisdictionFilter: 'all' | 'compliant' | 'sanctuary';
+  sortBy: 'name' | 'signal' | 'rate' | 'latency' | 'load';
+  visibleColumns: string[];
 }
 
 interface TransferLog {
-    id: string;
-    step: number;
-    time: string;
-    message: string;
-    type: 'info' | 'success' | 'warning' | 'error';
+  id: string;
+  step: number;
+  time: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+}
+
+export interface CircuitDeploymentPayload {
+  hopCount: 1 | 2 | 3;
+  entryNode: DeviceNode;
+  relayNode?: DeviceNode;
+  exitNode: DeviceNode;
 }
 
 interface Props {
@@ -39,24 +90,48 @@ interface Props {
   isConnected?: boolean;
   mode?: ConnectionMode;
   isDark?: boolean;
+  settings?: AppSettings;
+  onUpdateJurisdictionPolicy?: (
+    policy: AppSettings['excludeEyesJurisdictions']
+  ) => void;
+  onDeployCircuit?: (payload: CircuitDeploymentPayload) => void;
+  onNodesProbed?: (updatedNodes: DeviceNode[]) => void;
   onConnectNode: (id: string) => void;
-  onAutonomyUpdate: (nodeId: string, profile: 'provider' | 'balanced' | 'consumer') => void;
+  onAutonomyUpdate: (
+    nodeId: string,
+    profile: 'provider' | 'balanced' | 'consumer'
+  ) => void;
+  addLog?: (
+    event: string,
+    type?: 'info' | 'warning' | 'success' | 'error',
+    ip?: string
+  ) => void;
 }
 
-type ColumnKey = 'name' | 'type' | 'status' | 'signal' | 'rate' | 'latency' | 'autonomy' | 'ip';
+type ColumnKey =
+  | 'name'
+  | 'jurisdiction'
+  | 'ip'
+  | 'type'
+  | 'status'
+  | 'signal'
+  | 'rate'
+  | 'latency'
+  | 'autonomy';
 
 const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
-    { key: 'name', label: 'Nom du Nœud' },
-    { key: 'ip', label: 'Adresse IP' },
-    { key: 'type', label: 'Type' },
-    { key: 'status', label: 'Statut' },
-    { key: 'signal', label: 'Signal' },
-    { key: 'rate', label: 'Débit' },
-    { key: 'latency', label: 'Latence' },
-    { key: 'autonomy', label: 'Profil' },
+  { key: 'name', label: 'Relais & Ville' },
+  { key: 'jurisdiction', label: 'Juridiction & ASN' },
+  { key: 'ip', label: 'Adresse IPv4' },
+  { key: 'type', label: 'Équipement' },
+  { key: 'status', label: 'État & Charge' },
+  { key: 'signal', label: 'Signal' },
+  { key: 'rate', label: 'Débit' },
+  { key: 'latency', label: 'RTT & Gigue' },
+  { key: 'autonomy', label: 'Autonomie RNC' },
 ];
 
-const DEFAULT_COLUMNS = ALL_COLUMNS.map(c => c.key);
+const DEFAULT_COLUMNS: ColumnKey[] = ALL_COLUMNS.map((c) => c.key);
 
 export const NetworkView: React.FC<Props> = ({
   nodes,
@@ -64,873 +139,2115 @@ export const NetworkView: React.FC<Props> = ({
   isConnected = false,
   mode = ConnectionMode.STANDARD,
   isDark = true,
+  settings = DEFAULT_APP_SETTINGS,
+  onUpdateJurisdictionPolicy,
+  onDeployCircuit,
+  onNodesProbed,
   onConnectNode,
   onAutonomyUpdate,
+  addLog,
 }) => {
-  // --- State Initialization with Persistence ---
-  
   const getInitialState = (): NetworkViewState => {
-      try {
-          const saved = localStorage.getItem('renumerate_network_state');
-          if (saved) {
-              return JSON.parse(saved);
-          }
-      } catch (e) {
-          console.error("Failed to load network state", e);
+    try {
+      const saved = localStorage.getItem('renumerate_network_state_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          viewMode: parsed.viewMode === 'list' ? 'list' : 'grid',
+          filterType: parsed.filterType || 'all',
+          jurisdictionFilter: parsed.jurisdictionFilter || 'all',
+          sortBy: parsed.sortBy || 'latency',
+          visibleColumns: Array.isArray(parsed.visibleColumns)
+            ? parsed.visibleColumns
+            : DEFAULT_COLUMNS,
+        };
       }
-      return {
-          viewMode: 'grid',
-          filterType: 'all',
-          sortBy: 'name',
-          visibleColumns: DEFAULT_COLUMNS
-      };
+    } catch {
+      // ignore storage errors
+    }
+    return {
+      viewMode: 'grid',
+      filterType: 'all',
+      jurisdictionFilter: 'all',
+      sortBy: 'latency',
+      visibleColumns: DEFAULT_COLUMNS,
+    };
   };
 
   const initialState = getInitialState();
 
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>(initialState.viewMode);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(
+    initialState.viewMode
+  );
   const [showWorldMap, setShowWorldMap] = useState(true);
+  const [showCircuitComposer, setShowCircuitComposer] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>(initialState.filterType);
-  const [sortBy, setSortBy] = useState<'name' | 'signal' | 'rate' | 'latency'>(initialState.sortBy);
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(initialState.visibleColumns);
-  
-  // UI State
+  const [jurisdictionFilter, setJurisdictionFilter] = useState<
+    'all' | 'compliant' | 'sanctuary'
+  >(initialState.jurisdictionFilter);
+  const [sortBy, setSortBy] = useState<
+    'name' | 'signal' | 'rate' | 'latency' | 'load'
+  >(initialState.sortBy);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(
+    initialState.visibleColumns
+  );
+
+  // Multi-hop circuit composer state
+  const [hopCount, setHopCount] = useState<1 | 2 | 3>(() =>
+    mode === ConnectionMode.ONION_VORTEX
+      ? 3
+      : mode === ConnectionMode.DOUBLE_HOP
+        ? 2
+        : 2
+  );
+  const [entryNodeId, setEntryNodeId] = useState<string>(
+    () => nodes.find((n) => n.country === 'Suisse')?.id || nodes[0]?.id || ''
+  );
+  const [relayNodeId, setRelayNodeId] = useState<string>(
+    () => nodes.find((n) => n.country === 'Islande')?.id || nodes[1]?.id || ''
+  );
+  const [exitNodeId, setExitNodeId] = useState<string>(
+    () =>
+      nodes.find((n) => n.ip === currentIp)?.id ||
+      nodes.find((n) => n.country === 'Estonie')?.id ||
+      nodes[2]?.id ||
+      nodes[0]?.id ||
+      ''
+  );
+
+  // Live Fleet Probing State
+  const [isProbingFleet, setIsProbingFleet] = useState(false);
+  const [lastProbeSummary, setLastProbeSummary] = useState<string | null>(null);
+
+  // Menus & Feedback
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const [showViewsMenu, setShowViewsMenu] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-
-  // Edit State
   const [editingViewId, setEditingViewId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  // Transfer Simulation State
+  // Encrypted Transfer Diagnostic State
   const [transferState, setTransferState] = useState<{
-      isActive: boolean;
-      targetNodeName: string;
-      targetNodeId: string | null;
-      progress: number;
-      logs: TransferLog[];
-      isCollapsed: boolean;
-      status: 'idle' | 'running' | 'completed';
+    isActive: boolean;
+    traceId: string;
+    targetNodeName: string;
+    targetNodeId: string | null;
+    progress: number;
+    logs: TransferLog[];
+    isCollapsed: boolean;
+    status: 'idle' | 'running' | 'completed';
   }>({
-      isActive: false,
-      targetNodeName: '',
-      targetNodeId: null,
-      progress: 0,
-      logs: [],
-      isCollapsed: false,
-      status: 'idle'
+    isActive: false,
+    traceId: 'RN-000000',
+    targetNodeName: '',
+    targetNodeId: null,
+    progress: 0,
+    logs: [],
+    isCollapsed: false,
+    status: 'idle',
   });
-  
-  const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll logs
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const transferTimersRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    return () => {
+      transferTimersRef.current.forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
+
   useEffect(() => {
     if (transferState.logs.length > 0 && !transferState.isCollapsed) {
-        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [transferState.logs, transferState.isCollapsed]);
 
-  // Toast Timer
   useEffect(() => {
     if (toast) {
-        const timer = setTimeout(() => setToast(null), 3000);
-        return () => clearTimeout(timer);
+      const timer = setTimeout(() => setToast(null), 3200);
+      return () => clearTimeout(timer);
     }
   }, [toast]);
 
-  // Current State Persistence
   useEffect(() => {
-      const state: NetworkViewState = {
-          viewMode,
-          filterType,
-          sortBy,
-          visibleColumns
-      };
-      localStorage.setItem('renumerate_network_state', JSON.stringify(state));
-  }, [viewMode, filterType, sortBy, visibleColumns]);
+    const state: NetworkViewState = {
+      viewMode,
+      filterType,
+      jurisdictionFilter,
+      sortBy,
+      visibleColumns,
+    };
+    localStorage.setItem('renumerate_network_state_v2', JSON.stringify(state));
+  }, [viewMode, filterType, jurisdictionFilter, sortBy, visibleColumns]);
 
-  // Saved Views Persistence
   const [savedViews, setSavedViews] = useState<SavedViewConfig[]>(() => {
-      try {
-          const saved = localStorage.getItem('renumerate_saved_views');
-          return saved ? JSON.parse(saved) : [];
-      } catch (e) {
-          return [];
-      }
+    try {
+      const saved = localStorage.getItem('renumerate_saved_views');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   useEffect(() => {
-      localStorage.setItem('renumerate_saved_views', JSON.stringify(savedViews));
+    localStorage.setItem('renumerate_saved_views', JSON.stringify(savedViews));
   }, [savedViews]);
+
+  // Keep composer IDs valid if nodes change
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    if (!nodes.some((n) => n.id === entryNodeId)) {
+      setEntryNodeId(nodes[0].id);
+    }
+    if (!nodes.some((n) => n.id === relayNodeId)) {
+      setRelayNodeId(nodes[Math.min(1, nodes.length - 1)].id);
+    }
+    if (!nodes.some((n) => n.id === exitNodeId)) {
+      setExitNodeId(nodes[Math.min(2, nodes.length - 1)].id);
+    }
+  }, [nodes, entryNodeId, relayNodeId, exitNodeId]);
+
+  const activeConnectedNode = useMemo(
+    () => (isConnected ? nodes.find((n) => n.ip === currentIp) || null : null),
+    [isConnected, nodes, currentIp]
+  );
+
+  // Composed circuit nodes & real-time telemetry
+  const entryNode = useMemo(
+    () => nodes.find((n) => n.id === entryNodeId) || nodes[0],
+    [nodes, entryNodeId]
+  );
+  const relayNode = useMemo(
+    () => nodes.find((n) => n.id === relayNodeId) || nodes[1] || nodes[0],
+    [nodes, relayNodeId]
+  );
+  const exitNode = useMemo(
+    () => nodes.find((n) => n.id === exitNodeId) || nodes[0],
+    [nodes, exitNodeId]
+  );
+
+  const stagedCircuitNodes = useMemo(() => {
+    if (!exitNode) return [];
+    if (hopCount === 1) return [exitNode];
+    if (hopCount === 2) return entryNode ? [entryNode, exitNode] : [exitNode];
+    return entryNode && relayNode
+      ? [entryNode, relayNode, exitNode]
+      : [exitNode];
+  }, [hopCount, entryNode, relayNode, exitNode]);
+
+  const stagedCircuitIds = useMemo(
+    () => stagedCircuitNodes.map((n) => n.id),
+    [stagedCircuitNodes]
+  );
+
+  const circuitTelemetry = useMemo(() => {
+    if (stagedCircuitNodes.length === 0) {
+      return {
+        totalKm: 0,
+        estimatedLatencyMs: 0,
+        uniqueCountries: 0,
+        allSanctuary: false,
+        hasExcludedNode: false,
+        hasDuplicateHop: false,
+      };
+    }
+
+    let totalKm = 0;
+    let prevCoord = LOCAL_ORIGIN;
+    for (const hop of stagedCircuitNodes) {
+      const coord = getNodeLonLat(hop);
+      totalKm += computeGeodesicDistanceKm(prevCoord, coord);
+      prevCoord = coord;
+    }
+
+    const baseExitRtt =
+      stagedCircuitNodes[stagedCircuitNodes.length - 1].latency;
+    const transitOverhead =
+      stagedCircuitNodes.length === 1
+        ? 0
+        : stagedCircuitNodes
+            .slice(0, -1)
+            .reduce((acc, n) => acc + Math.round(n.latency * 0.58) + 6, 0);
+
+    const countriesSet = new Set(stagedCircuitNodes.map((n) => n.country));
+    const idsSet = new Set(stagedCircuitNodes.map((n) => n.id));
+    const allSanctuary = stagedCircuitNodes.every(
+      (n) => getJurisdictionTier(n.country) === 'sanctuary'
+    );
+    const hasExcludedNode = stagedCircuitNodes.some((n) =>
+      isCountryExcludedByJurisdiction(
+        n.country,
+        settings.excludeEyesJurisdictions
+      )
+    );
+
+    return {
+      totalKm,
+      estimatedLatencyMs: baseExitRtt + transitOverhead,
+      uniqueCountries: countriesSet.size,
+      allSanctuary,
+      hasExcludedNode,
+      hasDuplicateHop: idsSet.size < stagedCircuitNodes.length,
+    };
+  }, [stagedCircuitNodes, settings.excludeEyesJurisdictions]);
+
+  // Fleet-wide KPI metrics
+  const fleetMetrics = useMemo(() => {
+    const count = Math.max(1, nodes.length);
+    const avgLatency = Math.round(
+      nodes.reduce((sum, n) => sum + n.latency, 0) / count
+    );
+    const avgJitter = Number(
+      (
+        nodes.reduce((sum, n) => sum + (n.jitter ?? 1.8), 0) / count
+      ).toFixed(1)
+    );
+    const totalBandwidth = nodes.reduce((sum, n) => sum + n.transferRate, 0);
+    const compliantNodes = nodes.filter(
+      (n) =>
+        !isCountryExcludedByJurisdiction(
+          n.country,
+          settings.excludeEyesJurisdictions
+        )
+    );
+    const sanctuaryNodes = nodes.filter(
+      (n) => getJurisdictionTier(n.country) === 'sanctuary'
+    );
+
+    const activeDistanceKm = activeConnectedNode
+      ? computeGeodesicDistanceKm(
+          LOCAL_ORIGIN,
+          getNodeLonLat(activeConnectedNode)
+        )
+      : 0;
+
+    return {
+      avgLatency,
+      avgJitter,
+      totalBandwidth,
+      compliantCount: compliantNodes.length,
+      sanctuaryCount: sanctuaryNodes.length,
+      activeDistanceKm,
+    };
+  }, [nodes, settings.excludeEyesJurisdictions, activeConnectedNode]);
 
   // --- Handlers ---
 
-  const handleSaveView = () => {
-      if (!newViewName.trim()) return;
-      const newView: SavedViewConfig = {
-          id: Date.now().toString(),
-          name: newViewName.trim(),
-          viewMode,
-          filterType,
-          searchQuery,
-          sortBy,
-          visibleColumns
+  const handleProbeFleet = async () => {
+    if (isProbingFleet || nodes.length === 0) return;
+    setIsProbingFleet(true);
+    try {
+      const response = await fetch('/api/network/probe-nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodes: nodes.map((n) => ({
+            id: n.id,
+            ip: n.ip,
+            country: n.country,
+            latency: n.latency,
+            transferRate: n.transferRate,
+            asn: n.asn,
+          })),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as {
+        ok: boolean;
+        probedAt: string;
+        probeDurationMs: number;
+        results: Array<{
+          id: string;
+          latency: number;
+          jitter: number;
+          packetLoss: number;
+          loadPct: number;
+          transferRate: number;
+          asn: string;
+          probedAt: string;
+        }>;
       };
-      setSavedViews(prev => [...prev, newView]);
-      setActiveViewId(newView.id);
-      setNewViewName('');
-      setShowViewsMenu(false);
-      setToast(`Vue "${newView.name}" sauvegardée`);
+
+      const byId = new Map(data.results.map((r) => [r.id, r]));
+      const updated = nodes.map((node) => {
+        const probe = byId.get(node.id);
+        if (!probe) return node;
+        return {
+          ...node,
+          latency: probe.latency,
+          jitter: probe.jitter,
+          packetLoss: probe.packetLoss,
+          loadPct: probe.loadPct,
+          transferRate: probe.transferRate,
+          asn: probe.asn,
+          probedAt: probe.probedAt,
+        };
+      });
+
+      onNodesProbed?.(updated);
+      const timeStr = new Date(data.probedAt).toLocaleTimeString('fr-FR');
+      setLastProbeSummary(`Sondé à ${timeStr} (${data.probeDurationMs} ms)`);
+      setToast(
+        `Flotte sondée : ${updated.length} relais mesurés en ${data.probeDurationMs} ms`
+      );
+      addLog?.(
+        `Sondage télémétrique BGP/ICMP exécuté sur ${updated.length} relais (${data.probeDurationMs} ms)`,
+        'info'
+      );
+    } catch {
+      setToast('Échec du sondage réseau local');
+    } finally {
+      setIsProbingFleet(false);
+    }
+  };
+
+  const handleConnectOptimalRelay = () => {
+    const eligible = nodes.filter(
+      (n) =>
+        !isCountryExcludedByJurisdiction(
+          n.country,
+          settings.excludeEyesJurisdictions
+        )
+    );
+    const pool = eligible.length > 0 ? eligible : nodes;
+    const ranked = [...pool].sort((a, b) => {
+      const scoreA = a.latency + (a.loadPct ?? 30) * 0.25;
+      const scoreB = b.latency + (b.loadPct ?? 30) * 0.25;
+      return scoreA - scoreB;
+    });
+    const best = ranked[0];
+    if (!best) return;
+    onConnectNode(best.id);
+    setToast(
+      `Relais optimal sélectionné : ${best.name} (${best.city || best.country} · ${best.latency} ms)`
+    );
+  };
+
+  const handleAutoComposeSanctuaryCircuit = () => {
+    const sanctuaries = [...nodes]
+      .filter((n) => getJurisdictionTier(n.country) === 'sanctuary')
+      .sort((a, b) => a.latency - b.latency);
+
+    const pool = sanctuaries.length >= 3 ? sanctuaries : [...nodes].sort((a, b) => a.latency - b.latency);
+    const first = pool[0];
+    const second =
+      pool.find((n) => n.country !== first?.country) || pool[1] || first;
+    const third =
+      pool.find(
+        (n) => n.country !== first?.country && n.country !== second?.country
+      ) ||
+      pool.find((n) => n.id !== first?.id && n.id !== second?.id) ||
+      pool[2] ||
+      second;
+
+    if (first) setEntryNodeId(first.id);
+    if (second) setRelayNodeId(second.id);
+    if (third) setExitNodeId(hopCount === 2 ? second.id : third.id);
+
+    setToast('Circuit sanctuaire multi-juridictions composé automatiquement');
+  };
+
+  const handleAssignHopFromMap = (
+    nodeId: string,
+    role: 'entry' | 'relay' | 'exit'
+  ) => {
+    const target = nodes.find((n) => n.id === nodeId);
+    if (!target) return;
+    setShowCircuitComposer(true);
+    if (role === 'entry') {
+      if (hopCount === 1) setHopCount(2);
+      setEntryNodeId(nodeId);
+      setToast(`${target.name} assigné comme Garde d’entrée (#1)`);
+    } else if (role === 'relay') {
+      setHopCount(3);
+      setRelayNodeId(nodeId);
+      setToast(`${target.name} assigné comme Relais intermédiaire (#2)`);
+    } else {
+      setExitNodeId(nodeId);
+      setToast(`${target.name} assigné comme Nœud de sortie`);
+    }
+  };
+
+  const handleDeployStagedCircuit = () => {
+    if (!exitNode) return;
+    if (circuitTelemetry.hasDuplicateHop) {
+      setToast(
+        'Sélectionnez des relais distincts pour chaque saut du circuit.'
+      );
+      return;
+    }
+
+    if (onDeployCircuit && entryNode) {
+      onDeployCircuit({
+        hopCount,
+        entryNode: hopCount === 1 ? exitNode : entryNode,
+        relayNode: hopCount === 3 ? relayNode : undefined,
+        exitNode,
+      });
+    } else {
+      onConnectNode(exitNode.id);
+    }
+
+    const routeDesc = stagedCircuitNodes.map((n) => n.name).join(' → ');
+    setToast(`Circuit déployé : ${routeDesc}`);
+  };
+
+  const handleExportTopologyCsv = () => {
+    const header = [
+      'ID',
+      'Relais',
+      'Pays',
+      'Ville',
+      'Juridiction',
+      'IPv4',
+      'ASN',
+      'Latence_ms',
+      'Gigue_ms',
+      'Debit_Mo_s',
+      'Charge_pct',
+      'Signal_pct',
+      'Profil_RNC',
+    ].join(',');
+
+    const rows = filteredNodes.map((n) =>
+      [
+        n.id,
+        `"${n.name}"`,
+        `"${n.country}"`,
+        `"${n.city || ''}"`,
+        getJurisdictionTier(n.country),
+        n.ip,
+        `"${n.asn || ''}"`,
+        n.latency,
+        n.jitter ?? 1.5,
+        n.transferRate,
+        n.loadPct ?? 30,
+        n.signalStrength,
+        n.autonomyProfile,
+      ].join(',')
+    );
+
+    const blob = new Blob([[header, ...rows].join('\n')], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renumerate-topologie-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setToast(`Inventaire exporté (${filteredNodes.length} relais CSV)`);
+  };
+
+  const handleSaveView = () => {
+    if (!newViewName.trim()) return;
+    const newView: SavedViewConfig = {
+      id: Date.now().toString(),
+      name: newViewName.trim(),
+      viewMode,
+      filterType,
+      jurisdictionFilter,
+      searchQuery,
+      sortBy,
+      visibleColumns,
+    };
+    setSavedViews((prev) => [...prev, newView]);
+    setActiveViewId(newView.id);
+    setNewViewName('');
+    setShowViewsMenu(false);
+    setToast(`Vue « ${newView.name} » sauvegardée`);
   };
 
   const handleLoadView = (view: SavedViewConfig) => {
-      setViewMode(view.viewMode);
-      setFilterType(view.filterType);
-      setSearchQuery(view.searchQuery);
-      setSortBy(view.sortBy);
-      if (view.visibleColumns) setVisibleColumns(view.visibleColumns);
-      setActiveViewId(view.id);
-      setShowViewsMenu(false);
-      setToast(`Vue "${view.name}" chargée`);
+    setViewMode(view.viewMode);
+    setFilterType(view.filterType);
+    if (view.jurisdictionFilter) setJurisdictionFilter(view.jurisdictionFilter);
+    setSearchQuery(view.searchQuery);
+    setSortBy(view.sortBy);
+    if (view.visibleColumns) setVisibleColumns(view.visibleColumns);
+    setActiveViewId(view.id);
+    setShowViewsMenu(false);
+    setToast(`Vue « ${view.name} » chargée`);
   };
 
   const handleDeleteView = (id: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const viewName = savedViews.find(v => v.id === id)?.name;
-      if (activeViewId === id) setActiveViewId(null);
-      setSavedViews(prev => prev.filter(v => v.id !== id));
-      setToast(`Vue "${viewName}" supprimée`);
+    e.stopPropagation();
+    const viewName = savedViews.find((v) => v.id === id)?.name;
+    if (activeViewId === id) setActiveViewId(null);
+    setSavedViews((prev) => prev.filter((v) => v.id !== id));
+    setToast(`Vue « ${viewName} » supprimée`);
   };
 
   const handleStartEdit = (view: SavedViewConfig, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setEditingViewId(view.id);
-      setEditName(view.name);
+    e.stopPropagation();
+    setEditingViewId(view.id);
+    setEditName(view.name);
   };
 
   const handleCancelEdit = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      setEditingViewId(null);
-      setEditName('');
+    e.stopPropagation();
+    setEditingViewId(null);
+    setEditName('');
   };
 
   const handleSaveEdit = (e: React.SyntheticEvent) => {
-      e.stopPropagation();
-      if (editingViewId && editName.trim()) {
-          setSavedViews(prev => prev.map(v => 
-              v.id === editingViewId ? { ...v, name: editName.trim() } : v
-          ));
-          setEditingViewId(null);
-          setEditName('');
-          setToast("Vue renommée avec succès");
-      }
+    e.stopPropagation();
+    if (editingViewId && editName.trim()) {
+      setSavedViews((prev) =>
+        prev.map((v) =>
+          v.id === editingViewId ? { ...v, name: editName.trim() } : v
+        )
+      );
+      setEditingViewId(null);
+      setEditName('');
+      setToast('Vue renommée');
+    }
   };
 
   const toggleColumn = (key: string) => {
-      setActiveViewId(null); 
-      setVisibleColumns(prev => 
-          prev.includes(key) 
-              ? prev.filter(k => k !== key)
-              : [...prev, key]
-      );
+    setActiveViewId(null);
+    setVisibleColumns((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   };
 
   const handleResetFilters = () => {
-      setFilterType('all');
-      setSearchQuery('');
-      setSortBy('name');
-      setActiveViewId(null);
-      setToast("Filtres réinitialisés");
+    setFilterType('all');
+    setJurisdictionFilter('all');
+    setSearchQuery('');
+    setSortBy('latency');
+    setActiveViewId(null);
+    setToast('Filtres réinitialisés');
   };
 
   const startTransferSimulation = (node: DeviceNode) => {
     if (transferState.status === 'running') {
-        setToast("Simulation déjà en cours");
-        return;
+      setToast('Un diagnostic de transfert est déjà en cours');
+      return;
     }
 
+    transferTimersRef.current.forEach((t) => window.clearTimeout(t));
+    transferTimersRef.current = [];
+
+    const deterministicHex = ((Date.now() ^ (node.latency * 2654435761)) >>> 0)
+      .toString(16)
+      .toUpperCase()
+      .padStart(8, '0');
+
     setTransferState({
-        isActive: true,
-        targetNodeName: node.name,
-        targetNodeId: node.id,
-        progress: 0,
-        logs: [],
-        isCollapsed: false,
-        status: 'running'
+      isActive: true,
+      traceId: `RN-${deterministicHex}`,
+      targetNodeName: node.name,
+      targetNodeId: node.id,
+      progress: 0,
+      logs: [],
+      isCollapsed: false,
+      status: 'running',
     });
 
+    const kexLabel = settings.postQuantumKex.toUpperCase();
     const steps = [
-        { msg: `Initialisation de la connexion sécurisée vers ${node.name} (${node.ip})...`, type: 'info', progress: 5, delay: 500 },
-        { msg: "Résolution DNS et routage optimisé (Smart Path)...", type: 'info', progress: 15, delay: 1200 },
-        { msg: "Handshake cryptographique (ECDH) réussi avec le nœud.", type: 'success', progress: 25, delay: 1800 },
-        { msg: "Canal sécurisé établi. Chiffrement AES-256-GCM actif.", type: 'success', progress: 40, delay: 2500 },
-        { msg: "Début du transfert de paquets de données segmentés.", type: 'info', progress: 50, delay: 3200 },
-        { msg: `Analyse heuristique des paquets : Flux d'intégrité validé.`, type: 'info', progress: 65, delay: 4500 },
-        { msg: `Fluctuation mineure de la latence (${node.latency + 15}ms) - Correction d'erreur active.`, type: 'warning', progress: 80, delay: 5500 },
-        { msg: "Vérification finale (Hash SHA-256) - Signature valide.", type: 'info', progress: 90, delay: 6500 },
-        { msg: "Synchronisation terminée. Session de transfert close.", type: 'success', progress: 100, delay: 7200 }
-    ];
+      {
+        msg: `Ouverture du socket chiffré vers ${node.name} (${node.ip} · ${node.asn || 'BGP Core'})...`,
+        type: 'info',
+        progress: 10,
+        delay: 350,
+      },
+      {
+        msg: `Validation de route (${node.city || node.country}, ${node.country}) · MTU ${settings.mtuSize} octets.`,
+        type: 'info',
+        progress: 24,
+        delay: 950,
+      },
+      {
+        msg: `Échange de clés hybride (${kexLabel} + X25519) authentifié sans fuite DNS.`,
+        type: 'success',
+        progress: 42,
+        delay: 1650,
+      },
+      {
+        msg: `Émission d’une salve test chiffrée ChaCha20-Poly1305 (${node.transferRate} Mo/s disponibles).`,
+        type: 'info',
+        progress: 64,
+        delay: 2450,
+      },
+      {
+        msg: `RTT mesuré : ${node.latency} ms (gigue ±${node.jitter ?? 1.6} ms, perte ${node.packetLoss ?? 0}%).`,
+        type: node.latency > 95 ? 'warning' : 'info',
+        progress: 84,
+        delay: 3300,
+      },
+      {
+        msg: 'Empreinte SHA-256 des trames retour vérifiée. Canal opérationnel.',
+        type: 'success',
+        progress: 100,
+        delay: 4100,
+      },
+    ] as const;
 
     steps.forEach((step, index) => {
-        setTimeout(() => {
-            const newLog: TransferLog = {
-                id: Date.now().toString() + index,
-                step: index + 1,
-                time: new Date().toLocaleTimeString('fr-FR'),
-                message: step.msg,
-                type: step.type as any
-            };
+      const timerId = window.setTimeout(() => {
+        const newLog: TransferLog = {
+          id: `${Date.now()}-${index}`,
+          step: index + 1,
+          time: new Date().toLocaleTimeString('fr-FR'),
+          message: step.msg,
+          type: step.type,
+        };
 
-            setTransferState(prev => {
-                if (!prev.isActive) return prev;
-                const isComplete = index === steps.length - 1;
-                return {
-                    ...prev,
-                    progress: step.progress,
-                    logs: [...prev.logs, newLog],
-                    status: isComplete ? 'completed' : 'running'
-                };
-            });
-        }, step.delay);
+        setTransferState((prev) => {
+          if (!prev.isActive) return prev;
+          const isComplete = index === steps.length - 1;
+          return {
+            ...prev,
+            progress: step.progress,
+            logs: [...prev.logs, newLog],
+            status: isComplete ? 'completed' : 'running',
+          };
+        });
+      }, step.delay);
+      transferTimersRef.current.push(timerId);
     });
   };
 
   const closeTransferPanel = () => {
-      setTransferState(prev => ({ ...prev, isActive: false, status: 'idle' }));
+    transferTimersRef.current.forEach((t) => window.clearTimeout(t));
+    transferTimersRef.current = [];
+    setTransferState((prev) => ({ ...prev, isActive: false, status: 'idle' }));
   };
 
   const clearTransferLogs = () => {
-      setTransferState(prev => ({ ...prev, logs: [], progress: 0, status: 'idle' }));
+    setTransferState((prev) => ({
+      ...prev,
+      logs: [],
+      progress: 0,
+      status: 'idle',
+    }));
   };
 
   const exportTransferLogs = () => {
-      const lines = [
-          `=== RENUMERATE VPN — JOURNAL DE TRANSFERT CHIFFRÉ ===`,
-          `Cible : ${transferState.targetNodeName}`,
-          `Date : ${new Date().toLocaleString('fr-FR')}`,
-          ``,
-          ...transferState.logs.map(l => `[${l.time}] (#${l.step} ${l.type.toUpperCase()}) ${l.message}`)
-      ];
-      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `renumerate-transfert-${transferState.targetNodeName.toLowerCase()}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setToast('Journal de transfert exporté');
+    const lines = [
+      `=== RENUMERATE VPN — DIAGNOSTIC DE FLUX CHIFFRÉ ===`,
+      `Trace : ${transferState.traceId}`,
+      `Relais cible : ${transferState.targetNodeName}`,
+      `Date : ${new Date().toLocaleString('fr-FR')}`,
+      ``,
+      ...transferState.logs.map(
+        (l) => `[${l.time}] (#${l.step} ${l.type.toUpperCase()}) ${l.message}`
+      ),
+    ];
+    const blob = new Blob([lines.join('\n')], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renumerate-flux-${transferState.targetNodeName.toLowerCase()}.log`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setToast('Journal de flux téléchargé (.log)');
   };
 
   // --- Filtering & Sorting ---
 
-  const filteredNodes = nodes
-    .filter(n => {
-        const matchesSearch = n.name.toLowerCase().includes(searchQuery.toLowerCase()) || n.ip.includes(searchQuery);
+  const filteredNodes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return nodes
+      .filter((n) => {
+        const matchesSearch =
+          !q ||
+          n.name.toLowerCase().includes(q) ||
+          n.ip.includes(q) ||
+          n.country.toLowerCase().includes(q) ||
+          (n.city && n.city.toLowerCase().includes(q)) ||
+          (n.asn && n.asn.toLowerCase().includes(q));
         const matchesType = filterType === 'all' || n.type === filterType;
-        return matchesSearch && matchesType;
-    })
-    .sort((a, b) => {
+        const matchesJurisdiction =
+          jurisdictionFilter === 'all'
+            ? true
+            : jurisdictionFilter === 'sanctuary'
+              ? getJurisdictionTier(n.country) === 'sanctuary'
+              : !isCountryExcludedByJurisdiction(
+                  n.country,
+                  settings.excludeEyesJurisdictions
+                );
+        return matchesSearch && matchesType && matchesJurisdiction;
+      })
+      .sort((a, b) => {
         switch (sortBy) {
-            case 'signal': return b.signalStrength - a.signalStrength;
-            case 'rate': return b.transferRate - a.transferRate;
-            case 'latency': return a.latency - b.latency;
-            default: return a.name.localeCompare(b.name);
+          case 'signal':
+            return b.signalStrength - a.signalStrength;
+          case 'rate':
+            return b.transferRate - a.transferRate;
+          case 'latency':
+            return a.latency - b.latency;
+          case 'load':
+            return (a.loadPct ?? 30) - (b.loadPct ?? 30);
+          default:
+            return a.name.localeCompare(b.name);
         }
-    });
+      });
+  }, [
+    nodes,
+    searchQuery,
+    filterType,
+    jurisdictionFilter,
+    settings.excludeEyesJurisdictions,
+    sortBy,
+  ]);
 
-  // --- Helpers ---
   const getTypeIcon = (type: string) => {
-      switch(type) {
-          case 'mobile': return <Smartphone className="w-4 h-4" />;
-          case 'server': return <Server className="w-4 h-4" />;
-          case 'iot': return <Cpu className="w-4 h-4" />;
-          case 'desktop': return <Monitor className="w-4 h-4" />;
-          default: return <Monitor className="w-4 h-4" />;
-      }
-  };
-
-  const getAutonomyIcon = (profile: string) => {
-      switch(profile) {
-          case 'provider': return <Zap className="w-3.5 h-3.5" />;
-          case 'consumer': return <Battery className="w-3.5 h-3.5" />;
-          default: return <Activity className="w-3.5 h-3.5" />;
-      }
-  };
-
-  const getAutonomyColorClass = (profile: string) => {
-    switch(profile) {
-        case 'provider': return 'text-amber-500 dark:text-amber-400';
-        case 'consumer': return 'text-emerald-500 dark:text-emerald-400';
-        default: return 'text-brand-600 dark:text-brand-400';
+    switch (type) {
+      case 'mobile':
+        return <Smartphone className="w-4 h-4" />;
+      case 'server':
+        return <Server className="w-4 h-4" />;
+      case 'iot':
+        return <Cpu className="w-4 h-4" />;
+      default:
+        return <Monitor className="w-4 h-4" />;
     }
   };
 
+  const getAutonomyIcon = (profile: string) => {
+    switch (profile) {
+      case 'provider':
+        return <Zap className="w-3.5 h-3.5" />;
+      case 'consumer':
+        return <Battery className="w-3.5 h-3.5" />;
+      default:
+        return <Activity className="w-3.5 h-3.5" />;
+    }
+  };
+
+  const getAutonomyColorClass = (profile: string) => {
+    switch (profile) {
+      case 'provider':
+        return 'text-amber-600 dark:text-amber-400';
+      case 'consumer':
+        return 'text-emerald-600 dark:text-emerald-400';
+      default:
+        return 'text-cyan-600 dark:text-cyan-400';
+    }
+  };
+
+  const formatJurisdictionLabel = (country: string) => {
+    const tier = getJurisdictionTier(country);
+    if (tier === 'sanctuary') return 'Sanctuaire';
+    if (tier === '14-eyes') return 'Zone 14-Eyes';
+    return 'Zone 5-Eyes';
+  };
+
+  const getJurisdictionTextClass = (country: string) => {
+    const tier = getJurisdictionTier(country);
+    if (tier === 'sanctuary') return 'text-emerald-600 dark:text-emerald-400';
+    if (tier === '14-eyes') return 'text-amber-600 dark:text-amber-400';
+    return 'text-rose-600 dark:text-rose-400';
+  };
+
+  const getStagedRoleLabel = (nodeId: string): string | null => {
+    if (hopCount === 1 && exitNode?.id === nodeId) return 'Cible #1';
+    if (hopCount >= 2 && entryNode?.id === nodeId) return 'Garde #1';
+    if (hopCount === 3 && relayNode?.id === nodeId) return 'Relais #2';
+    if (hopCount === 2 && exitNode?.id === nodeId) return 'Sortie #2';
+    if (hopCount === 3 && exitNode?.id === nodeId) return 'Sortie #3';
+    return null;
+  };
+
   return (
-    <div className="h-full flex flex-col space-y-4 relative">
-        {/* Toolbar */}
-        <div className="flex flex-col xl:flex-row gap-4 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            
-            {/* Search & Filters */}
-            <div className="flex-1 flex gap-3">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input 
-                        type="text" 
-                        placeholder="Rechercher un nœud (nom ou IP)..." 
-                        value={searchQuery}
-                        onChange={(e) => { setSearchQuery(e.target.value); setActiveViewId(null); }}
-                        className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:border-brand-500 outline-none transition-colors dark:text-white"
-                    />
+    <div className="space-y-5 relative">
+      {/* 1. 4-KPI Network Telemetry Strip */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* KPI 1: Active Tunnel & Geodesic Distance */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            Tunnel actif &amp; portée géodésique
+          </div>
+          <div className="mt-2">
+            {activeConnectedNode ? (
+              <>
+                <div className="text-lg font-bold text-slate-900 dark:text-white font-mono tabular-nums">
+                  {activeConnectedNode.name} ·{' '}
+                  {fleetMetrics.activeDistanceKm.toLocaleString('fr-FR')} km
                 </div>
-                
-                <div className="relative min-w-[140px]">
-                    <select
-                        value={filterType}
-                        onChange={(e) => { setFilterType(e.target.value); setActiveViewId(null); }}
-                        className="w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-3 pr-8 text-sm focus:border-brand-500 outline-none cursor-pointer dark:text-white"
-                    >
-                        <option value="all">Tous types</option>
-                        <option value="server">Serveurs</option>
-                        <option value="desktop">Ordinateurs</option>
-                        <option value="mobile">Mobiles</option>
-                        <option value="iot">IoT</option>
-                    </select>
-                    <Filter className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                    Connecté ({mode})
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {activeConnectedNode.city || activeConnectedNode.country},{' '}
+                    {activeConnectedNode.country}
+                  </span>
                 </div>
-
-                <div className="relative min-w-[140px]">
-                    <select
-                        value={sortBy}
-                        onChange={(e) => { setSortBy(e.target.value as any); setActiveViewId(null); }}
-                        className="w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-9 pr-8 text-sm focus:border-brand-500 outline-none cursor-pointer dark:text-white"
-                    >
-                        <option value="name">Trier par Nom</option>
-                        <option value="signal">Trier par Signal</option>
-                        <option value="rate">Trier par Débit</option>
-                        <option value="latency">Trier par Latence</option>
-                    </select>
-                    <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                </div>
-
-                <button 
-                    onClick={handleResetFilters}
-                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition-colors"
-                    title="Réinitialiser"
-                >
-                    <RotateCcw className="w-5 h-5" />
-                </button>
-            </div>
-
-            {/* View Controls */}
-            <div className="flex gap-3">
-                <div className="relative z-20">
-                    <button 
-                        onClick={() => setShowViewsMenu(!showViewsMenu)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
-                            activeViewId 
-                            ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-brand-200 dark:border-brand-800' 
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-                        }`}
-                    >
-                        <LayoutTemplate className="w-4 h-4" />
-                        <span className="max-w-[100px] truncate">{activeViewId ? savedViews.find(v => v.id === activeViewId)?.name : 'Vues'}</span>
-                        <ChevronDown className={`w-3 h-3 transition-transform ${showViewsMenu ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showViewsMenu && (
-                        <>
-                        <div className="fixed inset-0" onClick={() => setShowViewsMenu(false)}></div>
-                        <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-2 animate-in fade-in zoom-in-95 duration-200">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1">Configurations</div>
-                            <div className="space-y-1 mb-2 max-h-48 overflow-y-auto custom-scrollbar">
-                                {savedViews.length === 0 ? (
-                                    <p className="text-xs text-slate-400 px-2 py-2 italic text-center">Aucune vue sauvegardée</p>
-                                ) : (
-                                    savedViews.map(view => (
-                                        <div key={view.id} className={`flex items-center justify-between group rounded-lg ${activeViewId === view.id && editingViewId !== view.id ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                                            {editingViewId === view.id ? (
-                                                <div className="flex items-center gap-1 flex-1 px-2 py-1">
-                                                    <input 
-                                                        type="text"
-                                                        value={editName}
-                                                        onChange={(e) => setEditName(e.target.value)}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(e)}
-                                                        className="flex-1 min-w-0 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 outline-none focus:border-brand-500 dark:text-white"
-                                                        autoFocus
-                                                    />
-                                                    <button onClick={handleSaveEdit} className="p-1 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded">
-                                                        <Check className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button onClick={handleCancelEdit} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded">
-                                                        <X className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <button 
-                                                        onClick={() => handleLoadView(view)}
-                                                        className="flex-1 text-left px-2 py-2 text-sm text-slate-700 dark:text-slate-200 truncate flex items-center gap-2"
-                                                    >
-                                                        <span className="truncate">{view.name}</span>
-                                                        {activeViewId === view.id && <Check className="w-3 h-3 text-brand-500 shrink-0" />}
-                                                    </button>
-                                                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity px-1">
-                                                        <button 
-                                                            onClick={(e) => handleStartEdit(view, e)}
-                                                            className="p-1.5 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded transition-colors"
-                                                            title="Renommer"
-                                                        >
-                                                            <Pencil className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button 
-                                                            onClick={(e) => handleDeleteView(view.id, e)}
-                                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                                                            title="Supprimer"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                            <div className="border-t border-slate-100 dark:border-slate-800 pt-2 px-1 flex gap-2">
-                                <input 
-                                    type="text" 
-                                    placeholder="Nom de la vue..." 
-                                    value={newViewName}
-                                    onChange={(e) => setNewViewName(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSaveView()}
-                                    className="flex-1 px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-brand-500 dark:text-white"
-                                />
-                                <button 
-                                    onClick={handleSaveView}
-                                    disabled={!newViewName.trim()}
-                                    className="p-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg transition-colors"
-                                >
-                                    <Save className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-                        </>
-                    )}
-                </div>
-
-                {viewMode === 'list' && (
-                    <div className="relative z-20">
-                        <button
-                            onClick={() => setShowColumnMenu(!showColumnMenu)}
-                            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                        >
-                            <Settings2 className="w-5 h-5" />
-                        </button>
-                        {showColumnMenu && (
-                            <>
-                            <div className="fixed inset-0" onClick={() => setShowColumnMenu(false)}></div>
-                            <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-2 animate-in fade-in zoom-in-95 duration-200">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1">Colonnes</div>
-                                <div className="space-y-0.5">
-                                    {ALL_COLUMNS.map(col => (
-                                        <button
-                                            key={col.key}
-                                            onClick={() => toggleColumn(col.key)}
-                                            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors"
-                                        >
-                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                                                visibleColumns.includes(col.key) 
-                                                ? 'bg-brand-500 border-brand-500' 
-                                                : 'border-slate-300 dark:border-slate-600'
-                                            }`}>
-                                                {visibleColumns.includes(col.key) && <Check className="w-3 h-3 text-white" />}
-                                            </div>
-                                            <span className="text-slate-700 dark:text-slate-200">{col.label}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            </>
-                        )}
-                    </div>
-                )}
-
-                <button
-                    type="button"
-                    onClick={() => setShowWorldMap(!showWorldMap)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
-                        showWorldMap
-                            ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800'
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                    }`}
-                    title="Afficher ou masquer la carte mondiale D3"
-                >
-                    <Globe2 className="w-4 h-4" />
-                    <span className="hidden sm:inline">Carte D3</span>
-                </button>
-
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                    <button 
-                        onClick={() => { setViewMode('grid'); setActiveViewId(null); }}
-                        className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-                    >
-                        <Grid className="w-4 h-4" />
-                    </button>
-                    <button 
-                        onClick={() => { setViewMode('list'); setActiveViewId(null); }}
-                        className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
-                    >
-                        <List className="w-4 h-4" />
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        {/* Toast Feedback */}
-        {toast && (
-            <div className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-xs font-medium border border-slate-700 flex items-center justify-between">
-                <span>{toast}</span>
-                <button onClick={() => setToast(null)} className="text-slate-400 hover:text-white">
-                    <X className="w-3.5 h-3.5" />
-                </button>
-            </div>
-        )}
-
-        {/* Interactive D3.js World Node Map */}
-        {showWorldMap && (
-            <WorldNodeMap
-                nodes={filteredNodes.length > 0 ? filteredNodes : nodes}
-                currentIp={currentIp}
-                isConnected={isConnected}
-                mode={mode}
-                isDark={isDark}
-                onConnectNode={onConnectNode}
-            />
-        )}
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-            {filteredNodes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                    <Search className="w-12 h-12 mb-3 opacity-20" />
-                    <p>Aucun nœud correspondant à vos critères.</p>
-                </div>
-            ) : viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {filteredNodes.map(node => (
-                        <div key={node.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 hover:border-brand-500/50 dark:hover:border-brand-500/50 transition-all group hover:shadow-lg hover:shadow-brand-500/5">
-                            <div className="flex justify-between items-start mb-3">
-                                <div className="flex items-center gap-3">
-                                    <div className={`p-2.5 rounded-xl ${
-                                        node.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                                        node.status === 'idle' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' :
-                                        'bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400'
-                                    }`}>
-                                        {getTypeIcon(node.type)}
-                                    </div>
-                                    <div>
-                                        <div className="font-bold text-slate-900 dark:text-white text-sm">{node.name}</div>
-                                        <div className="text-[10px] text-slate-500 font-mono">{node.ip}</div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex bg-slate-50 dark:bg-slate-800 rounded-lg p-0.5 border border-slate-100 dark:border-slate-700">
-                                        {(['consumer', 'balanced', 'provider'] as const).map((mode) => (
-                                            <button
-                                                key={mode}
-                                                onClick={(e) => { e.stopPropagation(); onAutonomyUpdate(node.id, mode); }}
-                                                className={`p-1 rounded-md transition-all ${
-                                                    node.autonomyProfile === mode 
-                                                    ? `bg-white dark:bg-slate-700 shadow-sm ${getAutonomyColorClass(mode)} ring-1 ring-black/5 dark:ring-white/5` 
-                                                    : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'
-                                                }`}
-                                                title={mode.charAt(0).toUpperCase() + mode.slice(1)}
-                                            >
-                                                {getAutonomyIcon(mode)}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-center text-xs text-slate-500">
-                                    <span className="flex items-center gap-1.5"><Signal className="w-3.5 h-3.5" /> Signal</span>
-                                    <div className="flex gap-0.5">
-                                        {[1,2,3,4].map(i => (
-                                            <div key={i} className={`w-1.5 h-3 rounded-sm ${i <= Math.ceil(node.signalStrength / 25) ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}></div>
-                                        ))}
-                                    </div>
-                                </div>
-                                
-                                <div className="flex justify-between items-center text-xs text-slate-500">
-                                    <span className="flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" /> Latence</span>
-                                    <span className={`font-mono font-bold ${node.latency < 50 ? 'text-emerald-500' : node.latency < 100 ? 'text-amber-500' : 'text-red-500'}`}>
-                                        {node.latency}ms
-                                    </span>
-                                </div>
-
-                                <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2">
-                                    <button 
-                                        onClick={() => onConnectNode(node.id)}
-                                        className="flex-1 py-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 transition-opacity"
-                                    >
-                                        Connecter
-                                    </button>
-                                    <button
-                                        onClick={() => startTransferSimulation(node)}
-                                        className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-500 dark:hover:text-brand-400 transition-colors border border-slate-200 dark:border-slate-700"
-                                        title="Simuler un transfert"
-                                    >
-                                        <ArrowRightLeft className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+              </>
             ) : (
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                            <tr>
-                                {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map(col => (
-                                    <th 
-                                        key={col.key}
-                                        onClick={() => {
-                                            if(['name','signal','rate','latency'].includes(col.key)) {
-                                                setSortBy(col.key as any);
-                                                setActiveViewId(null);
-                                            }
-                                        }}
-                                        className={`px-4 py-3 font-medium text-slate-500 dark:text-slate-400 ${['name','signal','rate','latency'].includes(col.key) ? 'cursor-pointer hover:text-slate-800 dark:hover:text-white' : ''}`}
-                                    >
-                                        <div className="flex items-center gap-1">
-                                            {col.label}
-                                            {sortBy === col.key && <ChevronDown className="w-3 h-3 text-brand-500" />}
-                                        </div>
-                                    </th>
-                                ))}
-                                <th className="px-4 py-3 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {filteredNodes.map(node => (
-                                <tr key={node.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-                                    {visibleColumns.includes('name') && (
-                                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-white flex items-center gap-2">
-                                            <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                                {getTypeIcon(node.type)}
-                                            </div>
-                                            {node.name}
-                                        </td>
-                                    )}
-                                    {visibleColumns.includes('ip') && <td className="px-4 py-3 text-slate-500 font-mono text-xs">{node.ip}</td>}
-                                    {visibleColumns.includes('type') && <td className="px-4 py-3 text-slate-500 capitalize">{node.type}</td>}
-                                    {visibleColumns.includes('status') && (
-                                        <td className="px-4 py-3">
-                                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
-                                                node.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
-                                                'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                                            }`}>
-                                                <span className={`w-1.5 h-1.5 rounded-full ${node.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                                                {node.status}
-                                            </span>
-                                        </td>
-                                    )}
-                                    {visibleColumns.includes('signal') && (
-                                        <td className="px-4 py-3 text-slate-500">
-                                            <div className="flex items-center gap-2">
-                                                <Signal className={`w-4 h-4 ${node.signalStrength > 70 ? 'text-emerald-500' : 'text-amber-500'}`} />
-                                                <span className="font-mono text-xs">{node.signalStrength}%</span>
-                                            </div>
-                                        </td>
-                                    )}
-                                    {visibleColumns.includes('rate') && <td className="px-4 py-3 text-slate-500 font-mono">{node.transferRate} MB/s</td>}
-                                    {visibleColumns.includes('latency') && <td className="px-4 py-3 text-slate-500 font-mono">{node.latency}ms</td>}
-                                    {visibleColumns.includes('autonomy') && (
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 w-fit rounded-lg p-0.5 border border-slate-100 dark:border-slate-700">
-                                                {(['consumer', 'balanced', 'provider'] as const).map((mode) => (
-                                                    <button
-                                                        key={mode}
-                                                        onClick={(e) => { e.stopPropagation(); onAutonomyUpdate(node.id, mode); }}
-                                                        className={`p-1 rounded-md transition-all ${
-                                                            node.autonomyProfile === mode 
-                                                            ? `bg-white dark:bg-slate-700 shadow-sm ${getAutonomyColorClass(mode)} ring-1 ring-black/5 dark:ring-white/5` 
-                                                            : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'
-                                                        }`}
-                                                        title={mode.charAt(0).toUpperCase() + mode.slice(1)}
-                                                    >
-                                                        {getAutonomyIcon(mode)}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </td>
-                                    )}
-                                    <td className="px-4 py-3 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button 
-                                                onClick={() => onConnectNode(node.id)}
-                                                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-500 hover:text-white dark:hover:bg-brand-500 dark:hover:text-white text-slate-600 dark:text-slate-300 text-xs font-bold transition-all"
-                                            >
-                                                Connecter
-                                            </button>
-                                            <button
-                                                onClick={() => startTransferSimulation(node)}
-                                                className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors"
-                                                title="Simuler un transfert"
-                                            >
-                                                <ArrowRightLeft className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+              <>
+                <div className="text-lg font-bold text-slate-900 dark:text-white">
+                  Tunnel hors ligne
                 </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Sélectionnez un relais ou déployez un circuit multi-sauts
+                </div>
+              </>
             )}
+          </div>
         </div>
 
-        {/* Transfer Log Panel */}
-        {transferState.isActive && (
-            <div className={`fixed bottom-6 right-6 z-50 w-full max-w-md bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700 overflow-hidden flex flex-col transition-all duration-500 ease-in-out ${transferState.isCollapsed ? 'h-16' : 'h-[420px]'}`}>
-                {/* Panel Header */}
-                <div 
-                    className="p-4 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between cursor-pointer group" 
-                    onClick={() => setTransferState(prev => ({...prev, isCollapsed: !prev.isCollapsed}))}
-                >
-                     <div className="flex items-center gap-3">
-                         <div className={`p-2 rounded-xl transition-all ${transferState.status === 'completed' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-brand-500/20 text-brand-500 group-hover:scale-110'}`}>
-                             {transferState.status === 'completed' ? <CircleCheck className="w-5 h-5" /> : <Activity className="w-5 h-5 animate-pulse" />}
-                         </div>
-                         <div className="flex flex-col">
-                             <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                 {transferState.status === 'completed' ? 'Historique : Flux Clôturé' : `Flux vers ${transferState.targetNodeName}`}
-                                 {transferState.isCollapsed && <span className="text-[10px] font-mono opacity-50 px-1.5 bg-slate-700 rounded ml-1">{transferState.progress}%</span>}
-                             </h4>
-                             {!transferState.isCollapsed && (
-                                <div className="flex items-center gap-2 mt-1.5">
-                                    <svg viewBox="0 0 100 4" className="w-48 h-1.5 rounded-full overflow-hidden bg-slate-700">
-                                        <rect
-                                            x={0}
-                                            y={0}
-                                            width={transferState.progress}
-                                            height={4}
-                                            rx={2}
-                                            fill={transferState.status === 'completed' ? '#10b981' : '#06b6d4'}
-                                        />
-                                    </svg>
-                                    <span className="text-[10px] text-slate-400 font-mono font-bold tabular-nums">{transferState.progress}%</span>
-                                </div>
-                             )}
-                         </div>
-                     </div>
-                     <div className="flex items-center gap-2">
-                         <button 
-                             onClick={(e) => { e.stopPropagation(); clearTransferLogs(); }}
-                             className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
-                             title="Effacer l'historique local"
-                         >
-                             <Trash2 className="w-4 h-4" />
-                         </button>
-                         <button className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-all">
-                             <ChevronUp className={`w-4 h-4 transition-transform duration-300 ${transferState.isCollapsed ? '' : 'rotate-180'}`} />
-                         </button>
-                         <button 
-                             onClick={(e) => { e.stopPropagation(); closeTransferPanel(); }}
-                             className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
-                         >
-                             <X className="w-4 h-4" />
-                         </button>
-                     </div>
-                </div>
+        {/* KPI 2: Jurisdiction Exclusion Governance */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              Périmètre juridictionnel
+            </span>
+            <span className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300">
+              {fleetMetrics.compliantCount}/{nodes.length} éligibles
+            </span>
+          </div>
+          <div className="mt-2.5 flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+            {(
+              [
+                { id: 'none', label: 'Global' },
+                { id: '5-eyes', label: 'Hors 5-Eyes' },
+                { id: '14-eyes', label: 'Hors 14-Eyes' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => onUpdateJurisdictionPolicy?.(opt.id)}
+                className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                  settings.excludeEyesJurisdictions === opt.id
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-                {/* Logs List Container */}
-                <div className="flex-1 flex flex-col bg-slate-950/50">
-                    <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800/50 bg-slate-900/30">
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                            <ClipboardList className="w-3 h-3" /> Journal de Paquets
-                        </div>
-                        <span className="text-[9px] font-mono text-slate-600">ID: {Math.random().toString(16).slice(2, 10).toUpperCase()}</span>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
-                        {transferState.logs.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-700 gap-3 opacity-50">
-                                <Terminal className="w-8 h-8" />
-                                <p className="text-xs italic">En attente d'initialisation du flux...</p>
-                            </div>
-                        ) : (
-                            <>
-                            {transferState.logs.map(log => (
-                                <div key={log.id} className="flex gap-3 p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.03] hover:bg-white/[0.05] transition-all text-[11px] group relative overflow-hidden animate-in fade-in slide-in-from-right-2">
-                                    <div className="flex flex-col items-center shrink-0 pt-1">
-                                        <div className={`w-5 h-5 rounded-lg flex items-center justify-center font-black text-[9px] border ${
-                                            log.type === 'info' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
-                                            log.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
-                                            log.type === 'warning' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
-                                            'bg-red-500/10 text-red-500 border-red-500/20'
-                                        }`}>
-                                            {log.step}
-                                        </div>
-                                        <div className="w-px h-full bg-slate-800 mt-1 opacity-50"></div>
-                                    </div>
-                                    
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
-                                             <div className="flex items-center gap-1.5">
-                                                 {log.type === 'info' && <Info className="w-3 h-3 text-blue-500" />}
-                                                 {log.type === 'success' && <CircleCheck className="w-3 h-3 text-emerald-500" />}
-                                                 {log.type === 'warning' && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-                                                 {log.type === 'error' && <X className="w-3 h-3 text-red-500" />}
-                                                 <span className={`font-black uppercase tracking-tighter text-[9px] ${
-                                                     log.type === 'info' ? 'text-blue-500' :
-                                                     log.type === 'success' ? 'text-emerald-500' :
-                                                     log.type === 'warning' ? 'text-amber-500' : 'text-red-500'
-                                                 }`}>
-                                                     {log.type === 'info' ? 'SYSTÈME' : log.type === 'success' ? 'VALIDÉ' : log.type === 'warning' ? 'ALERT' : 'ERREUR'}
-                                                 </span>
-                                             </div>
-                                             <span className="text-[9px] text-slate-600 font-mono group-hover:text-slate-400 transition-colors">{log.time}</span>
-                                        </div>
-                                        <p className="text-slate-300 leading-relaxed font-medium font-sans">{log.message}</p>
-                                    </div>
-                                </div>
-                            ))}
-                            <div ref={logsEndRef} />
-                            </>
-                        )}
-                    </div>
-                    
-                    {transferState.status === 'completed' && (
-                        <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex gap-2">
-                             <button
-                                onClick={exportTransferLogs}
-                                className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
-                             >
-                                <Download className="w-3 h-3" /> Exporter LOGS
-                             </button>
-                             <button 
-                                onClick={closeTransferPanel}
-                                className="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-[10px] font-bold transition-all cursor-pointer"
-                             >
-                                Fermer
-                             </button>
-                        </div>
-                    )}
-                </div>
+        {/* KPI 3: Fleet RTT, Jitter & Mesh Capacity */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            Latence moyenne &amp; capacité maillage
+          </div>
+          <div className="mt-2">
+            <div className="text-lg font-bold text-slate-900 dark:text-white font-mono tabular-nums">
+              {fleetMetrics.avgLatency} ms · ±{fleetMetrics.avgJitter} ms
             </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap font-mono tabular-nums">
+              <span>{fleetMetrics.totalBandwidth} Mo/s agrégés</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-sans">
+                {lastProbeSummary || `${fleetMetrics.sanctuaryCount} sanctuaires`}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 4: Live Fleet Probe & Optimal 1-Click Connect */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            Sondage actif &amp; routage rapide
+          </div>
+          <div className="mt-2.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleProbeFleet}
+              disabled={isProbingFleet}
+              className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-60 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Radar
+                className={`w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 ${
+                  isProbingFleet ? 'animate-spin' : ''
+                }`}
+              />
+              <span>{isProbingFleet ? 'Sondage...' : 'Sonder la flotte'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleConnectOptimalRelay}
+              className="flex-1 py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Relais optimal</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Multi-Hop Circuit Orchestrator */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <Route className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Orchestrateur de circuit multi-sauts
+            </h2>
+            <span className="text-xs text-slate-400" aria-hidden="true">
+              ·
+            </span>
+            <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+              {stagedCircuitNodes.map((n) => n.name).join(' → ')} (
+              {circuitTelemetry.totalKm.toLocaleString('fr-FR')} km · ~
+              {circuitTelemetry.estimatedLatencyMs} ms)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAutoComposeSanctuaryCircuit}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              Composer un circuit sanctuaire
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCircuitComposer((v) => !v)}
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title={
+                showCircuitComposer
+                  ? 'Masquer le compositeur'
+                  : 'Déplier le compositeur'
+              }
+            >
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  showCircuitComposer ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {showCircuitComposer && (
+          <div className="p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Segmented Hop Architecture Selector */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg w-fit">
+                {(
+                  [
+                    { count: 1 as const, label: '1 Saut · Standard' },
+                    { count: 2 as const, label: '2 Sauts · Double Hop' },
+                    { count: 3 as const, label: '3 Sauts · Onion Vortex' },
+                  ]
+                ).map((item) => (
+                  <button
+                    key={item.count}
+                    type="button"
+                    onClick={() => setHopCount(item.count)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                      hopCount === item.count
+                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Clean Unboxed Circuit Audit Summary */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                <span className="font-mono tabular-nums">
+                  RTT estimé : ~{circuitTelemetry.estimatedLatencyMs} ms
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">
+                  {circuitTelemetry.uniqueCountries} juridiction
+                  {circuitTelemetry.uniqueCountries > 1 ? 's' : ''}
+                </span>
+                <span aria-hidden="true">·</span>
+                {circuitTelemetry.hasDuplicateHop ? (
+                  <span className="text-rose-600 dark:text-rose-400 font-medium">
+                    Doublon de nœud détecté
+                  </span>
+                ) : circuitTelemetry.hasExcludedNode ? (
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">
+                    Inclut un relais hors politique {settings.excludeEyesJurisdictions}
+                  </span>
+                ) : circuitTelemetry.allSanctuary ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Sanctuaire intégral hors 14-Eyes
+                  </span>
+                ) : (
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Juridictions mixtes conformes
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Hop Selectors + Deploy CTA */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              {hopCount >= 2 && (
+                <div className={hopCount === 3 ? 'md:col-span-3' : 'md:col-span-4'}>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                    01. Garde d’entrée (chiffrement couche 1)
+                  </label>
+                  <select
+                    value={entryNodeId}
+                    onChange={(e) => setEntryNodeId(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 dark:text-white focus:border-cyan-500 outline-none cursor-pointer"
+                  >
+                    {nodes.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.name} — {n.country} ({n.latency} ms ·{' '}
+                        {formatJurisdictionLabel(n.country)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {hopCount === 3 && (
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                    02. Relais aveugle intermédiaire
+                  </label>
+                  <select
+                    value={relayNodeId}
+                    onChange={(e) => setRelayNodeId(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 dark:text-white focus:border-cyan-500 outline-none cursor-pointer"
+                  >
+                    {nodes.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.name} — {n.country} ({n.latency} ms ·{' '}
+                        {formatJurisdictionLabel(n.country)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div
+                className={
+                  hopCount === 1
+                    ? 'md:col-span-8'
+                    : hopCount === 2
+                      ? 'md:col-span-4'
+                      : 'md:col-span-3'
+                }
+              >
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                  {hopCount === 1
+                    ? '01. Passerelle de sortie directe'
+                    : hopCount === 2
+                      ? '02. Nœud de sortie (IP publique exposée)'
+                      : '03. Nœud de sortie Onion Vortex'}
+                </label>
+                <select
+                  value={exitNodeId}
+                  onChange={(e) => setExitNodeId(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-900 dark:text-white focus:border-cyan-500 outline-none cursor-pointer"
+                >
+                  {nodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name} — {n.city || n.country}, {n.country} ({n.latency}{' '}
+                      ms · {formatJurisdictionLabel(n.country)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div
+                className={
+                  hopCount === 1
+                    ? 'md:col-span-4'
+                    : hopCount === 2
+                      ? 'md:col-span-4'
+                      : 'md:col-span-3'
+                }
+              >
+                <button
+                  type="button"
+                  onClick={handleDeployStagedCircuit}
+                  disabled={circuitTelemetry.hasDuplicateHop}
+                  className="w-full py-2 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer h-[38px]"
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>
+                    {hopCount === 1
+                      ? 'Connecter ce relais'
+                      : `Déployer le circuit (${hopCount} sauts)`}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
+      </div>
+
+      {/* 3. Search, Filter & View Controls Toolbar */}
+      <div className="flex flex-col xl:flex-row gap-3 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+        <div className="flex-1 flex flex-wrap gap-2.5">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Rechercher par relais, IP, pays, ville ou ASN..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setActiveViewId(null);
+              }}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm focus:border-cyan-500 outline-none transition-colors text-slate-900 dark:text-white"
+            />
+          </div>
+
+          <div className="relative min-w-[138px]">
+            <select
+              value={filterType}
+              onChange={(e) => {
+                setFilterType(e.target.value);
+                setActiveViewId(null);
+              }}
+              className="w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-3 pr-8 text-xs sm:text-sm focus:border-cyan-500 outline-none cursor-pointer text-slate-900 dark:text-white"
+            >
+              <option value="all">Tous équipements</option>
+              <option value="server">Serveurs dédiés</option>
+              <option value="desktop">Postes relais</option>
+              <option value="mobile">Mobiles</option>
+              <option value="iot">Passerelles IoT</option>
+            </select>
+            <Filter className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+          </div>
+
+          <div className="relative min-w-[155px]">
+            <select
+              value={jurisdictionFilter}
+              onChange={(e) => {
+                setJurisdictionFilter(
+                  e.target.value as 'all' | 'compliant' | 'sanctuary'
+                );
+                setActiveViewId(null);
+              }}
+              className="w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-3 pr-8 text-xs sm:text-sm focus:border-cyan-500 outline-none cursor-pointer text-slate-900 dark:text-white"
+            >
+              <option value="all">Toutes juridictions</option>
+              <option value="compliant">Éligibles (politique active)</option>
+              <option value="sanctuary">Sanctuaires hors 14-Eyes</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+          </div>
+
+          <div className="relative min-w-[148px]">
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                setSortBy(
+                  e.target.value as
+                    | 'name'
+                    | 'signal'
+                    | 'rate'
+                    | 'latency'
+                    | 'load'
+                );
+                setActiveViewId(null);
+              }}
+              className="w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-8 pr-8 text-xs sm:text-sm focus:border-cyan-500 outline-none cursor-pointer text-slate-900 dark:text-white"
+            >
+              <option value="latency">Trier : Latence</option>
+              <option value="rate">Trier : Débit</option>
+              <option value="load">Trier : Charge</option>
+              <option value="signal">Trier : Signal</option>
+              <option value="name">Trier : Nom</option>
+            </select>
+            <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors cursor-pointer"
+            title="Réinitialiser les filtres"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Right Controls: Saved Views, Columns, CSV Export, Map Toggle, Grid/List */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative z-20">
+            <button
+              type="button"
+              onClick={() => setShowViewsMenu(!showViewsMenu)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                activeViewId
+                  ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              <LayoutTemplate className="w-4 h-4" />
+              <span className="max-w-[96px] truncate">
+                {activeViewId
+                  ? savedViews.find((v) => v.id === activeViewId)?.name
+                  : 'Vues'}
+              </span>
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${
+                  showViewsMenu ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {showViewsMenu && (
+              <>
+                <div
+                  className="fixed inset-0"
+                  onClick={() => setShowViewsMenu(false)}
+                />
+                <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-2 z-30">
+                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 px-2 py-1">
+                    Vues enregistrées
+                  </div>
+                  <div className="space-y-1 mb-2 max-h-48 overflow-y-auto custom-scrollbar">
+                    {savedViews.length === 0 ? (
+                      <p className="text-xs text-slate-400 px-2 py-2 text-center">
+                        Aucune vue enregistrée
+                      </p>
+                    ) : (
+                      savedViews.map((view) => (
+                        <div
+                          key={view.id}
+                          className={`flex items-center justify-between group rounded-lg ${
+                            activeViewId === view.id &&
+                            editingViewId !== view.id
+                              ? 'bg-cyan-50 dark:bg-cyan-950/30'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          {editingViewId === view.id ? (
+                            <div className="flex items-center gap-1 flex-1 px-2 py-1">
+                              <input
+                                type="text"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) =>
+                                  e.key === 'Enter' && handleSaveEdit(e)
+                                }
+                                className="flex-1 min-w-0 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-1 outline-none focus:border-cyan-500 text-slate-900 dark:text-white"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSaveEdit}
+                                className="p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEdit}
+                                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleLoadView(view)}
+                                className="flex-1 text-left px-2 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 truncate flex items-center gap-2 cursor-pointer"
+                              >
+                                <span className="truncate">{view.name}</span>
+                                {activeViewId === view.id && (
+                                  <Check className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                                )}
+                              </button>
+                              <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity px-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleStartEdit(view, e)}
+                                  className="p-1 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 rounded transition-colors"
+                                  title="Renommer"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteView(view.id, e)}
+                                  className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="border-t border-slate-100 dark:border-slate-800 pt-2 px-1 flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="Nommer cette vue..."
+                      value={newViewName}
+                      onChange={(e) => setNewViewName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveView()}
+                      className="flex-1 px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-cyan-500 text-slate-900 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveView}
+                      disabled={!newViewName.trim()}
+                      className="p-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Save className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {viewMode === 'list' && (
+            <div className="relative z-20">
+              <button
+                type="button"
+                onClick={() => setShowColumnMenu(!showColumnMenu)}
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                title="Configurer les colonnes"
+              >
+                <Settings2 className="w-4 h-4" />
+              </button>
+              {showColumnMenu && (
+                <>
+                  <div
+                    className="fixed inset-0"
+                    onClick={() => setShowColumnMenu(false)}
+                  />
+                  <div className="absolute top-full right-0 mt-2 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-2 z-30">
+                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 px-2 py-1">
+                      Colonnes affichées
+                    </div>
+                    <div className="space-y-0.5">
+                      {ALL_COLUMNS.map((col) => (
+                        <button
+                          key={col.key}
+                          type="button"
+                          onClick={() => toggleColumn(col.key)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer"
+                        >
+                          <div
+                            className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                              visibleColumns.includes(col.key)
+                                ? 'bg-cyan-600 border-cyan-600'
+                                : 'border-slate-300 dark:border-slate-600'
+                            }`}
+                          >
+                            {visibleColumns.includes(col.key) && (
+                              <Check className="w-3 h-3 text-white" />
+                            )}
+                          </div>
+                          <span className="text-slate-700 dark:text-slate-200">
+                            {col.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleExportTopologyCsv}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+            title="Exporter l’inventaire des relais en CSV"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">CSV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowWorldMap(!showWorldMap)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+              showWorldMap
+                ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <Globe2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Carte D3</span>
+          </button>
+
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('grid');
+                setActiveViewId(null);
+              }}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Vue en grille"
+            >
+              <Grid className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('list');
+                setActiveViewId(null);
+              }}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                viewMode === 'list'
+                  ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Vue tabulaire"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Inline Feedback Banner */}
+      {toast && (
+        <div className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 text-white text-xs font-medium border border-slate-700 flex items-center justify-between">
+          <span>{toast}</span>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="text-slate-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* 4. Interactive D3.js World Node Map */}
+      {showWorldMap && (
+        <WorldNodeMap
+          nodes={filteredNodes.length > 0 ? filteredNodes : nodes}
+          currentIp={currentIp}
+          isConnected={isConnected}
+          mode={mode}
+          isDark={isDark}
+          circuitHopIds={stagedCircuitIds}
+          excludeJurisdictions={settings.excludeEyesJurisdictions}
+          onConnectNode={onConnectNode}
+          onAssignHopRole={handleAssignHopFromMap}
+        />
+      )}
+
+      {/* 5. Relay Nodes Inventory (Grid or Tabular List) */}
+      <div>
+        {filteredNodes.length === 0 ? (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center py-16 text-slate-500 dark:text-slate-400">
+            <Search className="w-10 h-10 mb-3 opacity-30" />
+            <p className="text-sm font-medium">
+              Aucun relais ne correspond aux filtres sélectionnés.
+            </p>
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="mt-3 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+            >
+              Réinitialiser les filtres
+            </button>
+          </div>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredNodes.map((node) => {
+              const isCurrentNode = isConnected && node.ip === currentIp;
+              const isExcluded = isCountryExcludedByJurisdiction(
+                node.country,
+                settings.excludeEyesJurisdictions
+              );
+              const stagedRole = getStagedRoleLabel(node.id);
+
+              return (
+                <div
+                  key={node.id}
+                  className={`bg-white dark:bg-slate-900 rounded-2xl border p-4 transition-colors flex flex-col justify-between ${
+                    isCurrentNode
+                      ? 'border-emerald-500/70 dark:border-emerald-500/60'
+                      : isExcluded
+                        ? 'border-slate-200/80 dark:border-slate-800/80 opacity-75'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 dark:hover:border-cyan-500/50'
+                  }`}
+                >
+                  <div>
+                    {/* Card Header */}
+                    <div className="flex justify-between items-start gap-2 mb-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`p-2 rounded-xl shrink-0 ${
+                            isCurrentNode
+                              ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          {getTypeIcon(node.type)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 dark:text-white text-sm truncate">
+                            {node.name}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {node.city || node.country} · {node.country}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Segmented RNC Autonomy Selector */}
+                      <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 shrink-0">
+                        {(['consumer', 'balanced', 'provider'] as const).map(
+                          (prof) => (
+                            <button
+                              key={prof}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onAutonomyUpdate(node.id, prof);
+                              }}
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                node.autonomyProfile === prof
+                                  ? `bg-white dark:bg-slate-700 shadow-xs ${getAutonomyColorClass(prof)}`
+                                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                              }`}
+                              title={
+                                prof === 'provider'
+                                  ? 'Fournisseur RNC (+rendement)'
+                                  : prof === 'balanced'
+                                    ? 'Équilibré'
+                                    : 'Consommateur strict'
+                              }
+                            >
+                              {getAutonomyIcon(prof)}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Clean Unboxed Metadata Line (Zero-Pill Discipline) */}
+                    <div className="flex items-center gap-1.5 text-xs flex-wrap mb-3">
+                      <span
+                        className={`font-medium ${getJurisdictionTextClass(node.country)}`}
+                      >
+                        {formatJurisdictionLabel(node.country)}
+                      </span>
+                      <span className="text-slate-400" aria-hidden="true">
+                        ·
+                      </span>
+                      <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        {node.ip}
+                      </span>
+                      {stagedRole && (
+                        <>
+                          <span className="text-slate-400" aria-hidden="true">
+                            ·
+                          </span>
+                          <span className="font-medium text-cyan-600 dark:text-cyan-400">
+                            {stagedRole}
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Telemetry Rows */}
+                    <div className="space-y-2 text-xs border-t border-slate-100 dark:border-slate-800/80 pt-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          RTT &amp; gigue
+                        </span>
+                        <span
+                          className={`font-mono tabular-nums font-semibold ${
+                            node.latency <= 40
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : node.latency <= 95
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {node.latency} ms
+                          {typeof node.jitter === 'number'
+                            ? ` · ±${node.jitter} ms`
+                            : ''}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Débit &amp; charge
+                        </span>
+                        <span className="font-mono tabular-nums text-slate-800 dark:text-slate-200 font-medium">
+                          {node.transferRate} Mo/s · {node.loadPct ?? 30}%
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Réseau BGP
+                        </span>
+                        <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate max-w-[155px]">
+                          {node.asn || 'AS60068 Transit'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Actions */}
+                  <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onConnectNode(node.id)}
+                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                        isCurrentNode
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90'
+                      }`}
+                    >
+                      {isCurrentNode ? 'Connecté' : 'Basculer ici'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startTransferSimulation(node)}
+                      className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
+                      title="Tester un flux chiffré vers ce relais"
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  {ALL_COLUMNS.filter((c) =>
+                    visibleColumns.includes(c.key)
+                  ).map((col) => {
+                    const sortable = [
+                      'name',
+                      'signal',
+                      'rate',
+                      'latency',
+                    ].includes(col.key);
+                    return (
+                      <th
+                        key={col.key}
+                        onClick={() => {
+                          if (sortable) {
+                            setSortBy(
+                              col.key as 'name' | 'signal' | 'rate' | 'latency'
+                            );
+                            setActiveViewId(null);
+                          }
+                        }}
+                        className={`px-4 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap ${
+                          sortable
+                            ? 'cursor-pointer hover:text-slate-900 dark:hover:text-white'
+                            : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <span>{col.label}</span>
+                          {sortBy === col.key && (
+                            <ChevronDown className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredNodes.map((node) => {
+                  const isCurrentNode = isConnected && node.ip === currentIp;
+                  const stagedRole = getStagedRoleLabel(node.id);
+
+                  return (
+                    <tr
+                      key={node.id}
+                      className={`transition-colors ${
+                        isCurrentNode
+                          ? 'bg-emerald-50/50 dark:bg-emerald-950/20'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                      }`}
+                    >
+                      {visibleColumns.includes('name') && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm">
+                            {node.name}
+                            {stagedRole ? (
+                              <span className="ml-2 text-xs font-normal text-cyan-600 dark:text-cyan-400">
+                                · {stagedRole}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            {node.city || node.country}, {node.country}
+                          </div>
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('jurisdiction') && (
+                        <td className="px-4 py-3 whitespace-nowrap text-xs">
+                          <div
+                            className={`font-medium ${getJurisdictionTextClass(node.country)}`}
+                          >
+                            {formatJurisdictionLabel(node.country)}
+                          </div>
+                          <div className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                            {node.asn || 'AS60068 Transit'}
+                          </div>
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('ip') && (
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-mono tabular-nums text-xs whitespace-nowrap">
+                          {node.ip}
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('type') && (
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400 capitalize text-xs whitespace-nowrap">
+                          {node.type}
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('status') && (
+                        <td className="px-4 py-3 whitespace-nowrap text-xs">
+                          <span
+                            className={
+                              node.status === 'active'
+                                ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+                                : 'text-slate-500 dark:text-slate-400'
+                            }
+                          >
+                            {node.status === 'active' ? 'Opérationnel' : node.status}
+                          </span>
+                          <span className="text-slate-400 mx-1.5" aria-hidden="true">
+                            ·
+                          </span>
+                          <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                            Charge {node.loadPct ?? 30}%
+                          </span>
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('signal') && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <Signal
+                              className={`w-3.5 h-3.5 ${
+                                node.signalStrength > 75
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-amber-600 dark:text-amber-400'
+                              }`}
+                            />
+                            <span className="font-mono tabular-nums text-xs text-slate-700 dark:text-slate-300">
+                              {node.signalStrength}%
+                            </span>
+                          </div>
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('rate') && (
+                        <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-mono tabular-nums text-xs whitespace-nowrap">
+                          {node.transferRate} Mo/s
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('latency') && (
+                        <td className="px-4 py-3 font-mono tabular-nums text-xs whitespace-nowrap">
+                          <span
+                            className={`font-semibold ${
+                              node.latency <= 40
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : node.latency <= 95
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-rose-600 dark:text-rose-400'
+                            }`}
+                          >
+                            {node.latency} ms
+                          </span>
+                          {typeof node.jitter === 'number' && (
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {' '}
+                              · ±{node.jitter} ms
+                            </span>
+                          )}
+                        </td>
+                      )}
+
+                      {visibleColumns.includes('autonomy') && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 w-fit rounded-lg p-0.5">
+                            {(
+                              ['consumer', 'balanced', 'provider'] as const
+                            ).map((prof) => (
+                              <button
+                                key={prof}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onAutonomyUpdate(node.id, prof);
+                                }}
+                                className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                  node.autonomyProfile === prof
+                                    ? `bg-white dark:bg-slate-700 shadow-xs ${getAutonomyColorClass(prof)}`
+                                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                }`}
+                                title={prof}
+                              >
+                                {getAutonomyIcon(prof)}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      )}
+
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onConnectNode(node.id)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                              isCurrentNode
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-100 dark:bg-slate-800 hover:bg-cyan-600 hover:text-white dark:hover:bg-cyan-600 text-slate-700 dark:text-slate-200'
+                            }`}
+                          >
+                            {isCurrentNode ? 'Connecté' : 'Basculer'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startTransferSimulation(node)}
+                            className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:text-cyan-600 dark:hover:text-cyan-400 text-slate-500 dark:text-slate-400 transition-colors cursor-pointer"
+                            title="Diagnostic de flux chiffré"
+                          >
+                            <ArrowRightLeft className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 6. Encrypted Packet Transfer Diagnostic Drawer */}
+      {transferState.isActive && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col transition-all duration-300 ${
+            transferState.isCollapsed ? 'h-16' : 'h-[410px]'
+          }`}
+        >
+          {/* Drawer Header */}
+          <div
+            className="p-4 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-pointer"
+            onClick={() =>
+              setTransferState((prev) => ({
+                ...prev,
+                isCollapsed: !prev.isCollapsed,
+              }))
+            }
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-2 rounded-xl ${
+                  transferState.status === 'completed'
+                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400'
+                }`}
+              >
+                {transferState.status === 'completed' ? (
+                  <CircleCheck className="w-5 h-5" />
+                ) : (
+                  <Activity className="w-5 h-5 animate-pulse" />
+                )}
+              </div>
+              <div className="flex flex-col">
+                <h4 className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>
+                    {transferState.status === 'completed'
+                      ? `Diagnostic terminé · ${transferState.targetNodeName}`
+                      : `Diagnostic vers ${transferState.targetNodeName}`}
+                  </span>
+                  {transferState.isCollapsed && (
+                    <span className="font-mono tabular-nums text-slate-500">
+                      {transferState.progress}%
+                    </span>
+                  )}
+                </h4>
+                {!transferState.isCollapsed && (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <svg
+                      viewBox="0 0 100 4"
+                      className="w-44 h-1.5 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700"
+                    >
+                      <rect
+                        x={0}
+                        y={0}
+                        width={transferState.progress}
+                        height={4}
+                        rx={2}
+                        fill={
+                          transferState.status === 'completed'
+                            ? '#10b981'
+                            : '#06b6d4'
+                        }
+                      />
+                    </svg>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                      {transferState.progress}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearTransferLogs();
+                }}
+                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                title="Purger le journal"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+              >
+                <ChevronUp
+                  className={`w-4 h-4 transition-transform ${
+                    transferState.isCollapsed ? '' : 'rotate-180'
+                  }`}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTransferPanel();
+                }}
+                className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                title="Fermer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Drawer Body */}
+          <div className="flex-1 flex flex-col bg-white dark:bg-slate-950/60 min-h-0">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+              <span className="flex items-center gap-1.5 font-medium">
+                <ClipboardList className="w-3.5 h-3.5" />
+                Séquence de paquets vérifiés
+              </span>
+              <span className="font-mono tabular-nums">
+                {transferState.traceId}
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+              {transferState.logs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
+                  <Terminal className="w-7 h-7 opacity-50" />
+                  <p className="text-xs">Initialisation du socket chiffré...</p>
+                </div>
+              ) : (
+                <>
+                  {transferState.logs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-xs"
+                    >
+                      <div className="pt-0.5 shrink-0">
+                        {log.type === 'info' && (
+                          <Info className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                        )}
+                        {log.type === 'success' && (
+                          <CircleCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        )}
+                        {log.type === 'warning' && (
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        )}
+                        {log.type === 'error' && (
+                          <X className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mb-0.5 font-mono tabular-nums">
+                          <span>Étape 0{log.step}</span>
+                          <span>{log.time}</span>
+                        </div>
+                        <p className="text-slate-700 dark:text-slate-200 leading-relaxed">
+                          {log.message}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </>
+              )}
+            </div>
+
+            {transferState.status === 'completed' && (
+              <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex gap-2">
+                <button
+                  type="button"
+                  onClick={exportTransferLogs}
+                  className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Télécharger (.log)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={closeTransferPanel}
+                  className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

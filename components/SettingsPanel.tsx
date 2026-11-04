@@ -58,6 +58,7 @@ import {
   PostQuantumKex,
   SystemPowerProfile,
   PanicActionMode,
+  TrafficPaddingJitterMs,
 } from '../types';
 import {
   DEFAULT_APP_SETTINGS,
@@ -208,6 +209,10 @@ const PRESET_DEFINITIONS: Array<{
       blockCaptivePortalProbes: true,
       arpSpoofGuard: true,
       strictReversePathFilter: true,
+      ebpfXdpAcceleration: true,
+      strictMemoryLock: true,
+      ntpDriftProtection: true,
+      ephemeralRekeyMinutes: 5,
       autoLockVaultMinutes: 5,
       clipboardAutoClearSeconds: 15,
     },
@@ -222,6 +227,9 @@ const PRESET_DEFINITIONS: Array<{
       mtuSize: 1380,
       tcpCongestionControl: 'hybla',
       postQuantumKex: 'ml-kem-1024',
+      tlsClientHelloFragmentation: true,
+      trafficPaddingJitterMs: 40,
+      ntpDriftProtection: true,
       dns: 'quad9',
       killSwitch: true,
       killSwitchMode: 'strict',
@@ -1078,6 +1086,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         tabLabel: 'Système & Noyau',
         keywords: ['thème', 'sombre', 'clair', 'clavier', 'raccourcis', 'logs', 'journaux', 'purge', 'coffre', 'ram', 'presse-papiers', 'panique', 'éco', 'performance', 'flou'],
         currentValue: `${settings.powerProfile.toUpperCase()} · Coffre ${settings.autoLockVaultMinutes === 0 ? 'Manuel' : `${settings.autoLockVaultMinutes}m`}`,
+      },
+      {
+        id: 'ebpf_antidpi',
+        title: 'Accélération eBPF/XDP, Anti-DPI TLS, Rekey PFS & Verrouillage RAM mlockall',
+        description: 'Chemin rapide XDP Zero-Copy, découpage ClientHello SNI, bourrage Chaff, rotation clés PFS et confinement NTP.',
+        tab: 'system',
+        tabLabel: 'Système & Noyau',
+        keywords: ['ebpf', 'xdp', 'mlock', 'swap', 'ntp', 'tls', 'clienthello', 'dpi', 'chaff', 'padding', 'pfs', 'rekey'],
+        currentValue: `${settings.ebpfXdpAcceleration ? 'XDP ON' : 'SKB'} · PFS ${settings.ephemeralRekeyMinutes}m`,
       },
     ],
     [settings, savedProfiles.length, modifiedDiffCount]
@@ -4111,6 +4128,130 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             </button>
                           );
                         })}
+                      </div>
+                    </section>
+
+                    {/* Advanced Kernel eBPF, Anti-DPI, PFS Rekeying & Memory Hardening */}
+                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                          Directives Noyau Avancées, Anti-DPI &amp; Clés Éphémères PFS
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Contrôle fin du chemin rapide eBPF/XDP, du verrouillage mémoire anti-swap et des contre-mesures DPI.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {[
+                          {
+                            key: 'ebpfXdpAcceleration' as const,
+                            title: 'Accélération eBPF / XDP Zero-Copy',
+                            desc: 'Décharge le routage chiffré au pilote réseau (bpf_jit_enable=1).',
+                            accent: 'emerald' as const,
+                          },
+                          {
+                            key: 'strictMemoryLock' as const,
+                            title: 'Verrouillage RAM mlockall (Anti-Swap)',
+                            desc: 'Interdit l’écriture des clés sur le disque et bloque les core-dumps.',
+                            accent: 'emerald' as const,
+                          },
+                          {
+                            key: 'ntpDriftProtection' as const,
+                            title: 'Confinement Horloge NTP/NTS au Tunnel',
+                            desc: 'Bloque UDP/123 hors tunnel contre la corrélation temporelle FAI.',
+                            accent: 'cyan' as const,
+                          },
+                          {
+                            key: 'tlsClientHelloFragmentation' as const,
+                            title: 'Fragmentation TLS ClientHello (Anti-DPI)',
+                            desc: 'Découpe l’en-tête SNI pour déjouer les boîtiers DPI.',
+                            accent: 'purple' as const,
+                          },
+                        ].map((item) => (
+                          <div
+                            key={item.key}
+                            className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-900 dark:text-white">
+                                {item.title}
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                {item.desc}
+                              </p>
+                            </div>
+                            <ToggleSwitch
+                              checked={settings[item.key]}
+                              accent={item.accent}
+                              onChange={(v) => updateSettings(item.key, v)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-900 dark:text-white">
+                              Rotation Clés Éphémères PFS
+                            </span>
+                            <span className="font-mono tabular-nums font-bold text-cyan-600 dark:text-cyan-400">
+                              {settings.ephemeralRekeyMinutes} min
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {[3, 5, 10, 15, 30].map((mins) => (
+                              <button
+                                key={mins}
+                                type="button"
+                                onClick={() =>
+                                  updateSettings('ephemeralRekeyMinutes', mins)
+                                }
+                                className={`py-1.5 rounded-lg font-mono tabular-nums text-xs font-semibold border cursor-pointer ${
+                                  settings.ephemeralRekeyMinutes === mins
+                                    ? 'bg-cyan-600 text-white border-cyan-600'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                                }`}
+                              >
+                                {mins}m
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-900 dark:text-white">
+                              Bourrage Chaff Anti-Corrélation
+                            </span>
+                            <span className="font-mono tabular-nums font-bold text-cyan-600 dark:text-cyan-400">
+                              {settings.trafficPaddingJitterMs === 0
+                                ? 'Désactivé'
+                                : `${settings.trafficPaddingJitterMs} ms`}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {([0, 15, 40, 85] as TrafficPaddingJitterMs[]).map(
+                              (ms) => (
+                                <button
+                                  key={ms}
+                                  type="button"
+                                  onClick={() =>
+                                    updateSettings('trafficPaddingJitterMs', ms)
+                                  }
+                                  className={`py-1.5 rounded-lg font-mono tabular-nums text-xs font-semibold border cursor-pointer ${
+                                    settings.trafficPaddingJitterMs === ms
+                                      ? 'bg-cyan-600 text-white border-cyan-600'
+                                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                                  }`}
+                                >
+                                  {ms === 0 ? '0ms' : `${ms}ms`}
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </section>
 

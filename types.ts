@@ -58,20 +58,37 @@ export type PanicActionMode =
   | 'disconnect_wipe'
   | 'lock_vault_and_scramble';
 
+export type TrafficPaddingJitterMs = 0 | 15 | 40 | 85;
+
+export interface HostNetworkInterfaceInfo {
+  name: string;
+  family: 'IPv4' | 'IPv6';
+  cidr: string;
+  internal: boolean;
+  mac: string;
+  mtu: number;
+}
+
 export interface SystemRuntimeTelemetry {
   status: 'nominal' | 'degraded';
   timestamp: string;
   platform: string;
   arch: string;
+  osType?: string;
+  osRelease?: string;
   nodeVersion: string;
   cpuCores: number;
   loadAvg1m: number;
   uptimeSeconds: number;
+  userCpuMs?: number;
+  systemCpuMs?: number;
+  monotonicClockOk?: boolean;
   memoryRssMb: number;
   memoryHeapUsedMb: number;
   memoryHeapTotalMb: number;
   cipherSuitesCount: number;
   pqcReady: boolean;
+  interfaces?: HostNetworkInterfaceInfo[];
 }
 
 export interface SplitTunnelRule {
@@ -101,6 +118,26 @@ export interface SavedSettingsProfile {
   name: string;
   createdAt: string;
   settings: AppSettings;
+}
+
+export interface SystemConfigSnapshot {
+  id: string;
+  name: string;
+  createdAt: string;
+  hardeningScore: number;
+  protocol: AppSettings['protocol'];
+  postQuantumKex: PostQuantumKex;
+  settings: AppSettings;
+}
+
+export interface SignedSystemBundle {
+  schemaVersion: 'renumerate-sys-v2';
+  exportedAt: string;
+  sha256: string;
+  hmacSignature: string;
+  hardeningScore: number;
+  settings: AppSettings;
+  manifests: Record<string, string>;
 }
 
 export interface AppSettings {
@@ -176,6 +213,13 @@ export interface AppSettings {
   clipboardAutoClearSeconds: number;
   privacyScreenBlurOnInactive: boolean;
   panicAction: PanicActionMode;
+  // Advanced Kernel eBPF, Anti-DPI, PFS Rekeying & Memory Hardening
+  ebpfXdpAcceleration: boolean;
+  tlsClientHelloFragmentation: boolean;
+  trafficPaddingJitterMs: TrafficPaddingJitterMs;
+  ephemeralRekeyMinutes: number;
+  strictMemoryLock: boolean;
+  ntpDriftProtection: boolean;
 }
 
 export interface DeviceNode {
@@ -186,6 +230,11 @@ export interface DeviceNode {
   signalStrength: number;
   transferRate: number;
   latency: number;
+  jitter?: number;
+  packetLoss?: number;
+  asn?: string;
+  loadPct?: number;
+  probedAt?: string;
   autonomyProfile: 'provider' | 'balanced' | 'consumer';
   tags: string[];
   ip: string;
