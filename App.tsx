@@ -14,11 +14,14 @@ import {
   Lock,
   ShieldAlert,
   RefreshCw,
+  Cpu,
+  EyeOff,
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
 import { NetworkView } from './components/NetworkView';
 import { LocalVault } from './components/LocalVault';
+import { SystemCenter } from './components/SystemCenter';
 import { PricingModal } from './components/PricingModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
@@ -38,6 +41,7 @@ import {
   MOCK_NODES,
   DEFAULT_APP_SETTINGS,
   sanitizeAppSettings,
+  computeSettingsHardeningScore,
   pickUserAgentByComplexity,
   isCountryExcludedByJurisdiction,
   computeRncEarningRate,
@@ -45,6 +49,10 @@ import {
   validateWithdrawalDestination,
   WITHDRAWAL_RAIL_SPECS,
   generateSettlementReference,
+  ANONYMITY_LEVEL_SPECS,
+  getEffectiveRotationSeconds,
+  mutateIdentityIdentifiersForHop,
+  computeNextRenumberHop,
 } from './constants';
 import {
   VirtualIdentity,
@@ -53,6 +61,7 @@ import {
   LogEntry,
   PlanTier,
   AppSettings,
+  AnonymityLevel,
   DeviceNode,
   ConnectionSession,
   Transaction,
@@ -65,12 +74,13 @@ import {
 } from './services/dbService';
 import { listUserVaultItems } from './services/cryptoVaultService';
 
-type WorkspaceSection = 'cockpit' | 'vault' | 'network';
+type WorkspaceSection = 'cockpit' | 'vault' | 'network' | 'system';
 
 function App() {
   const [isDark, setIsDark] = useState(true);
   const [activeSection, setActiveSection] =
     useState<WorkspaceSection>('cockpit');
+  const [isWindowBlurred, setIsWindowBlurred] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [user, setUser] = useState<{ id: string; email: string } | null>(() => {
@@ -112,6 +122,7 @@ function App() {
   const [securityReport, setSecurityReport] = useState<SecurityReport | null>(
     null
   );
+  const [isRefreshingSecurity, setIsRefreshingSecurity] = useState(false);
   const [userPlan, setUserPlan] = useState<PlanTier>('free');
   const [isVerified, setIsVerified] = useState(false);
   const [balance, setBalance] = useState(0.4215);
@@ -138,6 +149,7 @@ function App() {
   const hasAutoConnectedRef = useRef<string | null>(null);
   const autoWithdrawInFlightRef = useRef(false);
   const lastAutoWithdrawAtRef = useRef(0);
+  const securityRequestSeqRef = useRef(0);
 
   const addLog = useCallback(
     (
@@ -173,6 +185,38 @@ function App() {
       .then((items) => setVaultCount(items.length))
       .catch(() => {});
   }, [user?.email, vaultOwnerKey, vaultRevision]);
+
+  const runSecurityAnalysis = useCallback(
+    async (
+      targetMode: ConnectionMode,
+      country: string,
+      ip: string,
+      forceRefresh = false
+    ) => {
+      const reqId = ++securityRequestSeqRef.current;
+      if (forceRefresh) setIsRefreshingSecurity(true);
+      try {
+        const report = await analyzeSecurity(targetMode, country, ip, {
+          protocol: appSettings.protocol,
+          killSwitch: appSettings.killSwitch,
+          ipv6LeakProtection: appSettings.ipv6LeakProtection,
+          forceRefresh,
+        });
+        if (reqId === securityRequestSeqRef.current) {
+          setSecurityReport(report);
+        }
+      } finally {
+        if (forceRefresh && reqId === securityRequestSeqRef.current) {
+          setIsRefreshingSecurity(false);
+        }
+      }
+    },
+    [
+      appSettings.protocol,
+      appSettings.killSwitch,
+      appSettings.ipv6LeakProtection,
+    ]
+  );
 
   const connectVPN = useCallback(
     async (overrideIdentity?: VirtualIdentity) => {
@@ -221,23 +265,11 @@ function App() {
         if (user?.id) {
           dbService.logSession(user.id, newSession).catch(() => {});
         }
-        const report = await analyzeSecurity(
-          mode,
-          targetIdentity.country,
-          targetIdentity.ip,
-          {
-            protocol: appSettings.protocol,
-            killSwitch: appSettings.killSwitch,
-            ipv6LeakProtection: appSettings.ipv6LeakProtection,
-          }
-        );
-        setSecurityReport(report);
+        await runSecurityAnalysis(mode, targetIdentity.country, targetIdentity.ip);
       }, 950);
     },
     [
       appSettings.protocol,
-      appSettings.killSwitch,
-      appSettings.ipv6LeakProtection,
       appSettings.vortexCircuitLength,
       mode,
       currentIdentity,
@@ -245,6 +277,7 @@ function App() {
       isDisconnecting,
       isEmergency,
       user?.id,
+      runSecurityAnalysis,
     ]
   );
 
@@ -269,9 +302,11 @@ function App() {
         return [last, ...prev.slice(1)];
       });
 
+      securityRequestSeqRef.current += 1;
       setIsConnected(false);
       setIsDisconnecting(false);
       setSecurityReport(null);
+      setIsRefreshingSecurity(false);
       if (appSettings.logRetentionHours === 0) {
         setLogs([]);
       } else {
@@ -346,37 +381,36 @@ function App() {
   const handleSelectIdentity = useCallback(
     (selected: VirtualIdentity) => {
       setIsRenumbering(true);
+      const spec =
+        ANONYMITY_LEVEL_SPECS[appSettings.anonymityLevel] ||
+        ANONYMITY_LEVEL_SPECS.balanced;
+      const mutated = mutateIdentityIdentifiersForHop(
+        currentIdentity,
+        appSettings
+      );
       const nextIdentity: VirtualIdentity = {
         ...selected,
-        mac: currentIdentity.mac,
-        userAgentShort: currentIdentity.userAgentShort,
+        mac: mutated.mac,
+        userAgentShort: mutated.userAgentShort,
       };
       setCurrentIdentity(nextIdentity);
       addLog(
-        `Passerelle virtuelle basculée vers ${selected.city}, ${selected.country}`,
+        `Passerelle basculée [${spec.codeLabel.toUpperCase()}] vers ${selected.city}, ${selected.country} · MAC ${mutated.mac}`,
         'success',
         selected.ip
       );
       if (isConnected) {
-        analyzeSecurity(mode, selected.country, selected.ip, {
-          protocol: appSettings.protocol,
-          killSwitch: appSettings.killSwitch,
-          ipv6LeakProtection: appSettings.ipv6LeakProtection,
-        })
-          .then((report) => setSecurityReport(report))
-          .catch(() => {});
+        runSecurityAnalysis(mode, selected.country, selected.ip).catch(() => {});
       }
-      setTimeout(() => setIsRenumbering(false), 600);
+      setTimeout(() => setIsRenumbering(false), spec.settleDelayMs);
     },
     [
-      currentIdentity.mac,
-      currentIdentity.userAgentShort,
+      currentIdentity,
+      appSettings,
       addLog,
       isConnected,
       mode,
-      appSettings.protocol,
-      appSettings.killSwitch,
-      appSettings.ipv6LeakProtection,
+      runSecurityAnalysis,
     ]
   );
 
@@ -401,6 +435,143 @@ function App() {
     });
   }, [addLog, currentIdentity.ip]);
 
+  const handleForceRotateIdentity = useCallback(() => {
+    const activeSpec =
+      ANONYMITY_LEVEL_SPECS[appSettings.anonymityLevel] ||
+      ANONYMITY_LEVEL_SPECS.balanced;
+    setIsRenumbering(true);
+    setCurrentIdentity((curr) => {
+      const { identity: rotated, spec } = computeNextRenumberHop({
+        currentIdentity: curr,
+        settings: appSettings,
+        nodes,
+      });
+      addLog(
+        `Saut de re-numérotation [${spec.codeLabel.toUpperCase()}] : ${rotated.city}, ${rotated.country} (${rotated.ip}) · MAC ${rotated.mac}`,
+        'success',
+        rotated.ip
+      );
+      if (isConnected) {
+        analyzeSecurity(mode, rotated.country, rotated.ip, {
+          protocol: appSettings.protocol,
+          killSwitch: appSettings.killSwitch,
+          ipv6LeakProtection: appSettings.ipv6LeakProtection,
+        })
+          .then((rep) => setSecurityReport(rep))
+          .catch(() => {});
+      }
+      return rotated;
+    });
+    if (appSettings.autoRotation) {
+      setRotationSecondsLeft(
+        getEffectiveRotationSeconds(
+          appSettings.rotationInterval,
+          appSettings.anonymityLevel
+        )
+      );
+    }
+    setTimeout(() => setIsRenumbering(false), activeSpec.settleDelayMs);
+  }, [appSettings, nodes, isConnected, mode, addLog]);
+
+  const handleExecutePanic = useCallback(() => {
+    if (appSettings.panicAction === 'disconnect_wipe') {
+      setIsConnected(false);
+      setThroughput({ up: 0, down: 0 });
+      setSessionPassword(null);
+      setLogs([]);
+      setConnectionHistory([]);
+      if (user?.id) {
+        dbService.clearSessions(user.id).catch(() => {});
+      }
+      addLog(
+        'PROTOCOLE PANIC [PURGE RAM] : Tunnel fermé, clé du coffre purgée et journaux effacés',
+        'warning'
+      );
+    } else if (appSettings.panicAction === 'lock_vault_and_scramble') {
+      setSessionPassword(null);
+      handleForceRotateIdentity();
+      addLog(
+        'PROTOCOLE PANIC [ROTATION FURTIVE] : Coffre verrouillé et identité réseau re-numérotée',
+        'warning'
+      );
+    } else {
+      setIsEmergency(true);
+      setIsConnected(false);
+      setThroughput({ up: 0, down: 0 });
+      addLog(
+        'PROTOCOLE PANIC [LOCKDOWN] : Coupe-circuit noyau verrouillé, trafic externe stoppé',
+        'error',
+        currentIdentity.ip
+      );
+    }
+  }, [
+    appSettings.panicAction,
+    user?.id,
+    addLog,
+    handleForceRotateIdentity,
+    currentIdentity.ip,
+  ]);
+
+  // Verrouillage automatique de la clé RAM du coffre après inactivité
+  useEffect(() => {
+    if (!sessionPassword || appSettings.autoLockVaultMinutes <= 0) return;
+
+    const timeoutMs = appSettings.autoLockVaultMinutes * 60 * 1000;
+    let timer = window.setTimeout(() => {
+      setSessionPassword(null);
+      addLog(
+        `Coffre-fort local verrouillé automatiquement (${appSettings.autoLockVaultMinutes} min d’inactivité)`,
+        'info'
+      );
+    }, timeoutMs);
+
+    const resetIdleTimer = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        setSessionPassword(null);
+        addLog(
+          `Coffre-fort local verrouillé automatiquement (${appSettings.autoLockVaultMinutes} min d’inactivité)`,
+          'info'
+        );
+      }, timeoutMs);
+    };
+
+    window.addEventListener('pointerdown', resetIdleTimer, { passive: true });
+    window.addEventListener('keydown', resetIdleTimer, { passive: true });
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('pointerdown', resetIdleTimer);
+      window.removeEventListener('keydown', resetIdleTimer);
+    };
+  }, [sessionPassword, appSettings.autoLockVaultMinutes, addLog]);
+
+  // Bouclier visuel anti-regard lorsque la fenêtre perd le focus
+  useEffect(() => {
+    if (!appSettings.privacyScreenBlurOnInactive) {
+      setIsWindowBlurred(false);
+      return;
+    }
+
+    const handleBlur = () => setIsWindowBlurred(true);
+    const handleFocus = () => {
+      if (!document.hidden) setIsWindowBlurred(false);
+    };
+    const handleVisibility = () => {
+      setIsWindowBlurred(document.hidden);
+    };
+
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [appSettings.privacyScreenBlurOnInactive]);
+
   useEffect(() => {
     if (!appSettings.keyboardShortcutsEnabled) return;
 
@@ -408,6 +579,12 @@ function App() {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (!isCmdOrCtrl) return;
       const key = e.key.toLowerCase();
+
+      if (e.shiftKey && key === 'x') {
+        e.preventDefault();
+        handleExecutePanic();
+        return;
+      }
 
       if (key === 's') {
         e.preventDefault();
@@ -425,6 +602,10 @@ function App() {
         e.preventDefault();
         addLog('Raccourci détecté : Masquer empreinte [Ctrl+M]', 'info');
         handleScrambleUA();
+      } else if (key === 'y') {
+        e.preventDefault();
+        setActiveSection((prev) => (prev === 'system' ? 'cockpit' : 'system'));
+        addLog('Raccourci détecté : Console Système & Noyau [Ctrl+Y]', 'info');
       } else if (key === 'l') {
         e.preventDefault();
         setShowLogs((prev) => !prev);
@@ -444,69 +625,79 @@ function App() {
     toggleEmergencyLockdown,
     handleGlobalScramble,
     handleScrambleUA,
+    handleExecutePanic,
     addLog,
   ]);
 
   useEffect(() => {
     if (isConnected && !isEmergency) {
+      const tickMs =
+        appSettings.powerProfile === 'performance'
+          ? 1000
+          : appSettings.powerProfile === 'eco'
+            ? 3500
+            : 2000;
+      const powerBoost =
+        appSettings.powerProfile === 'performance'
+          ? 1.25
+          : appSettings.powerProfile === 'eco'
+            ? 0.8
+            : 1.0;
+      const tcpBoost =
+        appSettings.tcpCongestionControl === 'bbr'
+          ? 1.15
+          : appSettings.tcpCongestionControl === 'hybla'
+            ? 1.05
+            : 1.0;
+      const queueBoost = appSettings.multiQueueTun ? 1.08 : 1.0;
+      const factor = powerBoost * tcpBoost * queueBoost;
+
       const interval = setInterval(() => {
         setThroughput({
-          up: parseFloat((Math.random() * 2.5 + 0.4).toFixed(2)),
-          down: parseFloat((Math.random() * 45 + 8).toFixed(2)),
+          up: parseFloat(((Math.random() * 2.5 + 0.4) * factor).toFixed(2)),
+          down: parseFloat(((Math.random() * 45 + 8) * factor).toFixed(2)),
         });
-      }, 2000);
+      }, tickMs);
       return () => clearInterval(interval);
     } else {
       setThroughput({ up: 0, down: 0 });
     }
-  }, [isConnected, isEmergency]);
+  }, [
+    isConnected,
+    isEmergency,
+    appSettings.powerProfile,
+    appSettings.tcpCongestionControl,
+    appSettings.multiQueueTun,
+  ]);
 
-  // Rotation dynamique automatique d'identité (IP + MAC + UA)
+  // Rotation dynamique automatique d'identité (IP + MAC + UA selon le niveau d'anonymat)
   useEffect(() => {
     if (!isConnected || !appSettings.autoRotation || isEmergency) {
       setRotationSecondsLeft(null);
       return;
     }
 
-    const periodSeconds = Math.max(1, appSettings.rotationInterval) * 60;
+    const periodSeconds = getEffectiveRotationSeconds(
+      appSettings.rotationInterval,
+      appSettings.anonymityLevel
+    );
     setRotationSecondsLeft(periodSeconds);
 
     const ticker = setInterval(() => {
       setRotationSecondsLeft((prev) => {
         if (prev === null || prev <= 1) {
+          const activeSpec =
+            ANONYMITY_LEVEL_SPECS[appSettings.anonymityLevel] ||
+            ANONYMITY_LEVEL_SPECS.balanced;
           setIsRenumbering(true);
           setCurrentIdentity((curr) => {
-            const compliantPool = MOCK_IDENTITIES.filter(
-              (i) =>
-                i.ip !== curr.ip &&
-                !isCountryExcludedByJurisdiction(
-                  i.country,
-                  appSettings.excludeEyesJurisdictions
-                )
-            );
-            const fallbackPool = MOCK_IDENTITIES.filter(
-              (i) => i.ip !== curr.ip
-            );
-            const pool =
-              compliantPool.length > 0 ? compliantPool : fallbackPool;
-            const picked =
-              pool[Math.floor(Math.random() * pool.length)] ||
-              MOCK_IDENTITIES[0];
-            const nextUa = pickUserAgentByComplexity(
-              appSettings.uaComplexity,
-              curr.userAgentShort
-            );
-            const nextMac = generateRandomMac(
-              appSettings.macScramblingMode,
-              appSettings.macFormat
-            );
-            const rotated: VirtualIdentity = {
-              ...picked,
-              mac: nextMac,
-              userAgentShort: nextUa.short,
-            };
+            const { identity: rotated, spec } = computeNextRenumberHop({
+              currentIdentity: curr,
+              settings: appSettings,
+              nodes,
+            });
             addLog(
-              `Rotation auto exécutée : ${rotated.city} (${rotated.ip}) · MAC ${nextMac}`,
+              `Saut auto [${spec.codeLabel.toUpperCase()}] exécuté : ${rotated.city}, ${rotated.country} (${rotated.ip}) · MAC ${rotated.mac}`,
               'success',
               rotated.ip
             );
@@ -519,7 +710,7 @@ function App() {
               .catch(() => {});
             return rotated;
           });
-          setTimeout(() => setIsRenumbering(false), 700);
+          setTimeout(() => setIsRenumbering(false), activeSpec.settleDelayMs);
           return periodSeconds;
         }
         return prev - 1;
@@ -530,15 +721,8 @@ function App() {
   }, [
     isConnected,
     isEmergency,
-    appSettings.autoRotation,
-    appSettings.rotationInterval,
-    appSettings.macScramblingMode,
-    appSettings.macFormat,
-    appSettings.uaComplexity,
-    appSettings.excludeEyesJurisdictions,
-    appSettings.protocol,
-    appSettings.killSwitch,
-    appSettings.ipv6LeakProtection,
+    nodes,
+    appSettings,
     mode,
     addLog,
   ]);
@@ -928,6 +1112,14 @@ function App() {
           ? 'Genève'
           : 'Central');
 
+    const mutated =
+      node.ip !== currentIdentity.ip
+        ? mutateIdentityIdentifiersForHop(currentIdentity, appSettings)
+        : {
+            mac: currentIdentity.mac,
+            userAgentShort: currentIdentity.userAgentShort,
+          };
+
     const targetIdentity: VirtualIdentity = {
       ...currentIdentity,
       ip: node.ip,
@@ -935,11 +1127,16 @@ function App() {
       city: nextCity,
       latency: node.latency,
       timezone: node.timezone || currentIdentity.timezone,
+      mac: mutated.mac,
+      userAgentShort: mutated.userAgentShort,
     };
 
     if (isConnected) {
+      const spec =
+        ANONYMITY_LEVEL_SPECS[appSettings.anonymityLevel] ||
+        ANONYMITY_LEVEL_SPECS.balanced;
       addLog(
-        `Bascule du relais vers ${node.name} (${nextCity}, ${node.country})...`,
+        `Saut de relais [${spec.codeLabel.toUpperCase()}] vers ${node.name} (${nextCity}, ${node.country}) · MAC ${mutated.mac}...`,
         'info',
         node.ip
       );
@@ -1022,11 +1219,59 @@ function App() {
           `Niveau d'obfuscation : ${String(value).toUpperCase()}`,
           'info'
         );
+      } else if (key === 'anonymityLevel') {
+        const spec =
+          ANONYMITY_LEVEL_SPECS[value as AnonymityLevel] ||
+          ANONYMITY_LEVEL_SPECS.balanced;
+        addLog(
+          `Niveau d'anonymat des prochains sauts défini sur ${spec.codeLabel.toUpperCase()} (${spec.jurisdictionPolicyLabel})`,
+          'info'
+        );
       } else if (key === 'excludeEyesJurisdictions') {
         addLog(
           value === 'none'
             ? 'Filtre juridictionnel désactivé (tous les relais visibles)'
             : `Politique d'exclusion ${String(value).toUpperCase()} activée`,
+          'info'
+        );
+      } else if (key === 'postQuantumKex') {
+        addLog(
+          `Échange de clés post-quantique configuré sur ${String(value).toUpperCase()}`,
+          value === 'classic-x25519' ? 'warning' : 'success'
+        );
+      } else if (key === 'tcpCongestionControl') {
+        addLog(
+          `Algorithme de congestion TCP noyau basculé sur ${String(value).toUpperCase()}`,
+          'info'
+        );
+      } else if (key === 'blockQuicUdp443') {
+        addLog(
+          `Filtrage pare-feu QUIC (UDP/443) ${value ? 'activé' : 'désactivé'}`,
+          value ? 'success' : 'warning'
+        );
+      } else if (key === 'arpSpoofGuard') {
+        addLog(
+          `Protection L2 Anti-ARP Spoofing ${value ? 'activée' : 'désactivée'}`,
+          value ? 'success' : 'warning'
+        );
+      } else if (key === 'strictReversePathFilter') {
+        addLog(
+          `Filtrage noyau rp_filter strict ${value ? 'activé' : 'désactivé'}`,
+          value ? 'success' : 'warning'
+        );
+      } else if (key === 'powerProfile') {
+        addLog(
+          `Gouverneur énergétique du démon réglé sur ${String(value).toUpperCase()}`,
+          'info'
+        );
+      } else if (key === 'privacyScreenBlurOnInactive') {
+        addLog(
+          `Floutage anti-regard hors focus ${value ? 'activé' : 'désactivé'}`,
+          'info'
+        );
+      } else if (key === 'panicAction') {
+        addLog(
+          `Protocole Panic [Ctrl+Shift+X] défini sur ${String(value).toUpperCase()}`,
           'info'
         );
       }
@@ -1058,69 +1303,6 @@ function App() {
     }
     addLog('Paramètres réinitialisés aux valeurs d’usine', 'warning');
   }, [user?.id, addLog]);
-
-  const handleForceRotateIdentity = useCallback(() => {
-    setIsRenumbering(true);
-    setCurrentIdentity((curr) => {
-      const compliantPool = MOCK_IDENTITIES.filter(
-        (i) =>
-          i.ip !== curr.ip &&
-          !isCountryExcludedByJurisdiction(
-            i.country,
-            appSettings.excludeEyesJurisdictions
-          )
-      );
-      const fallbackPool = MOCK_IDENTITIES.filter((i) => i.ip !== curr.ip);
-      const pool = compliantPool.length > 0 ? compliantPool : fallbackPool;
-      const picked =
-        pool[Math.floor(Math.random() * pool.length)] || MOCK_IDENTITIES[0];
-      const nextUa = pickUserAgentByComplexity(
-        appSettings.uaComplexity,
-        curr.userAgentShort
-      );
-      const nextMac = generateRandomMac(
-        appSettings.macScramblingMode,
-        appSettings.macFormat
-      );
-      const rotated: VirtualIdentity = {
-        ...picked,
-        mac: nextMac,
-        userAgentShort: nextUa.short,
-      };
-      addLog(
-        `Rotation forcée : ${rotated.city} (${rotated.ip}) · MAC ${nextMac}`,
-        'success',
-        rotated.ip
-      );
-      if (isConnected) {
-        analyzeSecurity(mode, rotated.country, rotated.ip, {
-          protocol: appSettings.protocol,
-          killSwitch: appSettings.killSwitch,
-          ipv6LeakProtection: appSettings.ipv6LeakProtection,
-        })
-          .then((rep) => setSecurityReport(rep))
-          .catch(() => {});
-      }
-      return rotated;
-    });
-    if (appSettings.autoRotation) {
-      setRotationSecondsLeft(Math.max(1, appSettings.rotationInterval) * 60);
-    }
-    setTimeout(() => setIsRenumbering(false), 650);
-  }, [
-    appSettings.excludeEyesJurisdictions,
-    appSettings.uaComplexity,
-    appSettings.macScramblingMode,
-    appSettings.macFormat,
-    appSettings.protocol,
-    appSettings.killSwitch,
-    appSettings.ipv6LeakProtection,
-    appSettings.autoRotation,
-    appSettings.rotationInterval,
-    isConnected,
-    mode,
-    addLog,
-  ]);
 
   const handleFlushDnsCache = useCallback((): number => {
     const cleared = Math.floor(Math.random() * 48) + 16;
@@ -1177,12 +1359,31 @@ function App() {
     );
   }
 
+  const hardeningScore = computeSettingsHardeningScore(appSettings);
+
   return (
     <div
       className={`min-h-screen transition-colors duration-300 overflow-x-hidden ${
         isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
       }`}
     >
+      {appSettings.privacyScreenBlurOnInactive && isWindowBlurred && (
+        <div
+          onClick={() => setIsWindowBlurred(false)}
+          className="fixed inset-0 z-[200] bg-slate-950/85 backdrop-blur-2xl flex flex-col items-center justify-center p-6 text-center cursor-pointer select-none"
+        >
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-cyan-400 mb-4">
+            <EyeOff className="w-8 h-8" />
+          </div>
+          <h2 className="text-lg font-bold text-white">
+            Écran masqué — Protection anti-regard active
+          </h2>
+          <p className="text-xs text-slate-400 mt-1.5 max-w-sm">
+            Les adresses IP, clés et journaux sont floutés lorsque la fenêtre perd le focus. Cliquez ou revenez sur l&apos;application pour reprendre.
+          </p>
+        </div>
+      )}
+
       {/* 3-Zone Top Workspace Bar */}
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
@@ -1231,6 +1432,20 @@ function App() {
               }`}
             >
               Topologie Réseau
+            </button>
+            <button
+              onClick={() => setActiveSection('system')}
+              className={`py-1 text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
+                activeSection === 'system'
+                  ? 'border-cyan-500 text-slate-900 dark:text-white'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5 text-cyan-500" />
+              <span>Système &amp; Noyau</span>
+              <span className="font-mono tabular-nums text-xs text-slate-400">
+                ({hardeningScore}%)
+              </span>
             </button>
           </nav>
 
@@ -1299,6 +1514,15 @@ function App() {
                 </span>
               </>
             )}
+            <span className="hidden lg:inline">·</span>
+            <span className="hidden lg:inline text-slate-500 dark:text-slate-400">
+              {appSettings.postQuantumKex === 'ml-kem-1024'
+                ? 'ML-KEM-1024'
+                : appSettings.postQuantumKex === 'sntrup761'
+                  ? 'SNTRUP761'
+                  : 'X25519'}{' '}
+              · {appSettings.tcpCongestionControl.toUpperCase()}
+            </span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -1397,6 +1621,16 @@ function App() {
           >
             Topologie Réseau
           </button>
+          <button
+            onClick={() => setActiveSection('system')}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap font-mono tabular-nums ${
+              activeSection === 'system'
+                ? 'bg-cyan-600 text-white'
+                : 'text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            Système ({hardeningScore}%)
+          </button>
         </div>
       </div>
 
@@ -1434,25 +1668,44 @@ function App() {
                 onModeChange={(m) => {
                   setMode(m);
                   if (isConnected) {
-                    analyzeSecurity(m, currentIdentity.country, currentIdentity.ip, {
-                      protocol: appSettings.protocol,
-                      killSwitch: appSettings.killSwitch,
-                      ipv6LeakProtection: appSettings.ipv6LeakProtection,
-                    })
-                      .then((rep) => setSecurityReport(rep))
-                      .catch(() => {});
+                    runSecurityAnalysis(
+                      m,
+                      currentIdentity.country,
+                      currentIdentity.ip
+                    ).catch(() => {});
                   }
                 }}
                 nodes={nodes}
                 onConnectNode={handleConnectNode}
                 onDisconnect={disconnectVPN}
                 currentIp={currentIdentity.ip}
+                currentCountry={currentIdentity.country}
                 throughput={throughput}
                 baseLatency={currentIdentity.latency}
                 settings={appSettings}
                 addLog={addLog}
                 updateSettings={updateAppSettings}
                 history={connectionHistory}
+                isRenumbering={isRenumbering}
+                rotationSecondsLeft={rotationSecondsLeft}
+                onTriggerRenumberHop={handleForceRotateIdentity}
+                onVoiceSecurityReport={(report) => setSecurityReport(report)}
+                onRefreshSecurity={() => {
+                  runSecurityAnalysis(
+                    mode,
+                    currentIdentity.country,
+                    currentIdentity.ip,
+                    true
+                  )
+                    .then(() => {
+                      addLog(
+                        'Audit de sécurité actualisé depuis le Cockpit',
+                        'success',
+                        currentIdentity.ip
+                      );
+                    })
+                    .catch(() => {});
+                }}
               />
               <IdentityMatrix
                 identity={currentIdentity}
@@ -1485,6 +1738,23 @@ function App() {
                     [fpKey]: !appSettings.fingerprintProtection[fpKey],
                   })
                 }
+                isRefreshingSecurity={isRefreshingSecurity}
+                onRefreshSecurity={() => {
+                  runSecurityAnalysis(
+                    mode,
+                    currentIdentity.country,
+                    currentIdentity.ip,
+                    true
+                  )
+                    .then(() => {
+                      addLog(
+                        'Synthèse d’audit de session réévaluée avec succès',
+                        'success',
+                        currentIdentity.ip
+                      );
+                    })
+                    .catch(() => {});
+                }}
               />
             </div>
 
@@ -1516,6 +1786,8 @@ function App() {
               <SecurityAudit
                 currentIp={currentIdentity.ip}
                 location={currentIdentity.country}
+                settings={appSettings}
+                onOpenSystemCenter={() => setActiveSection('system')}
               />
               <SystemLogs
                 logs={logs}
@@ -1559,10 +1831,10 @@ function App() {
           <div className="space-y-6">
             <div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                Topologie du réseau & relais actifs
+                Topologie du réseau &amp; relais actifs
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Explorez les nœuds disponibles, ajustez leurs profils d'autonomie et simulez des transferts sécurisés.
+                Explorez les nœuds disponibles, ajustez leurs profils d&apos;autonomie et simulez des transferts sécurisés.
               </p>
             </div>
             <NetworkView
@@ -1575,6 +1847,29 @@ function App() {
               onAutonomyUpdate={handleAutonomyUpdate}
             />
           </div>
+        )}
+
+        {activeSection === 'system' && (
+          <SystemCenter
+            settings={appSettings}
+            updateSettings={updateAppSettings}
+            patchSettings={patchAppSettings}
+            onResetSettings={resetAppSettings}
+            currentIdentity={currentIdentity}
+            isConnected={isConnected}
+            isEmergency={isEmergency}
+            vaultUnlocked={Boolean(sessionPassword)}
+            vaultCount={vaultCount}
+            onLockVault={() => {
+              setSessionPassword(null);
+              addLog('Clé maîtresse RAM du coffre purgée manuellement', 'info');
+            }}
+            logsCount={logs.length}
+            sessionsCount={connectionHistory.length}
+            onOpenSettingsModal={() => setShowSettings(true)}
+            onExecutePanic={handleExecutePanic}
+            addLog={addLog}
+          />
         )}
       </main>
 
@@ -1686,6 +1981,11 @@ function App() {
           isVerified={isVerified}
           userId={vaultOwnerKey}
           onOpenWithdrawalModal={() => setShowWithdrawal(true)}
+          onOpenSystemCenter={() => {
+            setShowSettings(false);
+            setActiveSection('system');
+          }}
+          onExecutePanic={handleExecutePanic}
           addLog={addLog}
         />
       )}

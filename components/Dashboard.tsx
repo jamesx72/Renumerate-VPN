@@ -32,6 +32,14 @@ import {
   ArrowUpDown,
   Sparkles,
   CheckCircle2,
+  Mic,
+  MicOff,
+  Square,
+  Volume2,
+  VolumeX,
+  X,
+  AlertTriangle,
+  Fingerprint,
 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { DnsLeakTester } from './DnsLeakTester';
@@ -41,9 +49,50 @@ import {
   ConnectionMode,
   DeviceNode,
   AppSettings,
+  AnonymityLevel,
   ConnectionSession,
 } from '../types';
-import { isCountryExcludedByJurisdiction } from '../constants';
+import {
+  isCountryExcludedByJurisdiction,
+  ANONYMITY_LEVEL_SPECS,
+  EYES_14_COUNTRIES,
+  getEffectiveRotationSeconds,
+  getNextHopCandidateNodes,
+} from '../constants';
+import {
+  sendCockpitVoiceCommand,
+  synthesizeSentinelSpeech,
+  VoiceCommandResult,
+} from '../services/geminiService';
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const commaIdx = result.indexOf(',');
+      resolve(commaIdx !== -1 ? result.slice(commaIdx + 1) : result);
+    };
+    reader.onerror = () =>
+      reject(new Error('Échec de lecture du flux audio local.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+const VOICE_COMMAND_SUGGESTIONS = [
+  {
+    label: 'Analyser ma sécurité',
+    prompt: 'Lance une analyse de sécurité complète de ma session VPN actuelle.',
+  },
+  {
+    label: 'Conseils anti-fuite DNS',
+    prompt: 'Donne-moi des conseils de protection contre les fuites DNS et IPv6.',
+  },
+  {
+    label: 'Renforcer mon anonymat',
+    prompt: 'Quels réglages et quel mode recommandes-tu pour maximiser mon anonymat ?',
+  },
+];
 
 interface DashboardProps {
   isDark: boolean;
@@ -58,6 +107,7 @@ interface DashboardProps {
   onConnectNode: (id: string) => void;
   onDisconnect?: () => void;
   currentIp: string;
+  currentCountry?: string;
   throughput?: { up: number; down: number };
   baseLatency?: number;
   settings: AppSettings;
@@ -71,6 +121,11 @@ interface DashboardProps {
     value: AppSettings[K]
   ) => void;
   history?: ConnectionSession[];
+  isRenumbering?: boolean;
+  rotationSecondsLeft?: number | null;
+  onTriggerRenumberHop?: () => void;
+  onVoiceSecurityReport?: (report: SecurityReport) => void;
+  onRefreshSecurity?: () => void;
 }
 
 const VERIFIED_ONION_SERVICES = [
@@ -197,12 +252,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onConnectNode,
   onDisconnect,
   currentIp,
+  currentCountry = 'France',
   throughput = { up: 0, down: 0 },
   baseLatency = 18,
   settings,
   addLog,
   updateSettings,
   history = [],
+  isRenumbering = false,
+  rotationSecondsLeft = null,
+  onTriggerRenumberHop,
+  onVoiceSecurityReport,
+  onRefreshSecurity,
 }) => {
   const [countryFilter, setCountryFilter] = useState<string>('Tous');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -225,11 +286,73 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [dnsTestTrigger, setDnsTestTrigger] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Cockpit Voice Command states & refs
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [voiceLevels, setVoiceLevels] = useState<number[]>([
+    18, 24, 16, 28, 22, 18, 25, 16,
+  ]);
+  const [voiceResult, setVoiceResult] = useState<VoiceCommandResult | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [showVoiceExamples, setShowVoiceExamples] = useState(false);
+  const [autoSpeakReply, setAutoSpeakReply] = useState(true);
+  const [isSpeakingReply, setIsSpeakingReply] = useState(false);
+  const [isSynthesizingSpeech, setIsSynthesizingSpeech] = useState(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const discardRecordingRef = useRef(false);
+  const recordingTimerRef = useRef<number | null>(null);
+  const levelRafRef = useRef<number | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsObjectUrlRef = useRef<string | null>(null);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isOnionMode = mode === ConnectionMode.ONION_VORTEX;
   const isSmartDNS = mode === ConnectionMode.SMART_DNS;
   const isWireGuard = protocol.toLowerCase() === 'wireguard';
+
+  const cleanupRecordingResources = () => {
+    if (recordingTimerRef.current !== null) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (levelRafRef.current !== null) {
+      window.cancelAnimationFrame(levelRafRef.current);
+      levelRafRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    setVoiceLevels([18, 24, 16, 28, 22, 18, 25, 16]);
+  };
+
+  const stopSpeechPlayback = () => {
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.src = '';
+      ttsAudioRef.current = null;
+    }
+    if (ttsObjectUrlRef.current) {
+      URL.revokeObjectURL(ttsObjectUrlRef.current);
+      ttsObjectUrlRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeakingReply(false);
+    setIsSynthesizingSpeech(false);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -241,7 +364,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      discardRecordingRef.current = true;
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== 'inactive'
+      ) {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // Ignore recorder stop errors on unmount
+        }
+      }
+      cleanupRecordingResources();
+      stopSpeechPlayback();
+    };
   }, []);
 
   const excludedNodesCount = useMemo(
@@ -298,16 +441,103 @@ export const Dashboard: React.FC<DashboardProps> = ({
     probedLatencies,
   ]);
 
-  // Build deterministic multi-hop Vortex circuit from available nodes + circuitSeed
-  const vortexCircuitHops = useMemo(() => {
-    const hopCount = Math.max(3, Math.min(6, settings.vortexCircuitLength));
-    const pool = nodes.filter(
-      (n) =>
-        !isCountryExcludedByJurisdiction(
-          n.country,
-          settings.excludeEyesJurisdictions
-        )
+  const activeAnonymityLevel: AnonymityLevel =
+    settings.anonymityLevel || 'balanced';
+  const activeAnonymitySpec =
+    ANONYMITY_LEVEL_SPECS[activeAnonymityLevel] ||
+    ANONYMITY_LEVEL_SPECS.balanced;
+
+  const nextHopCandidates = useMemo(
+    () =>
+      getNextHopCandidateNodes({
+        level: activeAnonymityLevel,
+        currentIp,
+        currentCountry,
+        nodes,
+        excludePolicy: settings.excludeEyesJurisdictions,
+      }),
+    [
+      activeAnonymityLevel,
+      currentIp,
+      currentCountry,
+      nodes,
+      settings.excludeEyesJurisdictions,
+    ]
+  );
+
+  const nextHopAvgLatency = useMemo(() => {
+    if (nextHopCandidates.length === 0) return baseLatency;
+    const sum = nextHopCandidates.reduce(
+      (acc, n) => acc + (probedLatencies[n.id] ?? n.latency),
+      0
     );
+    return Math.round(sum / nextHopCandidates.length);
+  }, [nextHopCandidates, probedLatencies, baseLatency]);
+
+  const nextHopCountriesLabel = useMemo(() => {
+    const countries = Array.from(
+      new Set(nextHopCandidates.map((n) => n.country))
+    );
+    if (countries.length === 0) return 'Aucun';
+    const preview = countries.slice(0, 4).join(', ');
+    return countries.length > 4
+      ? `${preview} +${countries.length - 4}`
+      : preview;
+  }, [nextHopCandidates]);
+
+  const effectiveRotationSecs = useMemo(
+    () =>
+      getEffectiveRotationSeconds(
+        settings.rotationInterval,
+        activeAnonymityLevel
+      ),
+    [settings.rotationInterval, activeAnonymityLevel]
+  );
+
+  const formatHopDuration = (seconds: number) => {
+    if (seconds % 60 === 0) {
+      return `${seconds / 60} min`;
+    }
+    const mins = Math.floor(seconds / 60);
+    const secs = String(seconds % 60).padStart(2, '0');
+    return mins > 0 ? `${mins}m ${secs}s` : `${seconds}s`;
+  };
+
+  const handleSelectAnonymityLevel = (nextLevel: AnonymityLevel) => {
+    if (nextLevel === activeAnonymityLevel) return;
+    updateSettings?.('anonymityLevel', nextLevel);
+    if (isOnionMode && nextLevel === 'extreme') {
+      setCircuitSeed((s) => s + 1);
+    }
+  };
+
+  const handleManualRenumberHop = () => {
+    if (isRenumbering || isEmergency) return;
+    if (isOnionMode) {
+      setCircuitSeed((s) => s + 1);
+      setResolvedOnionEndpoint(null);
+    }
+    onTriggerRenumberHop?.();
+  };
+
+  // Build deterministic multi-hop Vortex circuit from available nodes + circuitSeed + anonymityLevel
+  const vortexCircuitHops = useMemo(() => {
+    const targetLen =
+      activeAnonymityLevel === 'extreme'
+        ? Math.max(settings.vortexCircuitLength, activeAnonymitySpec.vortexMinHops)
+        : activeAnonymityLevel === 'low'
+          ? 3
+          : settings.vortexCircuitLength;
+    const hopCount = Math.max(3, Math.min(6, targetLen));
+    const pool = nodes.filter((n) => {
+      if (activeAnonymityLevel === 'extreme') {
+        return !EYES_14_COUNTRIES.includes(n.country);
+      }
+      return !isCountryExcludedByJurisdiction(
+        n.country,
+        settings.excludeEyesJurisdictions
+      );
+    });
     const source = pool.length >= 3 ? pool : nodes;
     if (source.length === 0) return [];
 
@@ -342,6 +572,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return hops;
   }, [
     nodes,
+    activeAnonymityLevel,
+    activeAnonymitySpec.vortexMinHops,
     settings.vortexCircuitLength,
     settings.vortexEntryNodeCountry,
     settings.vortexExitNodeCountry,
@@ -375,6 +607,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleConnectFastestNode = () => {
+    const visibleIds = new Set(filteredNodes.map((n) => n.id));
+    const policyMatch = nextHopCandidates.find((n) => visibleIds.has(n.id));
+    if (policyMatch) {
+      onConnectNode(policyMatch.id);
+      return;
+    }
     if (filteredNodes.length === 0) return;
     const fastest = [...filteredNodes].sort(
       (a, b) => getEffectiveLatency(a) - getEffectiveLatency(b)
@@ -388,7 +626,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setCircuitSeed((s) => s + 1);
     setResolvedOnionEndpoint(null);
     addLog(
-      `Nouveau circuit Onion Vortex (${settings.vortexCircuitLength} sauts) négocié avec isolation de flux`,
+      `Nouveau circuit Onion Vortex (${vortexCircuitHops.length} sauts · profil ${activeAnonymitySpec.codeLabel}) négocié avec isolation de flux`,
       'success'
     );
   };
@@ -485,16 +723,331 @@ export const Dashboard: React.FC<DashboardProps> = ({
     });
   };
 
+  const anonymityScoreBonus =
+    activeAnonymityLevel === 'extreme'
+      ? 4
+      : activeAnonymityLevel === 'low'
+        ? -3
+        : 0;
+
+  const baseSessionScore =
+    securityReport?.score ||
+    (isConnected ? (userPlan === 'free' ? 74 : 95) : 28);
+
   const activeScore =
     isOnionMode && isConnected
       ? 100
       : isEmergency
         ? 15
-        : securityReport?.score ||
-          (isConnected ? (userPlan === 'free' ? 74 : 95) : 28);
+        : Math.max(15, Math.min(100, baseSessionScore + anonymityScoreBonus));
 
   const selectedStreamingObj =
     STREAMING_REGIONS.find((r) => r.id === selectedRegion) || STREAMING_REGIONS[0];
+
+  const formatRecordingTimer = (secs: number) => {
+    const mins = Math.floor(secs / 60)
+      .toString()
+      .padStart(2, '0');
+    const rem = (secs % 60).toString().padStart(2, '0');
+    return `${mins}:${rem}`;
+  };
+
+  const playVoiceReplyAudio = async (textToSpeak: string) => {
+    if (!textToSpeak.trim()) return;
+    stopSpeechPlayback();
+    setIsSynthesizingSpeech(true);
+
+    const wavBase64 = await synthesizeSentinelSpeech(textToSpeak);
+    if (wavBase64) {
+      try {
+        const binary = atob(wavBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const wavBlob = new Blob([bytes], { type: 'audio/wav' });
+        const objectUrl = URL.createObjectURL(wavBlob);
+        ttsObjectUrlRef.current = objectUrl;
+        const audio = new Audio(objectUrl);
+        ttsAudioRef.current = audio;
+
+        audio.onended = () => {
+          stopSpeechPlayback();
+        };
+        audio.onerror = () => {
+          stopSpeechPlayback();
+        };
+
+        setIsSynthesizingSpeech(false);
+        setIsSpeakingReply(true);
+        await audio.play();
+        return;
+      } catch {
+        stopSpeechPlayback();
+      }
+    }
+
+    setIsSynthesizingSpeech(false);
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = 'fr-FR';
+        utterance.rate = 1.02;
+        utterance.onend = () => setIsSpeakingReply(false);
+        utterance.onerror = () => setIsSpeakingReply(false);
+        setIsSpeakingReply(true);
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        setIsSpeakingReply(false);
+      }
+    }
+  };
+
+  const executeVoiceCommand = async (payload: {
+    audioBase64?: string;
+    mimeType?: string;
+    simulatedCommand?: string;
+  }) => {
+    setIsVoiceProcessing(true);
+    setVoiceError(null);
+    stopSpeechPlayback();
+
+    try {
+      const result = await sendCockpitVoiceCommand({
+        ...payload,
+        context: {
+          mode,
+          protocol,
+          isConnected,
+          country: currentCountry,
+          ip: currentIp,
+          securityScore: activeScore,
+          killSwitch: settings.killSwitch,
+          ipv6LeakProtection: settings.ipv6LeakProtection,
+        },
+      });
+
+      setVoiceResult(result);
+      setShowVoiceExamples(false);
+      onVoiceSecurityReport?.(result.report);
+
+      if (result.intent === 'security_analysis') {
+        addLog(
+          `Audit vocal exécuté (« ${result.transcript} ») · Indice ${result.report.score}/100`,
+          'success',
+          currentIp
+        );
+      } else {
+        addLog(
+          `Conseils vocaux Sentinel générés (« ${result.transcript} »)`,
+          'info',
+          currentIp
+        );
+      }
+
+      if (autoSpeakReply) {
+        playVoiceReplyAudio(result.reply).catch(() => {});
+      }
+    } catch {
+      setVoiceError(
+        'Impossible de traiter la commande vocale pour le moment. Veuillez réessayer.'
+      );
+    } finally {
+      setIsVoiceProcessing(false);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (isVoiceRecording || isVoiceProcessing) return;
+    setVoiceError(null);
+    stopSpeechPlayback();
+
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== 'function' ||
+      typeof MediaRecorder === 'undefined'
+    ) {
+      setVoiceError(
+        "La capture microphone n'est pas disponible sur ce navigateur. Utilisez une commande directe ci-dessous."
+      );
+      setShowVoiceExamples(true);
+      addLog(
+        'Microphone indisponible dans cet environnement navigateur',
+        'warning'
+      );
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      mediaStreamRef.current = stream;
+      audioChunksRef.current = [];
+      discardRecordingRef.current = false;
+
+      // Real-time Web Audio level meter for Cockpit visual feedback
+      try {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        const audioCtx = new AudioCtx();
+        audioCtxRef.current = audioCtx;
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 64;
+        source.connect(analyser);
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+
+        const updateMeter = () => {
+          analyser.getByteFrequencyData(freqData);
+          const nextBars = Array.from({ length: 8 }, (_, idx) => {
+            const bin = freqData[idx * 2] || 0;
+            return Math.max(14, Math.min(100, Math.round((bin / 255) * 100)));
+          });
+          setVoiceLevels(nextBars);
+          levelRafRef.current = window.requestAnimationFrame(updateMeter);
+        };
+        levelRafRef.current = window.requestAnimationFrame(updateMeter);
+      } catch {
+        // Non-blocking if AudioContext visualization is restricted
+      }
+
+      const candidateMimes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+      ];
+      const preferredMime =
+        typeof MediaRecorder.isTypeSupported === 'function'
+          ? candidateMimes.find((m) => MediaRecorder.isTypeSupported(m)) || ''
+          : '';
+
+      const recorder = preferredMime
+        ? new MediaRecorder(stream, { mimeType: preferredMime })
+        : new MediaRecorder(stream);
+
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const wasDiscarded = discardRecordingRef.current;
+        const recordedMime = recorder.mimeType || preferredMime || 'audio/webm';
+        const chunks = [...audioChunksRef.current];
+        audioChunksRef.current = [];
+        cleanupRecordingResources();
+        setIsVoiceRecording(false);
+        setRecordingSeconds(0);
+
+        if (wasDiscarded) return;
+
+        const audioBlob = new Blob(chunks, { type: recordedMime });
+        if (audioBlob.size < 450) {
+          setVoiceError(
+            'Signal vocal trop bref ou silencieux. Maintenez la parole quelques secondes avant de lancer l’analyse.'
+          );
+          return;
+        }
+
+        try {
+          const base64Audio = await blobToBase64(audioBlob);
+          await executeVoiceCommand({
+            audioBase64: base64Audio,
+            mimeType: recordedMime,
+          });
+        } catch {
+          setVoiceError(
+            'Échec de lecture de l’enregistrement audio. Veuillez réessayer.'
+          );
+        }
+      };
+
+      recorder.start(250);
+      setIsVoiceRecording(true);
+      setRecordingSeconds(0);
+      addLog(
+        'Microphone Cockpit activé : en attente de votre commande vocale...',
+        'info'
+      );
+
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 19) {
+            if (
+              mediaRecorderRef.current &&
+              mediaRecorderRef.current.state === 'recording'
+            ) {
+              mediaRecorderRef.current.stop();
+            }
+            return 20;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      cleanupRecordingResources();
+      setIsVoiceRecording(false);
+      const errName =
+        err && typeof err === 'object' && 'name' in err
+          ? String((err as { name?: unknown }).name)
+          : '';
+
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        setVoiceError(
+          'Accès au microphone refusé. Autorisez le microphone dans les permissions du navigateur ou utilisez une commande directe ci-dessous.'
+        );
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        setVoiceError(
+          'Aucun microphone détecté sur cet appareil. Vous pouvez déclencher une commande directe ci-dessous.'
+        );
+      } else {
+        setVoiceError(
+          'Impossible d’initialiser le microphone. Vérifiez vos périphériques audio ou utilisez une commande rapide.'
+        );
+      }
+      setShowVoiceExamples(true);
+      addLog('Impossible d’activer le microphone dans le Cockpit', 'warning');
+    }
+  };
+
+  const stopAndAnalyzeVoice = () => {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== 'inactive'
+    ) {
+      discardRecordingRef.current = false;
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    discardRecordingRef.current = true;
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== 'inactive'
+    ) {
+      mediaRecorderRef.current.stop();
+    } else {
+      cleanupRecordingResources();
+      setIsVoiceRecording(false);
+      setRecordingSeconds(0);
+    }
+    addLog('Écoute vocale annulée', 'info');
+  };
 
   return (
     <div className="space-y-6">
@@ -555,6 +1108,367 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {/* Cockpit Voice Command Control & Security Analysis Bar */}
+      <div
+        className={`bg-white dark:bg-slate-900 rounded-2xl border transition-colors shadow-xs overflow-hidden ${
+          isVoiceRecording
+            ? 'border-rose-500/50 dark:border-rose-500/50'
+            : voiceResult
+              ? 'border-cyan-500/40 dark:border-cyan-500/40'
+              : 'border-slate-200 dark:border-slate-800'
+        }`}
+      >
+        <div className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div
+              className={`p-2.5 rounded-xl border shrink-0 transition-colors ${
+                isVoiceRecording
+                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
+                  : isVoiceProcessing
+                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-600 dark:text-cyan-400'
+                    : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-600 dark:text-cyan-400'
+              }`}
+            >
+              {isVoiceProcessing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isVoiceRecording ? (
+                <Mic className="w-4 h-4 animate-pulse" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Commande vocale Cockpit
+                </h2>
+                {isVoiceRecording && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/25 text-[11px] font-mono tabular-nums font-semibold text-rose-700 dark:text-rose-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                    <span>{formatRecordingTimer(recordingSeconds)} / 00:20</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {isVoiceRecording
+                  ? 'Parlez distinctement pour demander un audit de sécurité ou des conseils de protection.'
+                  : isVoiceProcessing
+                    ? 'Transcription vocale et diagnostic de sécurité Sentinel en cours...'
+                    : 'Activez le microphone pour lancer une analyse de sécurité ou obtenir des conseils de protection.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const next = !autoSpeakReply;
+                setAutoSpeakReply(next);
+                if (!next) stopSpeechPlayback();
+              }}
+              title={
+                autoSpeakReply
+                  ? 'Synthèse vocale automatique activée'
+                  : 'Synthèse vocale automatique désactivée'
+              }
+              className={`px-2.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                autoSpeakReply
+                  ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500'
+              }`}
+            >
+              {autoSpeakReply ? (
+                <Volume2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              ) : (
+                <VolumeX className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden md:inline">Voix IA</span>
+            </button>
+
+            {!isVoiceRecording && !isVoiceProcessing && (
+              <button
+                type="button"
+                onClick={() => setShowVoiceExamples((prev) => !prev)}
+                className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Suggestions
+              </button>
+            )}
+
+            {isVoiceRecording ? (
+              <>
+                <button
+                  type="button"
+                  onClick={cancelVoiceRecording}
+                  className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Annuler</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={stopAndAnalyzeVoice}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>Arrêter et analyser</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={startVoiceRecording}
+                disabled={isVoiceProcessing}
+                aria-label="Activer le microphone pour une commande vocale de sécurité"
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                {isVoiceProcessing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Analyse vocale...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-3.5 h-3.5" />
+                    <span>Activer le micro</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Live Recording Visualizer & Spoken Prompt Hints */}
+        {isVoiceRecording && (
+          <div className="px-4 sm:px-6 py-3.5 bg-rose-500/[0.04] dark:bg-rose-950/20 border-t border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex items-end gap-1 h-6 px-2"
+                aria-hidden="true"
+              >
+                {voiceLevels.map((lvl, idx) => {
+                  const barHeightClass =
+                    lvl >= 80
+                      ? 'h-6'
+                      : lvl >= 60
+                        ? 'h-5'
+                        : lvl >= 42
+                          ? 'h-4'
+                          : lvl >= 26
+                            ? 'h-3'
+                            : 'h-2';
+                  return (
+                    <span
+                      key={idx}
+                      className={`w-1 rounded-full bg-rose-500 dark:bg-rose-400 transition-all duration-75 ${barHeightClass}`}
+                    />
+                  );
+                })}
+              </div>
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                Exemples : « Lance une analyse de sécurité » ou « Donne-moi des conseils contre les fuites DNS »
+              </span>
+            </div>
+            <span className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 shrink-0">
+              Cliquez sur « Arrêter et analyser » dès que vous avez terminé
+            </span>
+          </div>
+        )}
+
+        {/* Microphone Permission / Hardware Fallback Notice */}
+        {voiceError && !isVoiceRecording && (
+          <div className="px-4 sm:px-6 py-3.5 bg-amber-500/10 border-t border-amber-500/25 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-200">
+              <MicOff className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>{voiceError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setVoiceError(null)}
+              className="text-xs font-semibold text-amber-800 dark:text-amber-300 hover:underline cursor-pointer whitespace-nowrap shrink-0"
+            >
+              Masquer
+            </button>
+          </div>
+        )}
+
+        {/* Quick Voice Command Presets Drawer */}
+        {showVoiceExamples && !isVoiceRecording && !isVoiceProcessing && (
+          <div className="px-4 sm:px-6 py-3.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+              Commandes rapides sans micro :
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {VOICE_COMMAND_SUGGESTIONS.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() =>
+                    executeVoiceCommand({ simulatedCommand: item.prompt })
+                  }
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:border-cyan-500/50 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Voice Command Result & Recommendations Panel */}
+        {voiceResult && !isVoiceRecording && (
+          <div className="p-4 sm:px-6 sm:py-5 bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border ${
+                      voiceResult.intent === 'security_analysis'
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
+                        : 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/25'
+                    }`}
+                  >
+                    {voiceResult.intent === 'security_analysis'
+                      ? 'Audit de sécurité vocal'
+                      : 'Conseils de protection Sentinel'}
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-md text-[11px] font-mono tabular-nums font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800">
+                    Score {voiceResult.report.score}/100 · Risque{' '}
+                    {voiceResult.report.threatLevel}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 italic truncate">
+                  Commande reconnue : « {voiceResult.transcript} »
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isSpeakingReply || isSynthesizingSpeech) {
+                      stopSpeechPlayback();
+                    } else {
+                      playVoiceReplyAudio(voiceResult.reply).catch(() => {});
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:border-cyan-500/50 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  {isSynthesizingSpeech ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-500" />
+                      <span>Audio...</span>
+                    </>
+                  ) : isSpeakingReply ? (
+                    <>
+                      <Square className="w-3 h-3 fill-current text-rose-500" />
+                      <span>Arrêter la voix</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      <span>Écouter</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopSpeechPlayback();
+                    setVoiceResult(null);
+                  }}
+                  aria-label="Fermer le résultat vocal"
+                  className="p-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
+              {voiceResult.reply}
+            </p>
+
+            {voiceResult.recommendations.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                {voiceResult.recommendations.slice(0, 3).map((rec, index) => (
+                  <div
+                    key={index}
+                    className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start gap-2.5"
+                  >
+                    <span className="font-mono tabular-nums text-[11px] font-bold text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5">
+                      0{index + 1}
+                    </span>
+                    <span className="text-xs text-slate-700 dark:text-slate-300 leading-snug">
+                      {rec}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {onRefreshSecurity && (
+                <button
+                  type="button"
+                  onClick={onRefreshSecurity}
+                  className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Réévaluer la session</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setDnsTestTrigger((c) => c + 1)}
+                className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:border-cyan-500/50 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Tester les fuites DNS</span>
+              </button>
+
+              {!settings.killSwitch && updateSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateSettings('killSwitch', true);
+                    addLog(
+                      'Kill Switch activé depuis les recommandations vocales du Cockpit',
+                      'success'
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Activer le Kill Switch</span>
+                </button>
+              )}
+
+              {!settings.ipv6LeakProtection && updateSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateSettings('ipv6LeakProtection', true);
+                    addLog(
+                      'Bouclier anti-fuite IPv6 activé depuis le Cockpit vocal',
+                      'success'
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Activer le bouclier IPv6</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Live Telemetry & Anonymity Posture Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
@@ -587,7 +1501,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <Zap className="w-3.5 h-3.5" />
                 )}
                 {isOnionMode
-                  ? `Vortex (${settings.vortexCircuitLength} sauts)`
+                  ? `Vortex (${vortexCircuitHops.length || settings.vortexCircuitLength} sauts)`
                   : isSmartDNS
                     ? 'Relais Smart DNS'
                     : `${protocol.toUpperCase()} :${settings.tunnelPort}`}
@@ -638,6 +1552,167 @@ export const Dashboard: React.FC<DashboardProps> = ({
             isConnected={isConnected}
             settings={settings}
           />
+        </div>
+      </div>
+
+      {/* Dynamic Anonymity Level Selector for Upcoming Re-numbering Hops */}
+      <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className={`p-2.5 rounded-xl border shrink-0 transition-colors ${
+                activeAnonymityLevel === 'extreme'
+                  ? 'bg-purple-500/10 border-purple-500/25 text-purple-600 dark:text-purple-400'
+                  : activeAnonymityLevel === 'balanced'
+                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-cyan-500/10 border-cyan-500/25 text-cyan-600 dark:text-cyan-400'
+              }`}
+            >
+              <Fingerprint className="w-4 h-4" />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Niveau d&apos;anonymat des prochains sauts
+                </h2>
+                <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">
+                  ·
+                </span>
+                <span
+                  className={`text-xs font-semibold ${
+                    activeAnonymityLevel === 'extreme'
+                      ? 'text-purple-700 dark:text-purple-300'
+                      : activeAnonymityLevel === 'balanced'
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : 'text-cyan-700 dark:text-cyan-300'
+                  }`}
+                >
+                  {activeAnonymitySpec.frenchTitle}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                {activeAnonymitySpec.postureSummary}
+              </p>
+            </div>
+          </div>
+
+          {/* Interactive Low / Balanced / Extreme Segmented Control */}
+          <div
+            role="group"
+            aria-label="Sélecteur du niveau d'anonymat (Low, Balanced, Extreme)"
+            className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shrink-0 self-start lg:self-auto"
+          >
+            {(
+              [
+                { id: 'low', label: 'Low', icon: Zap },
+                { id: 'balanced', label: 'Balanced', icon: Shield },
+                { id: 'extreme', label: 'Extreme', icon: Ghost },
+              ] as const
+            ).map((opt) => {
+              const Icon = opt.icon;
+              const selected = activeAnonymityLevel === opt.id;
+              const activeClass =
+                opt.id === 'extreme'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : opt.id === 'balanced'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-cyan-600 text-white shadow-xs';
+
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => handleSelectAnonymityLevel(opt.id)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                    selected
+                      ? activeClass
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Next Hop Live Behavior Strip & Immediate Hop Trigger */}
+        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 dark:text-slate-400">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              Prochain saut :
+            </span>
+            <span>{activeAnonymitySpec.jurisdictionPolicyLabel}</span>
+            <span>·</span>
+            <span className="font-mono tabular-nums text-slate-800 dark:text-slate-200">
+              {nextHopCandidates.length} relais ({nextHopCountriesLabel})
+            </span>
+            <span>·</span>
+            <span className="font-mono tabular-nums">
+              ~{nextHopAvgLatency} ms
+            </span>
+            <span>·</span>
+            <span>{activeAnonymitySpec.identityMutationLabel}</span>
+            <span>·</span>
+            <span className="font-mono tabular-nums">
+              Cadence {formatHopDuration(effectiveRotationSecs)}
+              {rotationSecondsLeft !== null
+                ? ` (${Math.floor(rotationSecondsLeft / 60)}:${String(
+                    rotationSecondsLeft % 60
+                  ).padStart(2, '0')})`
+                : ''}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {updateSettings && (
+              <button
+                type="button"
+                onClick={() =>
+                  updateSettings('autoRotation', !settings.autoRotation)
+                }
+                className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  settings.autoRotation
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>
+                  {settings.autoRotation
+                    ? 'Auto-rotation : Active'
+                    : 'Auto-rotation : Pause'}
+                </span>
+              </button>
+            )}
+
+            {onTriggerRenumberHop && (
+              <button
+                type="button"
+                onClick={handleManualRenumberHop}
+                disabled={isRenumbering || isEmergency}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0 ${
+                  activeAnonymityLevel === 'extreme'
+                    ? 'bg-purple-600 hover:bg-purple-500'
+                    : activeAnonymityLevel === 'balanced'
+                      ? 'bg-emerald-600 hover:bg-emerald-500'
+                      : 'bg-cyan-600 hover:bg-cyan-500'
+                }`}
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${isRenumbering ? 'animate-spin' : ''}`}
+                />
+                <span>
+                  {isRenumbering
+                    ? 'Re-numérotation...'
+                    : 'Exécuter un saut'}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

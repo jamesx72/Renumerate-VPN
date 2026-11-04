@@ -54,6 +54,8 @@ interface Props {
   onObfuscationLevelChange?: (level: 'standard' | 'high' | 'ultra') => void;
   fingerprintProtection?: FingerprintProtectionConfig;
   onToggleFingerprint?: (key: keyof FingerprintProtectionConfig) => void;
+  onRefreshSecurity?: () => void;
+  isRefreshingSecurity?: boolean;
 }
 
 const COUNTRIES_WITH_FLAGS: Record<string, string> = {
@@ -221,6 +223,8 @@ export const IdentityMatrix: React.FC<Props> = ({
   onObfuscationLevelChange,
   fingerprintProtection,
   onToggleFingerprint,
+  onRefreshSecurity,
+  isRefreshingSecurity = false,
 }) => {
   const [copiedField, setCopiedField] = useState<'ip' | 'mac' | 'ua' | null>(null);
   const [localTime, setLocalTime] = useState<string>('');
@@ -846,7 +850,24 @@ export const IdentityMatrix: React.FC<Props> = ({
                 ))}
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex flex-wrap justify-end gap-2 pt-2">
+                {onRefreshSecurity && (
+                  <button
+                    type="button"
+                    onClick={onRefreshSecurity}
+                    disabled={isRefreshingSecurity}
+                    className="px-4 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 disabled:opacity-50 text-cyan-700 dark:text-cyan-300 border border-cyan-500/25 text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${isRefreshingSecurity ? 'animate-spin' : ''}`}
+                    />
+                    <span>
+                      {isRefreshingSecurity
+                        ? 'Analyse en cours...'
+                        : 'Actualiser l’analyse'}
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleExportAuditReport}

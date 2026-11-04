@@ -34,12 +34,42 @@ export interface LogEntry {
 
 export type PlanTier = 'free' | 'pro' | 'elite';
 
+export type AnonymityLevel = 'low' | 'balanced' | 'extreme';
+
 export type ConfigurationPreset =
   | 'balanced'
   | 'stealth_max'
   | 'speed_ultra'
   | 'vortex_deep'
-  | 'zero_trace';
+  | 'zero_trace'
+  | 'kernel_pqc';
+
+export type TcpCongestionControl = 'bbr' | 'cubic' | 'hybla';
+
+export type PostQuantumKex = 'ml-kem-1024' | 'sntrup761' | 'classic-x25519';
+
+export type SystemPowerProfile = 'eco' | 'balanced' | 'performance';
+
+export type PanicActionMode =
+  | 'lockdown'
+  | 'disconnect_wipe'
+  | 'lock_vault_and_scramble';
+
+export interface SystemRuntimeTelemetry {
+  status: 'nominal' | 'degraded';
+  timestamp: string;
+  platform: string;
+  arch: string;
+  nodeVersion: string;
+  cpuCores: number;
+  loadAvg1m: number;
+  uptimeSeconds: number;
+  memoryRssMb: number;
+  memoryHeapUsedMb: number;
+  memoryHeapTotalMb: number;
+  cipherSuitesCount: number;
+  pqcReady: boolean;
+}
 
 export interface SplitTunnelRule {
   id: string;
@@ -89,6 +119,7 @@ export interface AppSettings {
   customBlockedDomains: string[];
   autoConnect: boolean;
   // Renumbering Config
+  anonymityLevel: AnonymityLevel;
   autoRotation: boolean;
   rotationInterval: number; // en minutes
   obfuscationLevel: 'standard' | 'high' | 'ultra';
@@ -125,6 +156,23 @@ export interface AppSettings {
   socks5Enabled: boolean;
   socks5Host: string;
   socks5Port: number;
+  // Kernel, Post-Quantum KEX & Low-Level Transport
+  tcpCongestionControl: TcpCongestionControl;
+  postQuantumKex: PostQuantumKex;
+  keepaliveInterval: number;
+  mssClamping: boolean;
+  multiQueueTun: boolean;
+  // OS Egress & L2/L3 Hardening
+  blockQuicUdp443: boolean;
+  blockCaptivePortalProbes: boolean;
+  arpSpoofGuard: boolean;
+  strictReversePathFilter: boolean;
+  // System Daemon Governance & Operational Hygiene
+  powerProfile: SystemPowerProfile;
+  autoLockVaultMinutes: number;
+  clipboardAutoClearSeconds: number;
+  privacyScreenBlurOnInactive: boolean;
+  panicAction: PanicActionMode;
 }
 
 export interface DeviceNode {

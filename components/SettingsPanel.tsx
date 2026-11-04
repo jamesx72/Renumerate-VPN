@@ -43,6 +43,7 @@ import {
   Bookmark,
   Sliders,
   EyeOff,
+  FileCode2,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -53,6 +54,10 @@ import {
   SplitTunnelRule,
   WithdrawalMethod,
   FiatCurrency,
+  TcpCongestionControl,
+  PostQuantumKex,
+  SystemPowerProfile,
+  PanicActionMode,
 } from '../types';
 import {
   DEFAULT_APP_SETTINGS,
@@ -65,6 +70,10 @@ import {
   getSubNetworksForMethod,
   validateWithdrawalDestination,
   formatFiatValue,
+  compileNativeTunnelConfig,
+  compileSysctlConfig,
+  compileNftablesConfig,
+  computeModifiedSettingsDiff,
 } from '../constants';
 
 interface SettingsPanelProps {
@@ -95,6 +104,8 @@ interface SettingsPanelProps {
   isVerified: boolean;
   userId: string;
   onOpenWithdrawalModal?: () => void;
+  onOpenSystemCenter?: () => void;
+  onExecutePanic?: () => void;
   addLog: (
     event: string,
     type?: 'info' | 'warning' | 'success' | 'error'
@@ -131,16 +142,22 @@ const PRESET_DEFINITIONS: Array<{
   {
     id: 'balanced',
     label: 'Équilibré',
-    subtitle: 'WireGuard 1420B · Anti-fuite complet',
+    subtitle: 'WireGuard 1420B · BBR · ML-KEM',
     patch: {
       protocol: 'wireguard',
       tunnelPort: 51820,
       mtuSize: 1420,
+      tcpCongestionControl: 'bbr',
+      postQuantumKex: 'ml-kem-1024',
+      mssClamping: true,
       killSwitch: true,
       killSwitchMode: 'strict',
       dnsLeakProtection: true,
       ipv6LeakProtection: true,
       webrtcLeakShield: true,
+      blockQuicUdp443: true,
+      arpSpoofGuard: true,
+      anonymityLevel: 'balanced',
       autoRotation: false,
       obfuscationLevel: 'standard',
       excludeEyesJurisdictions: 'none',
@@ -149,35 +166,71 @@ const PRESET_DEFINITIONS: Array<{
   {
     id: 'speed_ultra',
     label: 'Vitesse & Streaming',
-    subtitle: 'WireGuard UDP · Cache DNS actif · Latence min.',
+    subtitle: 'WireGuard BBR · Perf Max · Latence min.',
     patch: {
       protocol: 'wireguard',
       tunnelPort: 51820,
       mtuSize: 1420,
+      tcpCongestionControl: 'bbr',
+      multiQueueTun: true,
+      powerProfile: 'performance',
       dns: 'cloudflare',
       dnsCache: true,
       dnsLeakProtection: true,
       killSwitch: true,
       killSwitchMode: 'soft',
+      anonymityLevel: 'low',
       autoRotation: false,
       obfuscationLevel: 'standard',
       vortexBridge: 'none',
     },
   },
   {
+    id: 'kernel_pqc',
+    label: 'Noyau PQC Durci',
+    subtitle: 'ML-KEM-1024 · Egress Strict · Coffre 5m',
+    patch: {
+      protocol: 'wireguard',
+      tunnelPort: 443,
+      mtuSize: 1420,
+      tcpCongestionControl: 'bbr',
+      postQuantumKex: 'ml-kem-1024',
+      keepaliveInterval: 25,
+      mssClamping: true,
+      multiQueueTun: true,
+      killSwitch: true,
+      killSwitchMode: 'strict',
+      dns: 'quad9',
+      dnsLeakProtection: true,
+      ipv6LeakProtection: true,
+      webrtcLeakShield: true,
+      blockQuicUdp443: true,
+      blockCaptivePortalProbes: true,
+      arpSpoofGuard: true,
+      strictReversePathFilter: true,
+      autoLockVaultMinutes: 5,
+      clipboardAutoClearSeconds: 15,
+    },
+  },
+  {
     id: 'stealth_max',
     label: 'Furtivité Maximale',
-    subtitle: 'OpenVPN :443 · Obfuscation Ultra · Rotation 5m',
+    subtitle: 'OpenVPN :443 · Hybla · Rotation 5m',
     patch: {
       protocol: 'openvpn',
       tunnelPort: 443,
       mtuSize: 1380,
+      tcpCongestionControl: 'hybla',
+      postQuantumKex: 'ml-kem-1024',
       dns: 'quad9',
       killSwitch: true,
       killSwitchMode: 'strict',
       dnsLeakProtection: true,
       ipv6LeakProtection: true,
       webrtcLeakShield: true,
+      blockQuicUdp443: true,
+      blockCaptivePortalProbes: true,
+      anonymityLevel: 'extreme',
       obfuscationLevel: 'ultra',
       autoRotation: true,
       rotationInterval: 5,
@@ -198,6 +251,9 @@ const PRESET_DEFINITIONS: Array<{
     patch: {
       protocol: 'openvpn',
       tunnelPort: 443,
+      tcpCongestionControl: 'hybla',
+      postQuantumKex: 'sntrup761',
+      anonymityLevel: 'extreme',
       vortexBridge: 'obfs4',
       vortexCircuitLength: 4,
       vortexEntryNodeCountry: 'Suisse',
@@ -212,16 +268,21 @@ const PRESET_DEFINITIONS: Array<{
   {
     id: 'zero_trace',
     label: 'Forteresse Zéro-Trace',
-    subtitle: 'Journaux RAM 0h · Blocage total · Hors 14-Eyes',
+    subtitle: 'Journaux RAM 0h · Panique Wipe · Hors 14-Eyes',
     patch: {
       protocol: 'wireguard',
       tunnelPort: 443,
+      postQuantumKex: 'ml-kem-1024',
       dns: 'quad9',
       killSwitch: true,
       killSwitchMode: 'strict',
       dnsLeakProtection: true,
       ipv6LeakProtection: true,
       webrtcLeakShield: true,
+      blockQuicUdp443: true,
+      blockCaptivePortalProbes: true,
+      arpSpoofGuard: true,
+      strictReversePathFilter: true,
       adBlocker: true,
       threatFilters: {
         ads: true,
@@ -229,11 +290,16 @@ const PRESET_DEFINITIONS: Array<{
         malware: true,
         cryptominers: true,
       },
+      anonymityLevel: 'extreme',
       autoRotation: true,
       rotationInterval: 10,
       obfuscationLevel: 'ultra',
       excludeEyesJurisdictions: '14-eyes',
       logRetentionHours: 0,
+      autoLockVaultMinutes: 5,
+      clipboardAutoClearSeconds: 15,
+      privacyScreenBlurOnInactive: true,
+      panicAction: 'disconnect_wipe',
       fingerprintProtection: {
         canvasNoise: true,
         webglMask: true,
@@ -330,6 +396,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   isVerified,
   userId,
   onOpenWithdrawalModal,
+  onOpenSystemCenter,
+  onExecutePanic,
   addLog,
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('general');
@@ -444,7 +512,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     },
     { id: 'earnings', label: 'Gains RNC', icon: Wallet },
     { id: 'wizard', label: 'Profils & Sauvegarde', icon: Wand2 },
-    { id: 'system', label: 'Système & Purge', icon: Sliders },
+    { id: 'system', label: 'Système & Noyau', icon: Sliders },
   ];
 
   const applyPreset = (presetId: ConfigurationPreset) => {
@@ -510,15 +578,63 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     notify('Fichier JSON exporté avec succès', 'success');
   };
 
+  const modifiedDiffCount = useMemo(
+    () => computeModifiedSettingsDiff(settings).length,
+    [settings]
+  );
+
+  const scheduleClipboardSanitize = () => {
+    if (settings.clipboardAutoClearSeconds <= 0) return;
+    const ms = settings.clipboardAutoClearSeconds * 1000;
+    window.setTimeout(() => {
+      navigator.clipboard?.writeText('').catch(() => {});
+      addLog(
+        `Presse-papiers purgé automatiquement après ${settings.clipboardAutoClearSeconds}s`,
+        'info'
+      );
+    }, ms);
+  };
+
   const handleCopyJson = async () => {
     try {
       await navigator.clipboard.writeText(
         JSON.stringify(sanitizeAppSettings(settings), null, 2)
       );
-      notify('Configuration JSON copiée dans le presse-papiers', 'success');
+      scheduleClipboardSanitize();
+      notify(
+        settings.clipboardAutoClearSeconds > 0
+          ? `Configuration JSON copiée (purge auto dans ${settings.clipboardAutoClearSeconds}s)`
+          : 'Configuration JSON copiée dans le presse-papiers',
+        'success'
+      );
     } catch {
       notify('Impossible d’accéder au presse-papiers', 'error');
     }
+  };
+
+  const handleExportNativeConfig = (
+    target: 'tunnel' | 'sysctl' | 'nftables'
+  ) => {
+    const compiled =
+      target === 'sysctl'
+        ? compileSysctlConfig(settings)
+        : target === 'nftables'
+          ? compileNftablesConfig(settings, currentIdentity)
+          : compileNativeTunnelConfig(settings, currentIdentity);
+
+    const blob = new Blob([compiled.content], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = compiled.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog(`Fichier système natif généré : ${compiled.filename}`, 'success');
+    notify(`Fichier ${compiled.filename} téléchargé`, 'success');
   };
 
   const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -925,28 +1041,46 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         currentValue: `${settings.miningIntensity}% · ${settings.contributionType.toUpperCase()}`,
       },
       {
+        id: 'kernel_pqc',
+        title: 'Congestion TCP Noyau (BBR) & Échange Post-Quantique (ML-KEM)',
+        description: 'Algorithme TCP BBR/CUBIC/Hybla, encapsulation hybride PQC ML-KEM-1024, Keepalive NAT et Multi-Queue TUN.',
+        tab: 'general',
+        tabLabel: 'Réseau & Tunnel',
+        keywords: ['bbr', 'cubic', 'hybla', 'pqc', 'quantique', 'ml-kem', 'sntrup', 'keepalive', 'mss', 'noyau', 'sysctl'],
+        currentValue: `${settings.tcpCongestionControl.toUpperCase()} · ${settings.postQuantumKex.toUpperCase()}`,
+      },
+      {
+        id: 'egress_firewall',
+        title: 'Pare-feu Egress QUIC UDP/443, Garde ARP & rp_filter',
+        description: 'Rejet HTTP/3 QUIC, anti-spoofing ARP Wi-Fi public, filtrage strict de route inverse et blocage sondes OS.',
+        tab: 'security',
+        tabLabel: 'Bouclier & DNS',
+        keywords: ['quic', 'udp', 'arp', 'spoofing', 'mitm', 'rp_filter', 'captive', 'sondes', 'pare-feu', 'nftables'],
+        currentValue:
+          settings.blockQuicUdp443 && settings.arpSpoofGuard
+            ? 'Egress verrouillé'
+            : 'Standard',
+      },
+      {
         id: 'profiles',
-        title: 'Profils personnalisés, Import / Export JSON & Reset',
-        description: 'Sauvegardez vos configurations, exportez en JSON ou réinitialisez par défaut.',
+        title: 'Profils personnalisés, Compilateur .conf / sysctl & Reset',
+        description: 'Sauvegardez vos configurations, compilez des fichiers WireGuard/OpenVPN/nftables ou réinitialisez par défaut.',
         tab: 'wizard',
         tabLabel: 'Profils & Sauvegarde',
-        keywords: ['profil', 'preset', 'export', 'import', 'json', 'sauvegarde', 'reset', 'usine'],
-        currentValue: `${savedProfiles.length} profil(s)`,
+        keywords: ['profil', 'preset', 'export', 'import', 'json', 'conf', 'ovpn', 'sysctl', 'nftables', 'sauvegarde', 'reset', 'usine'],
+        currentValue: `${savedProfiles.length} profil(s) · ${modifiedDiffCount} écart(s)`,
       },
       {
         id: 'system',
-        title: 'Thème, Raccourcis clavier & Rétention des journaux',
-        description: 'Mode sombre/clair, raccourcis Ctrl+S/R/K et purge automatique Zero-Trace.',
+        title: 'Gouvernance Démon, Auto-verrouillage Coffre, Voile Furtif & Panique',
+        description: 'Profil énergétique, TTL clé RAM, purge presse-papiers, floutage hors focus, protocole panique et journaux.',
         tab: 'system',
-        tabLabel: 'Système & Purge',
-        keywords: ['thème', 'sombre', 'clair', 'clavier', 'raccourcis', 'logs', 'journaux', 'purge', 'historique'],
-        currentValue:
-          settings.logRetentionHours === 0
-            ? 'RAM Volatile (0h)'
-            : `Rétention ${settings.logRetentionHours}h`,
+        tabLabel: 'Système & Noyau',
+        keywords: ['thème', 'sombre', 'clair', 'clavier', 'raccourcis', 'logs', 'journaux', 'purge', 'coffre', 'ram', 'presse-papiers', 'panique', 'éco', 'performance', 'flou'],
+        currentValue: `${settings.powerProfile.toUpperCase()} · Coffre ${settings.autoLockVaultMinutes === 0 ? 'Manuel' : `${settings.autoLockVaultMinutes}m`}`,
       },
     ],
-    [settings, savedProfiles.length]
+    [settings, savedProfiles.length, modifiedDiffCount]
   );
 
   const searchMatches = useMemo(() => {
@@ -1218,7 +1352,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                      Sauvegarde automatique active
                   </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                   {PRESET_DEFINITIONS.map((preset) => (
                     <button
                       key={preset.id}
@@ -1517,6 +1651,185 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           )}
                         </div>
                       )}
+                    </section>
+
+                    {/* Kernel Stack, TCP Congestion & Post-Quantum Key Exchange */}
+                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-5">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <Cpu className="w-4 h-4 text-cyan-500" />
+                          Pile Noyau, Congestion TCP &amp; Cryptographie Post-Quantique
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Paramètres d&apos;établissement de clés hybrides et d&apos;ordonnancement des files réseau bas-niveau.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Post-Quantum KEX */}
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                            Échange de clés hybride (KEX)
+                          </label>
+                          <div className="grid grid-cols-1 gap-1.5">
+                            {(
+                              [
+                                {
+                                  id: 'ml-kem-1024',
+                                  title: 'ML-KEM-1024 + X25519',
+                                  desc: 'Standard NIST FIPS-203 Post-Quantique maximal',
+                                },
+                                {
+                                  id: 'sntrup761',
+                                  title: 'sntrup761 + X25519',
+                                  desc: 'Réseau NTRU Prime compact haute vitesse',
+                                },
+                                {
+                                  id: 'classic-x25519',
+                                  title: 'X25519 Classique',
+                                  desc: 'Courbe elliptique standard (compatibilité legacy)',
+                                },
+                              ] as Array<{
+                                id: PostQuantumKex;
+                                title: string;
+                                desc: string;
+                              }>
+                            ).map((kex) => {
+                              const active = settings.postQuantumKex === kex.id;
+                              return (
+                                <button
+                                  key={kex.id}
+                                  type="button"
+                                  onClick={() =>
+                                    updateSettings('postQuantumKex', kex.id)
+                                  }
+                                  className={`px-3.5 py-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                                    active
+                                      ? 'bg-cyan-600/10 dark:bg-cyan-500/15 border-cyan-500 text-slate-900 dark:text-white'
+                                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-mono text-xs font-bold">
+                                      {kex.title}
+                                    </span>
+                                    {active && (
+                                      <Check className="w-3.5 h-3.5 text-cyan-500" />
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 mt-0.5">
+                                    {kex.desc}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* TCP Congestion & Keepalive */}
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                              Algorithme de congestion TCP noyau
+                            </label>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {(
+                                [
+                                  { id: 'bbr', label: 'BBRv3', sub: 'Débit max' },
+                                  { id: 'cubic', label: 'CUBIC', sub: 'Standard' },
+                                  { id: 'hybla', label: 'Hybla', sub: 'Multi-sauts' },
+                                ] as Array<{
+                                  id: TcpCongestionControl;
+                                  label: string;
+                                  sub: string;
+                                }>
+                              ).map((cc) => (
+                                <button
+                                  key={cc.id}
+                                  type="button"
+                                  onClick={() =>
+                                    updateSettings('tcpCongestionControl', cc.id)
+                                  }
+                                  className={`p-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                                    settings.tcpCongestionControl === cc.id
+                                      ? 'bg-cyan-600 text-white border-cyan-600'
+                                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+                                  }`}
+                                >
+                                  <div className="font-mono text-xs font-bold">
+                                    {cc.label}
+                                  </div>
+                                  <div
+                                    className={`text-[10px] mt-0.5 ${
+                                      settings.tcpCongestionControl === cc.id
+                                        ? 'text-cyan-100'
+                                        : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {cc.sub}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                              Battement PersistentKeepalive NAT
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[0, 15, 25, 45, 60].map((sec) => (
+                                <button
+                                  key={sec}
+                                  type="button"
+                                  onClick={() =>
+                                    updateSettings('keepaliveInterval', sec)
+                                  }
+                                  className={`px-3 py-1.5 rounded-lg font-mono tabular-nums text-xs font-bold border cursor-pointer ${
+                                    settings.keepaliveInterval === sec
+                                      ? 'bg-cyan-600 text-white border-cyan-600'
+                                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                                  }`}
+                                >
+                                  {sec === 0 ? 'Off' : `${sec}s`}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Ajustement dynamique TCP MSS (Clamp-to-PMTU)
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Évite les blocages TLS sur liaisons PPPoE ou 5G encapsulées.
+                            </p>
+                          </div>
+                          <ToggleSwitch
+                            checked={settings.mssClamping}
+                            onChange={(v) => updateSettings('mssClamping', v)}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Files parallèles Multi-Queue TUN (RSS)
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Distribue le traitement cryptographique sur plusieurs cœurs CPU.
+                            </p>
+                          </div>
+                          <ToggleSwitch
+                            checked={settings.multiQueueTun}
+                            onChange={(v) => updateSettings('multiQueueTun', v)}
+                          />
+                        </div>
+                      </div>
                     </section>
 
                     {/* Auto-Connect, Auto-Reconnect & Local LAN */}
@@ -2159,6 +2472,91 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                               ? 'Désamorcer le coupe-circuit actif'
                               : 'Tester le verrouillage d’urgence'}
                           </button>
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* OS Egress Hardening & L2/L3 Anti-Spoofing */}
+                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-4">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                          Pare-feu Egress Bas-Niveau &amp; Durcissement Couche 2/3
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Verrouille les canaux auxiliaires susceptibles de révéler l&apos;hôte sur les réseaux Wi-Fi publics ou d&apos;entreprise.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Bloquer HTTP/3 QUIC (UDP/443)
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Force le repli TLS/TCP pour garantir le filtrage DNS strict.
+                            </p>
+                          </div>
+                          <ToggleSwitch
+                            checked={settings.blockQuicUdp443}
+                            onChange={(v) =>
+                              updateSettings('blockQuicUdp443', v)
+                            }
+                            accent="emerald"
+                          />
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Garde ARP Anti-Spoofing (MitM L2)
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Ignore les réponses ARP gratuites non sollicitées sur le LAN.
+                            </p>
+                          </div>
+                          <ToggleSwitch
+                            checked={settings.arpSpoofGuard}
+                            onChange={(v) => updateSettings('arpSpoofGuard', v)}
+                            accent="emerald"
+                          />
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Validation stricte de route source (rp_filter)
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Rejette les paquets entrants à routage asymétrique suspect.
+                            </p>
+                          </div>
+                          <ToggleSwitch
+                            checked={settings.strictReversePathFilter}
+                            onChange={(v) =>
+                              updateSettings('strictReversePathFilter', v)
+                            }
+                            accent="emerald"
+                          />
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Neutraliser les sondes de portail captif OS
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Bloque les requêtes automatiques de connectivité hors tunnel.
+                            </p>
+                          </div>
+                          <ToggleSwitch
+                            checked={settings.blockCaptivePortalProbes}
+                            onChange={(v) =>
+                              updateSettings('blockCaptivePortalProbes', v)
+                            }
+                            accent="emerald"
+                          />
                         </div>
                       </div>
                     </section>
@@ -3501,76 +3899,373 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       )}
                     </section>
 
-                    {/* JSON Backup & Factory Reset */}
-                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex flex-wrap items-center gap-2">
+                    {/* Native Config Exports, JSON Backup & Factory Reset */}
+                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <FileCode2 className="w-4 h-4 text-cyan-500" />
+                            Compilation de fichiers système natifs &amp; Sauvegarde JSON
+                          </h4>
+                          <p className="text-[11px] text-slate-500">
+                            Générez des fichiers prêts pour votre système d&apos;exploitation ({modifiedDiffCount} paramètre(s) modifié(s) par rapport à l&apos;usine).
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <button
                           type="button"
-                          onClick={handleExportJson}
-                          className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                          onClick={() => handleExportNativeConfig('tunnel')}
+                          className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-left transition-colors cursor-pointer"
                         >
-                          <Download className="w-3.5 h-3.5 text-cyan-500" />
-                          <span>Télécharger .json</span>
+                          <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                            <span>Profil Tunnel ({settings.protocol.toUpperCase()})</span>
+                            <Download className="w-3.5 h-3.5 text-cyan-500" />
+                          </div>
+                          <div className="font-mono text-[11px] text-slate-500 mt-0.5">
+                            {settings.protocol === 'openvpn'
+                              ? 'renumerate-client.ovpn'
+                              : settings.protocol === 'ikev2'
+                                ? 'ipsec-renumerate.conf'
+                                : 'wg0-renumerate.conf'}
+                          </div>
                         </button>
+
                         <button
                           type="button"
-                          onClick={handleCopyJson}
-                          className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                          onClick={() => handleExportNativeConfig('sysctl')}
+                          className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-left transition-colors cursor-pointer"
                         >
-                          <Copy className="w-3.5 h-3.5 text-cyan-500" />
-                          <span>Copier le JSON</span>
+                          <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                            <span>Durcissement Noyau</span>
+                            <Download className="w-3.5 h-3.5 text-cyan-500" />
+                          </div>
+                          <div className="font-mono text-[11px] text-slate-500 mt-0.5">
+                            99-renumerate-hardening.sysctl.conf
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleExportNativeConfig('nftables')}
+                          className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-left transition-colors cursor-pointer"
+                        >
+                          <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                            <span>Pare-feu Netfilter</span>
+                            <Download className="w-3.5 h-3.5 text-cyan-500" />
+                          </div>
+                          <div className="font-mono text-[11px] text-slate-500 mt-0.5">
+                            renumerate-egress.nft
+                          </div>
                         </button>
                       </div>
 
-                      {!confirmReset ? (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmReset(true)}
-                          className="px-3.5 py-2 rounded-xl border border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Réinitialiser aux valeurs d'usine</span>
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2">
+                      <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              onResetSettings();
-                              setConfirmReset(false);
-                              notify(
-                                'Paramètres restaurés aux valeurs par défaut',
-                                'info'
-                              );
-                            }}
-                            className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer"
+                            onClick={handleExportJson}
+                            className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
                           >
-                            Confirmer la réinitialisation
+                            <Download className="w-3.5 h-3.5 text-cyan-500" />
+                            <span>Télécharger .json</span>
                           </button>
                           <button
                             type="button"
-                            onClick={() => setConfirmReset(false)}
-                            className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer"
+                            onClick={handleCopyJson}
+                            className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
                           >
-                            Annuler
+                            <Copy className="w-3.5 h-3.5 text-cyan-500" />
+                            <span>Copier le JSON</span>
                           </button>
                         </div>
-                      )}
+
+                        {!confirmReset ? (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmReset(true)}
+                            className="px-3.5 py-2 rounded-xl border border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Réinitialiser aux valeurs d&apos;usine</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onResetSettings();
+                                setConfirmReset(false);
+                                notify(
+                                  'Paramètres restaurés aux valeurs par défaut',
+                                  'info'
+                                );
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer"
+                            >
+                              Confirmer la réinitialisation
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmReset(false)}
+                              className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer"
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </section>
                   </div>
                 )}
 
-                {/* TAB 7: SYSTÈME, RACCOURCIS & PURGE */}
+                {/* TAB 7: SYSTÈME, GOUVERNANCE DÉMON & PURGE */}
                 {activeTab === 'system' && (
                   <div className="space-y-6">
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        Préférences d'interface, Raccourcis clavier & Rétention Zero-Trace
-                      </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        Gérez le thème d'affichage, les commandes rapides au clavier et la politique de conservation locale.
-                      </p>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                          Gouvernance Système, Hygiène RAM &amp; Rétention Zero-Trace
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Pilotez le profil énergétique du démon, le verrouillage mémoire, le protocole Panique et les raccourcis.
+                        </p>
+                      </div>
+
+                      {onOpenSystemCenter && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenSystemCenter();
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                        >
+                          <Cpu className="w-3.5 h-3.5" />
+                          <span>Ouvrir la Console Système &amp; Noyau</span>
+                        </button>
+                      )}
                     </div>
+
+                    {/* Daemon Power Profile */}
+                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                          Profil énergétique &amp; ordonnancement du démon VPN
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Contrôle la fréquence d&apos;échantillonnage télémétrique et le plafond d&apos;allocation du tunnel.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        {(
+                          [
+                            {
+                              id: 'eco',
+                              title: 'Économie Batterie',
+                              desc: 'Télémétrie 3.5s · Empreinte CPU minimale',
+                            },
+                            {
+                              id: 'balanced',
+                              title: 'Équilibré (Nominal)',
+                              desc: 'Télémétrie 2.0s · Ratio débit / énergie optimal',
+                            },
+                            {
+                              id: 'performance',
+                              title: 'Performance Maximale',
+                              desc: 'Télémétrie 1.0s · File prioritaire à débit maximal',
+                            },
+                          ] as Array<{
+                            id: SystemPowerProfile;
+                            title: string;
+                            desc: string;
+                          }>
+                        ).map((prof) => {
+                          const active = settings.powerProfile === prof.id;
+                          return (
+                            <button
+                              key={prof.id}
+                              type="button"
+                              onClick={() =>
+                                updateSettings('powerProfile', prof.id)
+                              }
+                              className={`p-3.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                                active
+                                  ? 'bg-cyan-600/10 dark:bg-cyan-500/15 border-cyan-500 text-slate-900 dark:text-white'
+                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold">
+                                  {prof.title}
+                                </span>
+                                {active && (
+                                  <Check className="w-4 h-4 text-cyan-500" />
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-1">
+                                {prof.desc}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    {/* Operational Hygiene: Vault Auto-Lock, Clipboard Auto-Clear, Privacy Screen Blur & Panic Action */}
+                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-900 dark:text-white block">
+                            Verrouillage automatique du Coffre-fort RAM
+                          </label>
+                          <p className="text-[11px] text-slate-500">
+                            Purge la clé dérivée PBKDF2 en mémoire vive après inactivité.
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[0, 5, 15, 30, 60].map((mins) => (
+                              <button
+                                key={mins}
+                                type="button"
+                                onClick={() =>
+                                  updateSettings('autoLockVaultMinutes', mins)
+                                }
+                                className={`px-3 py-1.5 rounded-lg font-mono tabular-nums text-xs font-bold border cursor-pointer ${
+                                  settings.autoLockVaultMinutes === mins
+                                    ? 'bg-cyan-600 text-white border-cyan-600'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                                }`}
+                              >
+                                {mins === 0 ? 'Off' : `${mins} min`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-900 dark:text-white block">
+                            Nettoyage automatique du presse-papiers
+                          </label>
+                          <p className="text-[11px] text-slate-500">
+                            Efface les configurations ou URI copiées après expiration.
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[0, 15, 30, 60].map((secs) => (
+                              <button
+                                key={secs}
+                                type="button"
+                                onClick={() =>
+                                  updateSettings(
+                                    'clipboardAutoClearSeconds',
+                                    secs
+                                  )
+                                }
+                                className={`px-3 py-1.5 rounded-lg font-mono tabular-nums text-xs font-bold border cursor-pointer ${
+                                  settings.clipboardAutoClearSeconds === secs
+                                    ? 'bg-cyan-600 text-white border-cyan-600'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                                }`}
+                              >
+                                {secs === 0 ? 'Off' : `${secs}s`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-xs font-bold text-slate-900 dark:text-white">
+                            Voile furtif anti-regard hors focus
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            Floute automatiquement l&apos;interface dès que l&apos;onglet ou la fenêtre passe en arrière-plan.
+                          </p>
+                        </div>
+                        <ToggleSwitch
+                          checked={settings.privacyScreenBlurOnInactive}
+                          onChange={(v) =>
+                            updateSettings('privacyScreenBlurOnInactive', v)
+                          }
+                        />
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 dark:text-white">
+                              Protocole d&apos;urgence Panique (Ctrl + Shift + X)
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Définit la réponse immédiate exécutée lors d&apos;un déclenchement d&apos;alerte critique.
+                            </p>
+                          </div>
+                          {onExecutePanic && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onExecutePanic();
+                                notify('Protocole Panique exécuté', 'warning');
+                              }}
+                              className="px-3 py-1.5 rounded-xl border border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10 text-xs font-bold whitespace-nowrap cursor-pointer"
+                            >
+                              Tester le protocole
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {(
+                            [
+                              {
+                                id: 'lockdown',
+                                label: 'Kill Switch Strict',
+                                desc: 'Verrouille immédiatement les interfaces réseau',
+                              },
+                              {
+                                id: 'disconnect_wipe',
+                                label: 'Déconnexion + Purge RAM',
+                                desc: 'Coupe le tunnel, verrouille le coffre et vide les logs',
+                              },
+                              {
+                                id: 'lock_vault_and_scramble',
+                                label: 'Coffre + Morphing intégral',
+                                desc: 'Purge la clé RAM et bascule IP/MAC/UA',
+                              },
+                            ] as Array<{
+                              id: PanicActionMode;
+                              label: string;
+                              desc: string;
+                            }>
+                          ).map((modeOpt) => {
+                            const selected = settings.panicAction === modeOpt.id;
+                            return (
+                              <button
+                                key={modeOpt.id}
+                                type="button"
+                                onClick={() =>
+                                  updateSettings('panicAction', modeOpt.id)
+                                }
+                                className={`p-3 rounded-xl border text-left transition-colors cursor-pointer ${
+                                  selected
+                                    ? 'bg-red-500/10 border-red-500 text-slate-900 dark:text-white'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                                }`}
+                              >
+                                <div className="text-xs font-bold">
+                                  {modeOpt.label}
+                                </div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  {modeOpt.desc}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </section>
 
                     {/* Theme Appearance */}
                     <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex items-center justify-between gap-4">
@@ -3584,7 +4279,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
-                            Thème visuel de l'interface
+                            Thème visuel de l&apos;interface
                           </div>
                           <p className="text-[11px] text-slate-500">
                             Actuellement en mode {isDark ? 'Sombre (Tactique)' : 'Clair (Haute lisibilité)'}.
@@ -3636,7 +4331,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                               Raccourcis clavier globaux
                             </h4>
                             <p className="text-[11px] text-slate-500">
-                              Pilotez instantanément le tunnel et le morphing avec Ctrl (ou Cmd sur macOS).
+                              Pilotez instantanément le tunnel, la console système et le morphing avec Ctrl (ou Cmd sur macOS).
                             </p>
                           </div>
                         </div>
@@ -3654,6 +4349,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           { keys: 'Ctrl + K', action: 'Activer / Désamorcer le Kill Switch' },
                           { keys: 'Ctrl + R', action: 'Morphing global (MAC + User-Agent)' },
                           { keys: 'Ctrl + M', action: 'Changer la signature User-Agent' },
+                          { keys: 'Ctrl + Y', action: 'Ouvrir Système & Noyau' },
+                          { keys: 'Ctrl + Shift + X', action: 'Exécuter le Protocole Panique' },
                           { keys: 'Ctrl + L', action: 'Ouvrir le journal système' },
                           { keys: 'Ctrl + ,', action: 'Ouvrir / Fermer les paramètres' },
                         ].map((sc) => (
@@ -3677,7 +4374,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-bold text-slate-900 dark:text-white">
-                            Durée de rétention des journaux d'événements
+                            Durée de rétention des journaux d&apos;événements
                           </label>
                           <span className="font-mono tabular-nums text-xs text-cyan-600 dark:text-cyan-400 font-bold">
                             {settings.logRetentionHours === 0
@@ -3752,7 +4449,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-red-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                            <span>Effacer l'historique des sessions</span>
+                            <span>Effacer l&apos;historique des sessions</span>
                           </button>
                         ) : (
                           <div className="flex items-center gap-2">

@@ -448,14 +448,19 @@ export const AnonymityScore: React.FC<AnonymityScoreProps> = ({
     const morphScore = settings
       ? Math.min(
           100,
-          40 +
+          30 +
+            (settings.anonymityLevel === 'extreme'
+              ? 25
+              : settings.anonymityLevel === 'balanced'
+                ? 14
+                : 4) +
             (settings.obfuscationLevel === 'ultra'
-              ? 30
+              ? 20
               : settings.obfuscationLevel === 'high'
-                ? 20
-                : 10) +
-            (settings.fingerprintProtection.canvasNoise ? 15 : 0) +
-            (settings.fingerprintProtection.webglMask ? 15 : 0)
+                ? 13
+                : 6) +
+            (settings.fingerprintProtection.canvasNoise ? 13 : 0) +
+            (settings.fingerprintProtection.webglMask ? 12 : 0)
         )
       : 70;
 

@@ -2,11 +2,16 @@ import {
   VirtualIdentity,
   DeviceNode,
   AppSettings,
+  AnonymityLevel,
   SplitTunnelRule,
   PlanTier,
   WithdrawalMethod,
   WithdrawalSubNetwork,
   FiatCurrency,
+  TcpCongestionControl,
+  PostQuantumKex,
+  SystemPowerProfile,
+  PanicActionMode,
 } from './types';
 
 export const REALISTIC_USER_AGENTS = [
@@ -188,6 +193,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   customBlockedDomains: ['telemetry.ad-tracker.example', 'pixel.analytics-spy.net'],
   autoConnect: false,
+  anonymityLevel: 'balanced',
   autoRotation: false,
   rotationInterval: 10,
   obfuscationLevel: 'standard',
@@ -225,6 +231,20 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   socks5Enabled: false,
   socks5Host: '127.0.0.1',
   socks5Port: 1080,
+  tcpCongestionControl: 'bbr',
+  postQuantumKex: 'ml-kem-1024',
+  keepaliveInterval: 25,
+  mssClamping: true,
+  multiQueueTun: true,
+  blockQuicUdp443: true,
+  blockCaptivePortalProbes: true,
+  arpSpoofGuard: true,
+  strictReversePathFilter: true,
+  powerProfile: 'balanced',
+  autoLockVaultMinutes: 15,
+  clipboardAutoClearSeconds: 30,
+  privacyScreenBlurOnInactive: false,
+  panicAction: 'lockdown',
 };
 
 function clampInt(val: unknown, min: number, max: number, fallback: number): number {
@@ -250,6 +270,7 @@ export function sanitizeAppSettings(
     'opendns',
     'custom',
   ];
+  const validAnonymityLevels: AnonymityLevel[] = ['low', 'balanced', 'extreme'];
   const validObfuscation: AppSettings['obfuscationLevel'][] = [
     'standard',
     'high',
@@ -286,6 +307,22 @@ export function sanitizeAppSettings(
     'passive',
     'relay',
     'exit',
+  ];
+  const validCongestion: TcpCongestionControl[] = ['bbr', 'cubic', 'hybla'];
+  const validPqcKex: PostQuantumKex[] = [
+    'ml-kem-1024',
+    'sntrup761',
+    'classic-x25519',
+  ];
+  const validPowerProfiles: SystemPowerProfile[] = [
+    'eco',
+    'balanced',
+    'performance',
+  ];
+  const validPanicActions: PanicActionMode[] = [
+    'lockdown',
+    'disconnect_wipe',
+    'lock_vault_and_scramble',
   ];
 
   const rules = Array.isArray(src.splitTunnelRules)
@@ -385,6 +422,11 @@ export function sanitizeAppSettings(
       typeof src.autoConnect === 'boolean'
         ? src.autoConnect
         : DEFAULT_APP_SETTINGS.autoConnect,
+    anonymityLevel: validAnonymityLevels.includes(
+      src.anonymityLevel as AnonymityLevel
+    )
+      ? (src.anonymityLevel as AnonymityLevel)
+      : DEFAULT_APP_SETTINGS.anonymityLevel,
     autoRotation:
       typeof src.autoRotation === 'boolean'
         ? src.autoRotation
@@ -560,26 +602,100 @@ export function sanitizeAppSettings(
       65535,
       DEFAULT_APP_SETTINGS.socks5Port
     ),
+    tcpCongestionControl: validCongestion.includes(
+      src.tcpCongestionControl as TcpCongestionControl
+    )
+      ? (src.tcpCongestionControl as TcpCongestionControl)
+      : DEFAULT_APP_SETTINGS.tcpCongestionControl,
+    postQuantumKex: validPqcKex.includes(src.postQuantumKex as PostQuantumKex)
+      ? (src.postQuantumKex as PostQuantumKex)
+      : DEFAULT_APP_SETTINGS.postQuantumKex,
+    keepaliveInterval: clampInt(
+      src.keepaliveInterval,
+      0,
+      120,
+      DEFAULT_APP_SETTINGS.keepaliveInterval
+    ),
+    mssClamping:
+      typeof src.mssClamping === 'boolean'
+        ? src.mssClamping
+        : DEFAULT_APP_SETTINGS.mssClamping,
+    multiQueueTun:
+      typeof src.multiQueueTun === 'boolean'
+        ? src.multiQueueTun
+        : DEFAULT_APP_SETTINGS.multiQueueTun,
+    blockQuicUdp443:
+      typeof src.blockQuicUdp443 === 'boolean'
+        ? src.blockQuicUdp443
+        : DEFAULT_APP_SETTINGS.blockQuicUdp443,
+    blockCaptivePortalProbes:
+      typeof src.blockCaptivePortalProbes === 'boolean'
+        ? src.blockCaptivePortalProbes
+        : DEFAULT_APP_SETTINGS.blockCaptivePortalProbes,
+    arpSpoofGuard:
+      typeof src.arpSpoofGuard === 'boolean'
+        ? src.arpSpoofGuard
+        : DEFAULT_APP_SETTINGS.arpSpoofGuard,
+    strictReversePathFilter:
+      typeof src.strictReversePathFilter === 'boolean'
+        ? src.strictReversePathFilter
+        : DEFAULT_APP_SETTINGS.strictReversePathFilter,
+    powerProfile: validPowerProfiles.includes(
+      src.powerProfile as SystemPowerProfile
+    )
+      ? (src.powerProfile as SystemPowerProfile)
+      : DEFAULT_APP_SETTINGS.powerProfile,
+    autoLockVaultMinutes: clampInt(
+      src.autoLockVaultMinutes,
+      0,
+      240,
+      DEFAULT_APP_SETTINGS.autoLockVaultMinutes
+    ),
+    clipboardAutoClearSeconds: clampInt(
+      src.clipboardAutoClearSeconds,
+      0,
+      300,
+      DEFAULT_APP_SETTINGS.clipboardAutoClearSeconds
+    ),
+    privacyScreenBlurOnInactive:
+      typeof src.privacyScreenBlurOnInactive === 'boolean'
+        ? src.privacyScreenBlurOnInactive
+        : DEFAULT_APP_SETTINGS.privacyScreenBlurOnInactive,
+    panicAction: validPanicActions.includes(src.panicAction as PanicActionMode)
+      ? (src.panicAction as PanicActionMode)
+      : DEFAULT_APP_SETTINGS.panicAction,
   };
 }
 
 export function computeSettingsHardeningScore(settings: AppSettings): number {
-  let score = 25;
-  if (settings.killSwitch) score += settings.killSwitchMode === 'strict' ? 14 : 9;
-  if (settings.dnsLeakProtection) score += 12;
-  if (settings.ipv6LeakProtection) score += 10;
-  if (settings.webrtcLeakShield) score += 8;
+  let score = 16;
+  if (settings.killSwitch) score += settings.killSwitchMode === 'strict' ? 12 : 8;
+  if (settings.dnsLeakProtection) score += 10;
+  if (settings.ipv6LeakProtection) score += 9;
+  if (settings.webrtcLeakShield) score += 7;
+  if (settings.postQuantumKex === 'ml-kem-1024') score += 8;
+  else if (settings.postQuantumKex === 'sntrup761') score += 6;
+  else score += 2;
+  if (settings.blockQuicUdp443) score += 4;
+  if (settings.arpSpoofGuard) score += 4;
+  if (settings.strictReversePathFilter) score += 3;
+  if (settings.blockCaptivePortalProbes) score += 2;
   if (settings.adBlocker) {
     const activeFilters = Object.values(settings.threatFilters).filter(Boolean).length;
-    score += Math.round((activeFilters / 4) * 8);
+    score += Math.round((activeFilters / 4) * 6);
   }
-  if (settings.autoRotation) score += 6;
-  if (settings.obfuscationLevel === 'ultra') score += 7;
-  else if (settings.obfuscationLevel === 'high') score += 4;
-  if (settings.excludeEyesJurisdictions === '14-eyes') score += 6;
+  if (settings.autoRotation) score += 5;
+  if (settings.anonymityLevel === 'extreme') score += 5;
+  else if (settings.anonymityLevel === 'balanced') score += 3;
+  if (settings.obfuscationLevel === 'ultra') score += 5;
+  else if (settings.obfuscationLevel === 'high') score += 3;
+  if (settings.excludeEyesJurisdictions === '14-eyes') score += 5;
   else if (settings.excludeEyesJurisdictions === '5-eyes') score += 3;
   if (settings.fingerprintProtection.canvasNoise) score += 2;
   if (settings.fingerprintProtection.webglMask) score += 2;
+  if (settings.autoLockVaultMinutes > 0 && settings.autoLockVaultMinutes <= 30) {
+    score += 2;
+  }
   return Math.min(100, Math.max(0, score));
 }
 
@@ -666,6 +782,258 @@ export const MOCK_NODES: DeviceNode[] = [
   { id: 'n9', name: 'PA-PTY-01', type: 'iot', status: 'active', signalStrength: 82, transferRate: 68, latency: 118, autonomyProfile: 'balanced', tags: ['stealth'], ip: '190.14.37.112', country: 'Panama', city: 'Panama City', lat: 8.9824, lon: -79.5199, timezone: 'UTC-5' },
   { id: 'n10', name: 'SG-SIN-01', type: 'server', status: 'active', signalStrength: 96, transferRate: 205, latency: 145, autonomyProfile: 'provider', tags: ['exit'], ip: '103.253.41.90', country: 'Singapour', city: 'Singapour', lat: 1.3521, lon: 103.8198, timezone: 'UTC+8' },
 ];
+
+export interface AnonymityLevelSpec {
+  id: AnonymityLevel;
+  codeLabel: 'Low' | 'Balanced' | 'Extreme';
+  frenchTitle: string;
+  postureSummary: string;
+  jurisdictionPolicyLabel: string;
+  identityMutationLabel: string;
+  cadenceMultiplier: number;
+  settleDelayMs: number;
+  vortexMinHops: number;
+}
+
+export const ANONYMITY_LEVEL_SPECS: Record<AnonymityLevel, AnonymityLevelSpec> = {
+  low: {
+    id: 'low',
+    codeLabel: 'Low',
+    frenchTitle: 'Faible — Vitesse & continuité',
+    postureSummary:
+      'Privilégie les relais <= 35 ms avec affinité régionale et conserve le User-Agent actif lors des sauts pour préserver les sessions Web.',
+    jurisdictionPolicyLabel: 'Affinité régionale (latence min.)',
+    identityMutationLabel: 'IP rapide · MAC OUI · UA conservé',
+    cadenceMultiplier: 1.5,
+    settleDelayMs: 380,
+    vortexMinHops: 3,
+  },
+  balanced: {
+    id: 'balanced',
+    codeLabel: 'Balanced',
+    frenchTitle: 'Équilibré — Rotation multi-juridictions',
+    postureSummary:
+      'Écarte les juridictions 5-Eyes lors des sauts, bascule vers un pays distinct et régénère conjointement l’adresse MAC LAA et le User-Agent.',
+    jurisdictionPolicyLabel: 'Hors 5-Eyes · Changement de pays',
+    identityMutationLabel: 'IP + MAC LAA + UA diversifié',
+    cadenceMultiplier: 1.0,
+    settleDelayMs: 650,
+    vortexMinHops: 4,
+  },
+  extreme: {
+    id: 'extreme',
+    codeLabel: 'Extreme',
+    frenchTitle: 'Extrême — Sanctuaires & brouillage intégral',
+    postureSummary:
+      'Restreint les sauts aux sanctuaires hors 14-Eyes, force une juridiction différente à chaque saut et brouille MAC 48-bit + UA chaotique.',
+    jurisdictionPolicyLabel: 'Sanctuaires hors 14-Eyes strict',
+    identityMutationLabel: 'IP furtive + MAC 48-bit + UA chaotique',
+    cadenceMultiplier: 0.5,
+    settleDelayMs: 900,
+    vortexMinHops: 5,
+  },
+};
+
+export function getEffectiveRotationSeconds(
+  intervalMinutes: number,
+  level: AnonymityLevel = 'balanced'
+): number {
+  const baseSeconds = Math.max(1, intervalMinutes) * 60;
+  const spec = ANONYMITY_LEVEL_SPECS[level] || ANONYMITY_LEVEL_SPECS.balanced;
+  return Math.max(30, Math.round(baseSeconds * spec.cadenceMultiplier));
+}
+
+export function getNextHopCandidateNodes(params: {
+  level: AnonymityLevel;
+  currentIp: string;
+  currentCountry: string;
+  nodes?: DeviceNode[];
+  excludePolicy?: AppSettings['excludeEyesJurisdictions'];
+}): DeviceNode[] {
+  const {
+    level,
+    currentIp,
+    currentCountry,
+    nodes = MOCK_NODES,
+    excludePolicy = 'none',
+  } = params;
+
+  const sourceNodes = nodes.length > 0 ? nodes : MOCK_NODES;
+  const withoutCurrentIp = sourceNodes.filter((n) => n.ip !== currentIp);
+  const basePool = withoutCurrentIp.length > 0 ? withoutCurrentIp : sourceNodes;
+
+  if (level === 'low') {
+    const allowed = basePool.filter(
+      (n) => !isCountryExcludedByJurisdiction(n.country, excludePolicy)
+    );
+    const pool = allowed.length > 0 ? allowed : basePool;
+    const fastPool = pool.filter(
+      (n) => n.latency <= 35 || n.tags.includes('fast')
+    );
+    const target = fastPool.length > 0 ? fastPool : pool;
+    return [...target].sort((a, b) => {
+      const aSameCountry = a.country === currentCountry ? 0 : 1;
+      const bSameCountry = b.country === currentCountry ? 0 : 1;
+      if (aSameCountry !== bSameCountry) return aSameCountry - bSameCountry;
+      return a.latency - b.latency;
+    });
+  }
+
+  if (level === 'balanced') {
+    const effectiveEyes: AppSettings['excludeEyesJurisdictions'] =
+      excludePolicy === '14-eyes' ? '14-eyes' : '5-eyes';
+    const nonEyes = basePool.filter(
+      (n) => !isCountryExcludedByJurisdiction(n.country, effectiveEyes)
+    );
+    const pool = nonEyes.length > 0 ? nonEyes : basePool;
+    const crossCountry = pool.filter((n) => n.country !== currentCountry);
+    const target = crossCountry.length > 0 ? crossCountry : pool;
+    const moderateLatency = target.filter((n) => n.latency <= 85);
+    const ordered = moderateLatency.length > 0 ? moderateLatency : target;
+    return [...ordered].sort((a, b) => a.latency - b.latency);
+  }
+
+  // extreme: strictly non-14-Eyes sanctuaries + mandatory cross-country jump + stealth/exit priority
+  const sanctuaries = basePool.filter(
+    (n) => !EYES_14_COUNTRIES.includes(n.country)
+  );
+  const crossSanctuaries = sanctuaries.filter(
+    (n) => n.country !== currentCountry
+  );
+  const target =
+    crossSanctuaries.length > 0
+      ? crossSanctuaries
+      : sanctuaries.length > 0
+        ? sanctuaries
+        : basePool;
+
+  return [...target].sort((a, b) => {
+    const aStealth = a.tags.includes('stealth') || a.tags.includes('exit') ? 0 : 1;
+    const bStealth = b.tags.includes('stealth') || b.tags.includes('exit') ? 0 : 1;
+    if (aStealth !== bStealth) return aStealth - bStealth;
+    return b.signalStrength - a.signalStrength;
+  });
+}
+
+export function mutateIdentityIdentifiersForHop(
+  currentIdentity: VirtualIdentity,
+  settings: Pick<
+    AppSettings,
+    'anonymityLevel' | 'macScramblingMode' | 'macFormat' | 'uaComplexity'
+  >
+): { mac: string; userAgentShort: string } {
+  const level = settings.anonymityLevel || 'balanced';
+
+  if (level === 'low') {
+    return {
+      mac: generateRandomMac('vendor', 'standard'),
+      userAgentShort:
+        currentIdentity.userAgentShort ||
+        pickUserAgentByComplexity('standard').short,
+    };
+  }
+
+  if (level === 'extreme') {
+    return {
+      mac: generateRandomMac('random', 'random'),
+      userAgentShort: pickUserAgentByComplexity(
+        'chaotic',
+        currentIdentity.userAgentShort
+      ).short,
+    };
+  }
+
+  // balanced
+  const macMode =
+    settings.macScramblingMode === 'vendor' ? 'laa' : settings.macScramblingMode;
+  return {
+    mac: generateRandomMac(macMode, settings.macFormat),
+    userAgentShort: pickUserAgentByComplexity(
+      'diverse',
+      currentIdentity.userAgentShort
+    ).short,
+  };
+}
+
+export function computeNextRenumberHop(params: {
+  currentIdentity: VirtualIdentity;
+  settings: AppSettings;
+  nodes?: DeviceNode[];
+}): {
+  identity: VirtualIdentity;
+  selectedNode: DeviceNode | null;
+  spec: AnonymityLevelSpec;
+  candidateCount: number;
+} {
+  const { currentIdentity, settings, nodes = MOCK_NODES } = params;
+  const level = settings.anonymityLevel || 'balanced';
+  const spec = ANONYMITY_LEVEL_SPECS[level] || ANONYMITY_LEVEL_SPECS.balanced;
+
+  const candidates = getNextHopCandidateNodes({
+    level,
+    currentIp: currentIdentity.ip,
+    currentCountry: currentIdentity.country,
+    nodes,
+    excludePolicy: settings.excludeEyesJurisdictions,
+  });
+
+  let selectionPool = candidates;
+  if (level === 'low') {
+    selectionPool = candidates.slice(0, Math.min(2, candidates.length));
+  } else if (level === 'extreme') {
+    const hardened = candidates.filter(
+      (n) => n.tags.includes('stealth') || n.tags.includes('exit')
+    );
+    if (hardened.length > 0) selectionPool = hardened;
+  }
+
+  const pickedNode =
+    selectionPool[Math.floor(Math.random() * selectionPool.length)] ||
+    candidates[0] ||
+    null;
+
+  const mutated = mutateIdentityIdentifiersForHop(currentIdentity, settings);
+
+  if (!pickedNode) {
+    const fallbackIdentity =
+      MOCK_IDENTITIES.find((i) => i.ip !== currentIdentity.ip) ||
+      MOCK_IDENTITIES[0];
+    return {
+      identity: {
+        ...fallbackIdentity,
+        mac: mutated.mac,
+        userAgentShort: mutated.userAgentShort,
+      },
+      selectedNode: null,
+      spec,
+      candidateCount: candidates.length,
+    };
+  }
+
+  const matchingMock = MOCK_IDENTITIES.find((i) => i.ip === pickedNode.ip);
+  const resolvedCity =
+    pickedNode.city || matchingMock?.city || pickedNode.country;
+  const resolvedTimezone =
+    pickedNode.timezone ||
+    matchingMock?.timezone ||
+    currentIdentity.timezone ||
+    'UTC+0';
+
+  return {
+    identity: {
+      ip: pickedNode.ip,
+      country: pickedNode.country,
+      city: resolvedCity,
+      latency: pickedNode.latency,
+      timezone: resolvedTimezone,
+      mac: mutated.mac,
+      userAgentShort: mutated.userAgentShort,
+    },
+    selectedNode: pickedNode,
+    spec,
+    candidateCount: candidates.length,
+  };
+}
 
 export const INITIAL_LOGS = [
   { id: '1', timestamp: '10:00:01', timestampRaw: Date.now(), event: 'Système Renumerate initialisé', type: 'info' as const },
@@ -1167,4 +1535,523 @@ export function generateSettlementReference(
   }
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   return `SEPA-${datePart}-${randomHex(8).toUpperCase()}`;
+}
+
+// ============================================================================
+// COMPILATEUR DE CONFIGURATIONS SYSTÈME NATIVES & INSPECTEUR DE DÉRIVE
+// ============================================================================
+
+export function resolveDnsPrimaryIp(settings: AppSettings): string {
+  switch (settings.dns) {
+    case 'cloudflare':
+      return '1.1.1.1, 1.0.0.1';
+    case 'quad9':
+      return '9.9.9.9, 149.112.112.112';
+    case 'opendns':
+      return '208.67.222.222, 208.67.220.220';
+    case 'google':
+      return '8.8.8.8, 8.8.4.4';
+    case 'custom':
+      return settings.customDnsServer.trim() || '1.1.1.1';
+  }
+}
+
+export function compileNativeTunnelConfig(
+  settings: AppSettings,
+  identity: VirtualIdentity
+): { filename: string; formatLabel: string; content: string } {
+  const dnsLine = resolveDnsPrimaryIp(settings);
+  const pqcComment =
+    settings.postQuantumKex === 'ml-kem-1024'
+      ? 'X25519 + ML-KEM-1024 (NIST FIPS-203 Hybrid PQC)'
+      : settings.postQuantumKex === 'sntrup761'
+        ? 'sntrup761x25519-sha512 (Streamlined NTRU Prime Hybrid)'
+        : 'X25519-ChaCha20Poly1305 (Classique)';
+
+  const activeBypassCidrs = settings.splitTunneling
+    ? settings.splitTunnelRules
+        .filter((r) => r.enabled && r.policy === 'bypass' && r.type === 'cidr')
+        .map((r) => r.target)
+    : [];
+
+  if (settings.protocol === 'wireguard') {
+    const allowedIps = settings.ipv6LeakProtection
+      ? '0.0.0.0/0'
+      : '0.0.0.0/0, ::/0';
+    const mssRule = settings.mssClamping
+      ? ' ; nft add rule inet renumerate forward tcp flags syn tcp option maxseg size set rt mtu'
+      : '';
+    const postUp = settings.killSwitch
+      ? `PostUp = nft -f /etc/renumerate/renumerate-egress.nft${mssRule}`
+      : '# Kill Switch désactivé (routage souple)';
+    const postDown =
+      settings.killSwitch && settings.killSwitchMode === 'strict'
+        ? '# Mode Strict : la table nftables reste verrouillée après fermeture de wg0'
+        : 'PostDown = nft delete table inet renumerate_guard 2>/dev/null || true';
+
+    const lines = [
+      `# Renumerate VPN — Profil natif WireGuard`,
+      `# Passerelle active : ${identity.city}, ${identity.country} (${identity.ip}:${settings.tunnelPort})`,
+      `# Échange de clés   : ${pqcComment}`,
+      `# Congestion noyau  : ${settings.tcpCongestionControl.toUpperCase()} | Multi-Queue TUN : ${settings.multiQueueTun ? 'ON' : 'OFF'}`,
+      ``,
+      `[Interface]`,
+      `PrivateKey = <CLE_PRIVEE_EPHEMERE_LOCALE_X25519>`,
+      `Address = 10.66.42.18/32${settings.ipv6LeakProtection ? '' : ', fd42:66:42::18/128'}`,
+      `DNS = ${dnsLine}`,
+      `MTU = ${settings.mtuSize}`,
+      `Table = ${settings.splitTunneling ? '51820' : 'auto'}`,
+      postUp,
+      postDown,
+      ``,
+      `[Peer]`,
+      `# Relais ${identity.country.toUpperCase()} (${identity.city})`,
+      `PublicKey = rNm8K9xP4vQ2zL7wT5cY1bN6mJ3hF0dG8sA4eR2uI9o=`,
+      ...(settings.postQuantumKex !== 'classic-x25519'
+        ? [`PresharedKey = <JETON_HYBRIDE_${settings.postQuantumKex.toUpperCase().replace(/-/g, '_')}>`]
+        : []),
+      `AllowedIPs = ${allowedIps}`,
+      `Endpoint = ${identity.ip}:${settings.tunnelPort}`,
+      ...(settings.keepaliveInterval > 0
+        ? [`PersistentKeepalive = ${settings.keepaliveInterval}`]
+        : []),
+      ...(activeBypassCidrs.length > 0
+        ? [`# Exclusions Split-Tunnel CIDR : ${activeBypassCidrs.join(', ')}`]
+        : []),
+      ``,
+    ];
+
+    return {
+      filename: 'wg0-renumerate.conf',
+      formatLabel: 'WireGuard (.conf)',
+      content: lines.join('\n'),
+    };
+  }
+
+  if (settings.protocol === 'openvpn') {
+    const transportProto = settings.tunnelPort === 443 || settings.tunnelPort === 8443 ? 'tcp' : 'udp';
+    const tlsGroups =
+      settings.postQuantumKex === 'ml-kem-1024'
+        ? 'X25519MLKEM1024:X25519'
+        : settings.postQuantumKex === 'sntrup761'
+          ? 'sntrup761x25519:X25519'
+          : 'X25519:secp384r1';
+    const lines = [
+      `# Renumerate VPN — Profil client OpenVPN 2.6 DCO`,
+      `# Passerelle : ${identity.city}, ${identity.country} (${identity.ip}:${settings.tunnelPort})`,
+      `client`,
+      `dev tun0`,
+      `proto ${transportProto}`,
+      `remote ${identity.ip} ${settings.tunnelPort}`,
+      `resolv-retry infinite`,
+      `nobind`,
+      `persist-key`,
+      `persist-tun`,
+      `tun-mtu ${settings.mtuSize}`,
+      ...(settings.mssClamping ? [`mssfix ${Math.max(1200, settings.mtuSize - 40)}`] : []),
+      `data-ciphers AES-256-GCM:CHACHA20-POLY1305`,
+      `tls-version-min 1.3`,
+      `tls-groups ${tlsGroups}`,
+      `remote-cert-tls server`,
+      `dhcp-option DNS ${dnsLine.split(',')[0].trim()}`,
+      ...(settings.dnsLeakProtection ? [`block-outside-dns`] : []),
+      ...(settings.ipv6LeakProtection
+        ? [
+            `pull-filter ignore "ifconfig-ipv6"`,
+            `pull-filter ignore "route-ipv6"`,
+          ]
+        : []),
+      ...(settings.keepaliveInterval > 0
+        ? [`keepalive 10 ${Math.max(30, settings.keepaliveInterval * 2)}`]
+        : []),
+      `verb 3`,
+      ``,
+    ];
+    return {
+      filename: 'renumerate-client.ovpn',
+      formatLabel: 'OpenVPN (.ovpn)',
+      content: lines.join('\n'),
+    };
+  }
+
+  // IKEv2 / strongSwanswanctl
+  const keProposal =
+    settings.postQuantumKex === 'ml-kem-1024'
+      ? 'aes256gcm16-prfsha384-ecp384-ke1_mlkem1024'
+      : 'aes256gcm16-prfsha384-x25519';
+  const lines = [
+    `# Renumerate VPN — Profil IKEv2 / IPsec MOBIKE (swanctl)`,
+    `connections {`,
+    `  renumerate-ikev2 {`,
+    `    version = 2`,
+    `    mobike = yes`,
+    `    remote_addrs = ${identity.ip}`,
+    `    remote_port = ${settings.tunnelPort}`,
+    `    vips = 0.0.0.0`,
+    `    dpd_delay = ${settings.keepaliveInterval > 0 ? settings.keepaliveInterval : 30}s`,
+    `    proposals = ${keProposal}`,
+    `    children {`,
+    `      net-tunnel {`,
+    `        remote_ts = 0.0.0.0/0`,
+    `        esp_proposals = aes256gcm16-x25519`,
+    `        mtu = ${settings.mtuSize}`,
+    `      }`,
+    `    }`,
+    `  }`,
+    `}`,
+    ``,
+  ];
+  return {
+    filename: 'ipsec-renumerate.conf',
+    formatLabel: 'IKEv2 StrongSwan (.conf)',
+    content: lines.join('\n'),
+  };
+}
+
+export function compileSysctlConfig(settings: AppSettings): {
+  filename: string;
+  content: string;
+} {
+  const lines = [
+    `# /etc/sysctl.d/99-renumerate-hardening.conf`,
+    `# Généré dynamiquement par le moteur système Renumerate VPN`,
+    ``,
+    `# File d'attente Fair-Queueing & Contrôle de congestion TCP`,
+    `net.core.default_qdisc = fq`,
+    `net.ipv4.tcp_congestion_control = ${settings.tcpCongestionControl}`,
+    `net.ipv4.tcp_mtu_probing = ${settings.mssClamping ? 1 : 0}`,
+    `net.core.netdev_max_backlog = ${settings.multiQueueTun ? 16384 : 4096}`,
+    ``,
+    `# Étanchéité de la pile IPv6`,
+    `net.ipv6.conf.all.disable_ipv6 = ${settings.ipv6LeakProtection ? 1 : 0}`,
+    `net.ipv6.conf.default.disable_ipv6 = ${settings.ipv6LeakProtection ? 1 : 0}`,
+    `net.ipv6.conf.lo.disable_ipv6 = ${settings.ipv6LeakProtection ? 1 : 0}`,
+    ``,
+    `# Validation stricte de route inverse & Anti-usurpation`,
+    `net.ipv4.conf.all.rp_filter = ${settings.strictReversePathFilter ? 1 : 0}`,
+    `net.ipv4.conf.default.rp_filter = ${settings.strictReversePathFilter ? 1 : 0}`,
+    `net.ipv4.conf.all.accept_redirects = 0`,
+    `net.ipv4.conf.all.send_redirects = 0`,
+    `net.ipv4.tcp_syncookies = 1`,
+    ``,
+    `# Garde ARP Couche 2 (Réseaux Wi-Fi partagés)`,
+    `net.ipv4.conf.all.arp_ignore = ${settings.arpSpoofGuard ? 1 : 0}`,
+    `net.ipv4.conf.all.arp_announce = ${settings.arpSpoofGuard ? 2 : 0}`,
+    `net.ipv4.conf.all.drop_gratuitous_arp = ${settings.arpSpoofGuard ? 1 : 0}`,
+    ``,
+    `# Isolation des pointeurs noyau & journaux dmesg`,
+    `kernel.kptr_restrict = 2`,
+    `kernel.dmesg_restrict = 1`,
+    ``,
+  ];
+
+  return {
+    filename: '99-renumerate-hardening.sysctl.conf',
+    content: lines.join('\n'),
+  };
+}
+
+export function compileNftablesConfig(
+  settings: AppSettings,
+  identity: VirtualIdentity
+): { filename: string; content: string } {
+  const iface = settings.protocol === 'wireguard' ? 'wg0' : 'tun0';
+  const lines = [
+    `#!/usr/sbin/nft -f`,
+    `# /etc/renumerate/renumerate-egress.nft`,
+    `# Politique Kill Switch : ${settings.killSwitch ? settings.killSwitchMode.toUpperCase() : 'DESACTIVE'}`,
+    ``,
+    `table inet renumerate_guard {`,
+    `  chain output {`,
+    `    type filter hook output priority 0; policy ${settings.killSwitch ? 'drop' : 'accept'};`,
+    `    oifname "lo" accept`,
+    `    ct state established,related accept`,
+    `    ip daddr ${identity.ip} udp dport ${settings.tunnelPort} accept`,
+    `    ip daddr ${identity.ip} tcp dport ${settings.tunnelPort} accept`,
+    ...(settings.lanBypass
+      ? [
+          `    ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } accept`,
+        ]
+      : [`    # LAN Bypass désactivé : isolation stricte du sous-réseau local`]),
+    ...(settings.blockQuicUdp443
+      ? [
+          `    oifname "${iface}" udp dport 443 reject with icmpx type admin-prohibited comment "Blocage QUIC HTTP/3"`,
+        ]
+      : []),
+    ...(settings.dnsLeakProtection
+      ? [
+          `    oifname != "${iface}" udp dport 53 drop comment "Anti-fuite DNS UDP/53"`,
+          `    oifname != "${iface}" tcp dport { 53, 853 } drop comment "Anti-fuite DNS TCP/DoT"`,
+        ]
+      : []),
+    ...(settings.ipv6LeakProtection
+      ? [`    meta nfproto ipv6 drop comment "Verrouillage intégral IPv6"`]
+      : []),
+    `    oifname "${iface}" accept`,
+    `  }`,
+    `}`,
+    ``,
+  ];
+
+  return {
+    filename: 'renumerate-egress.nft',
+    content: lines.join('\n'),
+  };
+}
+
+export interface SettingsDiffEntry {
+  key: keyof AppSettings;
+  label: string;
+  category: string;
+  defaultFormatted: string;
+  currentFormatted: string;
+}
+
+function formatBoolFr(val: boolean): string {
+  return val ? 'Activé' : 'Désactivé';
+}
+
+export function computeModifiedSettingsDiff(
+  settings: AppSettings
+): SettingsDiffEntry[] {
+  const def = DEFAULT_APP_SETTINGS;
+  const descriptors: Array<{
+    key: keyof AppSettings;
+    label: string;
+    category: string;
+    format: (s: AppSettings) => string;
+    isEqual?: (a: AppSettings, b: AppSettings) => boolean;
+  }> = [
+    {
+      key: 'protocol',
+      label: 'Protocole de tunnel',
+      category: 'Réseau & Noyau',
+      format: (s) => s.protocol.toUpperCase(),
+    },
+    {
+      key: 'tunnelPort',
+      label: 'Port de transport',
+      category: 'Réseau & Noyau',
+      format: (s) => `:${s.tunnelPort}`,
+    },
+    {
+      key: 'mtuSize',
+      label: 'Segment MTU',
+      category: 'Réseau & Noyau',
+      format: (s) => `${s.mtuSize} octets`,
+    },
+    {
+      key: 'tcpCongestionControl',
+      label: 'Congestion TCP noyau',
+      category: 'Réseau & Noyau',
+      format: (s) => s.tcpCongestionControl.toUpperCase(),
+    },
+    {
+      key: 'postQuantumKex',
+      label: 'Échange de clés PQC',
+      category: 'Cryptographie',
+      format: (s) => s.postQuantumKex.toUpperCase(),
+    },
+    {
+      key: 'keepaliveInterval',
+      label: 'Persistent Keepalive NAT',
+      category: 'Réseau & Noyau',
+      format: (s) => (s.keepaliveInterval === 0 ? 'Désactivé' : `${s.keepaliveInterval}s`),
+    },
+    {
+      key: 'mssClamping',
+      label: 'Ajustement TCP MSS (PMTU)',
+      category: 'Réseau & Noyau',
+      format: (s) => formatBoolFr(s.mssClamping),
+    },
+    {
+      key: 'multiQueueTun',
+      label: 'Files parallèles Multi-Queue TUN',
+      category: 'Réseau & Noyau',
+      format: (s) => formatBoolFr(s.multiQueueTun),
+    },
+    {
+      key: 'dns',
+      label: 'Résolveur DNS chiffré',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => s.dns.toUpperCase(),
+    },
+    {
+      key: 'killSwitch',
+      label: 'Coupe-circuit (Kill Switch)',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => (s.killSwitch ? `Actif (${s.killSwitchMode})` : 'Désactivé'),
+      isEqual: (a, b) =>
+        a.killSwitch === b.killSwitch && a.killSwitchMode === b.killSwitchMode,
+    },
+    {
+      key: 'dnsLeakProtection',
+      label: 'Anti-fuite DNS strict',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.dnsLeakProtection),
+    },
+    {
+      key: 'ipv6LeakProtection',
+      label: 'Garde-fou pile IPv6',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.ipv6LeakProtection),
+    },
+    {
+      key: 'webrtcLeakShield',
+      label: 'Bouclier WebRTC STUN',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.webrtcLeakShield),
+    },
+    {
+      key: 'blockQuicUdp443',
+      label: 'Blocage QUIC (UDP/443)',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.blockQuicUdp443),
+    },
+    {
+      key: 'blockCaptivePortalProbes',
+      label: 'Neutralisation sondes OS',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.blockCaptivePortalProbes),
+    },
+    {
+      key: 'arpSpoofGuard',
+      label: 'Garde ARP Anti-Spoofing',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.arpSpoofGuard),
+    },
+    {
+      key: 'strictReversePathFilter',
+      label: 'Filtre strict rp_filter',
+      category: 'Bouclier & Pare-feu',
+      format: (s) => formatBoolFr(s.strictReversePathFilter),
+    },
+    {
+      key: 'anonymityLevel',
+      label: "Niveau d'anonymat des sauts",
+      category: 'Identité & Morphing',
+      format: (s) => s.anonymityLevel.toUpperCase(),
+    },
+    {
+      key: 'autoRotation',
+      label: 'Rotation cyclique IP/MAC',
+      category: 'Identité & Morphing',
+      format: (s) =>
+        s.autoRotation ? `Active (${s.rotationInterval} min)` : 'Manuelle',
+      isEqual: (a, b) =>
+        a.autoRotation === b.autoRotation &&
+        a.rotationInterval === b.rotationInterval,
+    },
+    {
+      key: 'obfuscationLevel',
+      label: 'Obfuscation matérielle',
+      category: 'Identité & Morphing',
+      format: (s) => s.obfuscationLevel.toUpperCase(),
+    },
+    {
+      key: 'excludeEyesJurisdictions',
+      label: 'Exclusion 5/14-Eyes',
+      category: 'Onion Vortex',
+      format: (s) =>
+        s.excludeEyesJurisdictions === 'none'
+          ? 'Aucune'
+          : `Hors ${s.excludeEyesJurisdictions.toUpperCase()}`,
+    },
+    {
+      key: 'vortexBridge',
+      label: 'Pont anti-DPI Vortex',
+      category: 'Onion Vortex',
+      format: (s) => s.vortexBridge.toUpperCase(),
+    },
+    {
+      key: 'vortexCircuitLength',
+      label: 'Longueur circuit Vortex',
+      category: 'Onion Vortex',
+      format: (s) => `${s.vortexCircuitLength} sauts`,
+    },
+    {
+      key: 'powerProfile',
+      label: 'Profil énergétique démon',
+      category: 'Système & Gouvernance',
+      format: (s) => s.powerProfile.toUpperCase(),
+    },
+    {
+      key: 'autoLockVaultMinutes',
+      label: 'Verrouillage auto Coffre RAM',
+      category: 'Système & Gouvernance',
+      format: (s) =>
+        s.autoLockVaultMinutes === 0
+          ? 'Désactivé'
+          : `${s.autoLockVaultMinutes} min`,
+    },
+    {
+      key: 'clipboardAutoClearSeconds',
+      label: 'Purge presse-papiers',
+      category: 'Système & Gouvernance',
+      format: (s) =>
+        s.clipboardAutoClearSeconds === 0
+          ? 'Désactivée'
+          : `${s.clipboardAutoClearSeconds}s`,
+    },
+    {
+      key: 'privacyScreenBlurOnInactive',
+      label: 'Voile furtif hors focus',
+      category: 'Système & Gouvernance',
+      format: (s) => formatBoolFr(s.privacyScreenBlurOnInactive),
+    },
+    {
+      key: 'panicAction',
+      label: 'Protocole Panique',
+      category: 'Système & Gouvernance',
+      format: (s) =>
+        s.panicAction === 'lockdown'
+          ? 'Kill Switch Strict'
+          : s.panicAction === 'disconnect_wipe'
+            ? 'Déconnexion + Purge RAM'
+            : 'Verrouiller Coffre + Morphing',
+    },
+    {
+      key: 'logRetentionHours',
+      label: 'Rétention journaux',
+      category: 'Système & Gouvernance',
+      format: (s) =>
+        s.logRetentionHours === 0 ? 'RAM Volatile (0h)' : `${s.logRetentionHours}h`,
+    },
+    {
+      key: 'lanBypass',
+      label: 'Accès réseau local (LAN)',
+      category: 'Réseau & Noyau',
+      format: (s) => formatBoolFr(s.lanBypass),
+    },
+    {
+      key: 'splitTunneling',
+      label: 'Split Tunneling sélectif',
+      category: 'Réseau & Noyau',
+      format: (s) => formatBoolFr(s.splitTunneling),
+    },
+    {
+      key: 'socks5Enabled',
+      label: 'Passerelle SOCKS5',
+      category: 'Réseau & Noyau',
+      format: (s) =>
+        s.socks5Enabled ? `${s.socks5Host}:${s.socks5Port}` : 'Désactivée',
+    },
+  ];
+
+  const diffs: SettingsDiffEntry[] = [];
+  for (const item of descriptors) {
+    const equal = item.isEqual
+      ? item.isEqual(settings, def)
+      : settings[item.key] === def[item.key];
+    if (!equal) {
+      diffs.push({
+        key: item.key,
+        label: item.label,
+        category: item.category,
+        defaultFormatted: item.format(def),
+        currentFormatted: item.format(settings),
+      });
+    }
+  }
+  return diffs;
 }

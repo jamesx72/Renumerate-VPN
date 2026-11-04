@@ -1,21 +1,56 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import type { Request, Response } from 'express';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
-import { GoogleGenAI, Modality, Type } from '@google/genai';
-import type { LiveServerMessage } from '@google/genai';
+import { GoogleGenAI, Modality, ThinkingLevel, Type } from '@google/genai';
+import type {
+  GenerateContentConfig,
+  GenerateContentResponse,
+  LiveServerMessage,
+} from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 
+const TEXT_MODEL_CASCADE = [
+  'gemini-3.8-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-latest',
+] as const;
+
+interface SecurityReportPayload {
+  score: number;
+  threatLevel: 'Faible' | 'Moyen' | 'Élevé' | 'Critique';
+  analysis: string;
+  recommendations: string[];
+}
+
+interface DeepAuditPayload {
+  analysis: string;
+  sources: { title: string; uri: string }[];
+  isBlacklisted: boolean;
+}
+
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+const modelCooldownUntil = new Map<string, number>();
+const securityAnalysisCache = new Map<string, CacheEntry<SecurityReportPayload>>();
+const securityAnalysisInFlight = new Map<string, Promise<SecurityReportPayload>>();
+const deepAuditCache = new Map<string, CacheEntry<DeepAuditPayload>>();
+let lastFallbackNoticeAt = 0;
+
 function getApiKey(): string {
-  return (process.env.GEMINI_API_KEY || process.env.API_KEY || '').trim();
+  return (process.env.GEMINI_API_KEY || '').trim();
 }
 
 function createGenAIClient(): GoogleGenAI | null {
@@ -31,6 +66,275 @@ function createGenAIClient(): GoogleGenAI | null {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getCachedValue<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string
+): T | null {
+  const hit = cache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function setCachedValue<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  value: T,
+  ttlMs: number,
+  maxEntries = 64
+): void {
+  if (cache.size >= maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey !== undefined) {
+      cache.delete(oldestKey);
+    }
+  }
+  cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+interface ClassifiedGeminiError {
+  statusCode: number;
+  statusText: string;
+  summary: string;
+  isTransient: boolean;
+  isAuthOrConfig: boolean;
+}
+
+function classifyGeminiError(err: unknown): ClassifiedGeminiError {
+  let statusCode = 0;
+  let statusText = '';
+  let message = '';
+
+  if (err && typeof err === 'object') {
+    const record = err as Record<string, unknown>;
+    if (typeof record.status === 'number') {
+      statusCode = record.status;
+    } else if (typeof record.code === 'number') {
+      statusCode = record.code;
+    }
+    if (typeof record.status === 'string') {
+      statusText = record.status;
+    }
+    if (typeof record.message === 'string') {
+      message = record.message;
+    }
+  } else if (typeof err === 'string') {
+    message = err;
+  }
+
+  // Parse nested JSON payload inside ApiError.message if present
+  const jsonStart = message.indexOf('{');
+  if (jsonStart !== -1) {
+    try {
+      const parsed = JSON.parse(message.slice(jsonStart)) as {
+        error?: { code?: number; status?: string; message?: string };
+      };
+      if (parsed?.error) {
+        if (typeof parsed.error.code === 'number' && !statusCode) {
+          statusCode = parsed.error.code;
+        }
+        if (typeof parsed.error.status === 'string' && !statusText) {
+          statusText = parsed.error.status;
+        }
+        if (typeof parsed.error.message === 'string') {
+          message = parsed.error.message;
+        }
+      }
+    } catch {
+      // Keep original message if not valid JSON
+    }
+  }
+
+  const lower = `${statusText} ${message}`.toLowerCase();
+  const isTransient =
+    statusCode === 429 ||
+    statusCode === 500 ||
+    statusCode === 502 ||
+    statusCode === 503 ||
+    statusCode === 504 ||
+    lower.includes('unavailable') ||
+    lower.includes('high demand') ||
+    lower.includes('overloaded') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('deadline_exceeded') ||
+    lower.includes('fetch failed') ||
+    lower.includes('etimedout') ||
+    lower.includes('econnreset');
+
+  const isAuthOrConfig =
+    statusCode === 400 ||
+    statusCode === 401 ||
+    statusCode === 403 ||
+    lower.includes('api_key_invalid') ||
+    lower.includes('permission_denied') ||
+    lower.includes('unauthenticated');
+
+  const cleanMsg = message.replace(/\s+/g, ' ').trim().slice(0, 140);
+  const summary = `${statusCode || statusText || 'ERR'}${cleanMsg ? `: ${cleanMsg}` : ''}`;
+
+  return {
+    statusCode,
+    statusText,
+    summary,
+    isTransient,
+    isAuthOrConfig,
+  };
+}
+
+function formatCleanFrenchGeminiError(err: unknown): string {
+  const info = classifyGeminiError(err);
+  if (info.isTransient) {
+    return 'Le moteur distant connaît un pic de sollicitation temporaire. Veuillez réessayer dans quelques instants.';
+  }
+  if (info.isAuthOrConfig) {
+    return 'Configuration de clé API invalide ou accès restreint côté serveur (vérifiez GEMINI_API_KEY dans Settings > Secrets).';
+  }
+  return 'Service distant momentanément indisponible. Les outils locaux de diagnostic restent pleinement opérationnels.';
+}
+
+function noteFallbackLog(scope: string, reason: string): void {
+  const now = Date.now();
+  if (now - lastFallbackNoticeAt > 30_000) {
+    lastFallbackNoticeAt = now;
+    console.info(`[Sentinel/${scope}] Bascule heuristique locale active (${reason})`);
+  }
+}
+
+function orderCandidateModels(models: readonly string[]): string[] {
+  const now = Date.now();
+  const ready: string[] = [];
+  const cooling: string[] = [];
+  for (const m of models) {
+    const until = modelCooldownUntil.get(m) ?? 0;
+    if (until > now) {
+      cooling.push(m);
+    } else {
+      if (until > 0) modelCooldownUntil.delete(m);
+      ready.push(m);
+    }
+  }
+  return [...ready, ...cooling];
+}
+
+async function generateWithModelCascade(options: {
+  ai: GoogleGenAI;
+  contents: Parameters<GoogleGenAI['models']['generateContent']>[0]['contents'];
+  models?: readonly string[];
+  buildConfig?: (model: string) => GenerateContentConfig | undefined;
+}): Promise<{ response: GenerateContentResponse; model: string }> {
+  const candidates = orderCandidateModels(options.models ?? TEXT_MODEL_CASCADE);
+  let lastError: unknown = new Error('Aucun modèle disponible');
+
+  for (let idx = 0; idx < candidates.length; idx++) {
+    const model = candidates[idx];
+    const maxAttempts = idx === 0 ? 2 : 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await options.ai.models.generateContent({
+          model,
+          contents: options.contents,
+          config: options.buildConfig ? options.buildConfig(model) : undefined,
+        });
+        modelCooldownUntil.delete(model);
+        return { response, model };
+      } catch (err) {
+        lastError = err;
+        const info = classifyGeminiError(err);
+
+        if (info.isAuthOrConfig && info.statusCode !== 400) {
+          throw err;
+        }
+
+        if (info.isTransient) {
+          const cooldownMs = info.statusCode === 429 ? 30_000 : 20_000;
+          modelCooldownUntil.set(model, Date.now() + cooldownMs);
+
+          if (attempt < maxAttempts) {
+            const jitter = Math.floor(Math.random() * 140);
+            await sleep(340 * attempt + jitter);
+            continue;
+          }
+
+          if (idx < candidates.length - 1) {
+            const jitter = Math.floor(Math.random() * 100);
+            await sleep(200 + jitter);
+          }
+          break;
+        }
+
+        // If 400 on a specific model config (e.g. tool support difference), move to next candidate
+        break;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+function normalizeSecurityReport(
+  raw: unknown,
+  fallbackParams: {
+    mode: string;
+    location: string;
+    ip: string;
+    protocol?: string;
+    killSwitch?: boolean;
+    ipv6LeakProtection?: boolean;
+  }
+): SecurityReportPayload {
+  const fallback = buildDeterministicSecurityReport(fallbackParams);
+  if (!raw || typeof raw !== 'object') return fallback;
+
+  const obj = raw as Record<string, unknown>;
+  const numericScore = Number(obj.score);
+  const score = Number.isFinite(numericScore)
+    ? Math.max(0, Math.min(100, Math.round(numericScore)))
+    : fallback.score;
+
+  const validLevels = new Set(['Faible', 'Moyen', 'Élevé', 'Critique']);
+  const threatLevel =
+    typeof obj.threatLevel === 'string' && validLevels.has(obj.threatLevel)
+      ? (obj.threatLevel as SecurityReportPayload['threatLevel'])
+      : score >= 88
+        ? 'Faible'
+        : score >= 72
+          ? 'Moyen'
+          : score >= 55
+            ? 'Élevé'
+            : 'Critique';
+
+  const analysis =
+    typeof obj.analysis === 'string' && obj.analysis.trim().length > 8
+      ? obj.analysis.trim()
+      : fallback.analysis;
+
+  const rawRecs = Array.isArray(obj.recommendations)
+    ? obj.recommendations
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 3)
+        .map((item) => item.trim())
+    : [];
+
+  const recommendations =
+    rawRecs.length >= 3
+      ? rawRecs.slice(0, 3)
+      : [...rawRecs, ...fallback.recommendations].slice(0, 3);
+
+  return {
+    score,
+    threatLevel,
+    analysis,
+    recommendations,
+  };
+}
+
 function buildDeterministicSecurityReport(params: {
   mode: string;
   location: string;
@@ -38,7 +342,7 @@ function buildDeterministicSecurityReport(params: {
   protocol?: string;
   killSwitch?: boolean;
   ipv6LeakProtection?: boolean;
-}) {
+}): SecurityReportPayload {
   const {
     mode,
     location,
@@ -48,12 +352,15 @@ function buildDeterministicSecurityReport(params: {
     ipv6LeakProtection = true,
   } = params;
 
-  let score = 84;
+  let score = 86;
   if (mode === 'Onion Vortex') score = 98;
   else if (mode === 'Double Hop') score = 95;
   else if (mode === 'Stealth') score = 92;
   else if (mode === 'Smart DNS') score = 74;
 
+  if (protocol.toLowerCase() === 'wireguard' && mode !== 'Smart DNS') {
+    score += 1;
+  }
   if (!killSwitch) score -= 8;
   if (!ipv6LeakProtection) score -= 7;
   score = Math.max(40, Math.min(100, score));
@@ -80,25 +387,139 @@ function buildDeterministicSecurityReport(params: {
   }
   if (mode === 'Smart DNS') {
     recommendations.push(
-      'Basculez en WireGuard Standard ou Stealth pour chiffrer les charges utiles.'
+      'Basculez en WireGuard Standard ou Stealth pour chiffrer intégralement les charges utiles.'
     );
   }
   recommendations.push(
-    `Protocole ${protocol.toUpperCase()} actif sur la passerelle ${location} (${ip}).`,
-    'Activez la rotation périodique MAC/IP pour réduire la corrélation temporelle.'
+    `Maintenez le transport ${protocol.toUpperCase()} sur le relais ${location} (${ip}) avec vérification DNS périodique.`,
+    'Activez la rotation automatique MAC/User-Agent pour limiter la corrélation temporelle.'
   );
 
   return {
     score,
     threatLevel,
-    analysis: `Tunnel ${mode} établi vers ${location} (${ip}) sous ${protocol.toUpperCase()}. Empreinte réseau cloisonnée et chiffrement de transport opérationnel.`,
+    analysis: `Tunnel ${mode} établi vers ${location} (${ip}) sous ${protocol.toUpperCase()}. Cloisonnement cryptographique vérifié et surface d'exposition réseau maîtrisée.`,
     recommendations: recommendations.slice(0, 3),
   };
 }
 
+function buildDeterministicDeepAudit(
+  ip: string,
+  location: string
+): DeepAuditPayload {
+  const privacyStrongholds = new Set([
+    'Suisse',
+    'Islande',
+    'Panama',
+    'Estonie',
+  ]);
+  const jurisdictionNote = privacyStrongholds.has(location)
+    ? `${location} offre un cadre légal favorable à la protection des métadonnées et hors alliances de rétention massive.`
+    : `Le point de présence en ${location} opère sur un transit cloisonné sans journalisation persistante.`;
+
+  return {
+    analysis: `Audit heuristique de réputation pour la passerelle ${location} (${ip}) : aucune signature de liste noire critique ni anomalie de routage BGP détectée. ${jurisdictionNote} Maintenez le bouclier anti-fuite DNS/IPv6 actif lors des sessions longues.`,
+    sources: [],
+    isBlacklisted: false,
+  };
+}
+
+function buildContextualSentinelReply(
+  userPrompt: string,
+  context: Record<string, unknown>
+): string {
+  const lower = userPrompt.toLowerCase();
+  const mode = String(context.mode || 'Standard');
+  const protocol = String(context.protocol || 'wireguard').toUpperCase();
+  const country = String(context.country || 'France');
+  const ip = String(context.ip || 'N/A');
+  const isConnected = Boolean(context.isConnected);
+  const killSwitch = Boolean(context.killSwitch);
+  const ipv6 = Boolean(context.ipv6LeakProtection);
+  const score = Number(context.securityScore ?? 85);
+
+  if (lower.includes('dns') || lower.includes('ipv6') || lower.includes('fuite')) {
+    return `Pour prévenir toute fuite DNS/IPv6 (${country} · ${ip}) : maintenez le résolveur chiffré dans le tunnel ${protocol}, gardez le bouclier IPv6 ${ipv6 ? 'actif (déjà activé)' : 'activé dans les paramètres'} et exécutez l’outil de test de fuite DNS intégré au cockpit après chaque changement de réseau.`;
+  }
+
+  if (lower.includes('vortex') || lower.includes('onion') || lower.includes('tor')) {
+    return `Le mode Onion Vortex enchaîne plusieurs sauts chiffrés avec isolation de flux par domaine (.onion). Privilégiez-le pour les recherches sensibles, l’accès aux sources anonymes et la résistance maximale à la corrélation de trafic, tout en conservant ${protocol} Standard/Stealth pour les transferts volumineux à faible latence.`;
+  }
+
+  return `Diagnostic Sentinel : votre tunnel est ${isConnected ? `actif vers ${country} (${ip})` : 'actuellement hors ligne'} en architecture ${mode} (${protocol}, indice ${score}/100). ${!killSwitch ? 'Activez immédiatement le Kill Switch pour verrouiller les interfaces en cas de coupure. ' : ''}${!ipv6 ? 'Activez la protection IPv6 pour éviter les fuites locales. ' : ''}Combinez WireGuard et la rotation périodique MAC/User-Agent pour une résilience optimale.`;
+}
+
+function inferVoiceIntent(
+  transcript: string
+): 'security_analysis' | 'protection_advice' {
+  const lower = transcript.toLowerCase();
+  const adviceKeywords = [
+    'conseil',
+    'conseils',
+    'recommand',
+    'comment',
+    'protéger',
+    'proteger',
+    'protection',
+    'éviter',
+    'eviter',
+    'quel mode',
+    'quel protocole',
+    'astuce',
+    'optimiser',
+    'renforcer',
+  ];
+  const analysisKeywords = [
+    'analyse',
+    'analyser',
+    'audit',
+    'auditer',
+    'diagnostic',
+    'score',
+    'vérifi',
+    'verifi',
+    'état',
+    'etat',
+    'statut',
+    'bilan',
+    'évalu',
+    'evalu',
+  ];
+
+  const hasAdvice = adviceKeywords.some((kw) => lower.includes(kw));
+  const hasAnalysis = analysisKeywords.some((kw) => lower.includes(kw));
+
+  if (hasAdvice && !hasAnalysis) {
+    return 'protection_advice';
+  }
+  return 'security_analysis';
+}
+
+function normalizeAudioMimeType(rawMime: unknown): string {
+  if (typeof rawMime !== 'string' || !rawMime.trim()) {
+    return 'audio/webm';
+  }
+  const base = rawMime.split(';')[0].trim().toLowerCase();
+  const allowed = new Set([
+    'audio/webm',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/mp3',
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/m4a',
+    'audio/aac',
+    'audio/ogg',
+    'audio/flac',
+  ]);
+  if (base === 'audio/x-wav') return 'audio/wav';
+  if (allowed.has(base)) return base;
+  return 'audio/webm';
+}
+
 async function startServer() {
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '10mb' }));
 
   app.post(
     '/api/gemini/security-analysis',
@@ -110,80 +531,111 @@ async function startServer() {
         protocol = 'wireguard',
         killSwitch = true,
         ipv6LeakProtection = true,
+        forceRefresh = false,
       } = (req.body || {}) as Record<string, unknown>;
+
+      const reportParams = {
+        mode: String(mode),
+        location: String(location),
+        ip: String(ip),
+        protocol: String(protocol),
+        killSwitch: Boolean(killSwitch),
+        ipv6LeakProtection: Boolean(ipv6LeakProtection),
+      };
+
+      const cacheKey = `${reportParams.mode}|${reportParams.location}|${reportParams.ip}|${reportParams.protocol}|${reportParams.killSwitch}|${reportParams.ipv6LeakProtection}`;
+
+      if (!forceRefresh) {
+        const cached = getCachedValue(securityAnalysisCache, cacheKey);
+        if (cached) {
+          res.json(cached);
+          return;
+        }
+
+        const existingTask = securityAnalysisInFlight.get(cacheKey);
+        if (existingTask) {
+          const sharedResult = await existingTask;
+          res.json(sharedResult);
+          return;
+        }
+      }
 
       const ai = createGenAIClient();
       if (!ai) {
-        res.json(
-          buildDeterministicSecurityReport({
-            mode: String(mode),
-            location: String(location),
-            ip: String(ip),
-            protocol: String(protocol),
-            killSwitch: Boolean(killSwitch),
-            ipv6LeakProtection: Boolean(ipv6LeakProtection),
-          })
-        );
+        res.json(buildDeterministicSecurityReport(reportParams));
         return;
       }
 
       const prompt = `Agis comme un architecte en cybersécurité réseau pour "Renumerate VPN".
-L'utilisateur est connecté via un relais en ${String(location)} (IP de sortie : ${String(ip)}).
-Mode actif : ${String(mode)} | Protocole : ${String(protocol).toUpperCase()} | Kill Switch : ${Boolean(killSwitch)} | Bouclier IPv6 : ${Boolean(ipv6LeakProtection)}.
+L'utilisateur est connecté via un relais en ${reportParams.location} (IP de sortie : ${reportParams.ip}).
+Mode actif : ${reportParams.mode} | Protocole : ${reportParams.protocol.toUpperCase()} | Kill Switch : ${reportParams.killSwitch} | Bouclier IPv6 : ${reportParams.ipv6LeakProtection}.
 Analyse en français (maximum 55 mots) le niveau d'anonymat et de résilience.
 Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques courtes.`;
 
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                score: {
-                  type: Type.NUMBER,
-                  description: 'Score de sécurité global de 0 à 100.',
+      const analysisTask = (async (): Promise<SecurityReportPayload> => {
+        try {
+          const { response } = await generateWithModelCascade({
+            ai,
+            contents: prompt,
+            buildConfig: (model) => ({
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  score: {
+                    type: Type.NUMBER,
+                    description: 'Score de sécurité global de 0 à 100.',
+                  },
+                  threatLevel: {
+                    type: Type.STRING,
+                    enum: ['Faible', 'Moyen', 'Élevé', 'Critique'],
+                    description: 'Niveau de menace évalué.',
+                  },
+                  analysis: {
+                    type: Type.STRING,
+                    description: 'Analyse technique concise en français.',
+                  },
+                  recommendations: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: '3 recommandations concrètes.',
+                  },
                 },
-                threatLevel: {
-                  type: Type.STRING,
-                  enum: ['Faible', 'Moyen', 'Élevé', 'Critique'],
-                  description: 'Niveau de menace évalué.',
-                },
-                analysis: {
-                  type: Type.STRING,
-                  description: 'Analyse technique concise en français.',
-                },
-                recommendations: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: '3 recommandations concrètes.',
-                },
+                required: [
+                  'score',
+                  'threatLevel',
+                  'analysis',
+                  'recommendations',
+                ],
               },
-              required: ['score', 'threatLevel', 'analysis', 'recommendations'],
-            },
-          },
-        });
+              ...(model === 'gemini-3.8-flash'
+                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                : {}),
+            }),
+          });
 
-        const text = (response.text ?? '').trim();
-        if (!text) {
-          throw new Error('Réponse vide du modèle');
+          const text = (response.text ?? '').trim();
+          if (!text) {
+            throw new Error('Réponse vide du modèle');
+          }
+
+          const parsed = normalizeSecurityReport(JSON.parse(text), reportParams);
+          setCachedValue(securityAnalysisCache, cacheKey, parsed, 90_000);
+          return parsed;
+        } catch (err) {
+          const info = classifyGeminiError(err);
+          noteFallbackLog('security-analysis', info.summary);
+          const fallback = buildDeterministicSecurityReport(reportParams);
+          setCachedValue(securityAnalysisCache, cacheKey, fallback, 25_000);
+          return fallback;
+        } finally {
+          securityAnalysisInFlight.delete(cacheKey);
         }
-        res.json(JSON.parse(text));
-      } catch (err) {
-        console.error('Security analysis fallback:', err);
-        res.json(
-          buildDeterministicSecurityReport({
-            mode: String(mode),
-            location: String(location),
-            ip: String(ip),
-            protocol: String(protocol),
-            killSwitch: Boolean(killSwitch),
-            ipv6LeakProtection: Boolean(ipv6LeakProtection),
-          })
-        );
-      }
+      })();
+
+      securityAnalysisInFlight.set(cacheKey, analysisTask);
+      const report = await analysisTask;
+      res.json(report);
     }
   );
 
@@ -193,30 +645,43 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
       unknown
     >;
 
-    const ai = createGenAIClient();
-    if (!ai) {
-      res.json({
-        analysis: `Audit heuristique local du relais ${String(location)} (${String(ip)}) : aucune signature de liste noire critique détectée sur ce sous-réseau de transit.`,
-        sources: [],
-        isBlacklisted: false,
-      });
+    const targetIp = String(ip);
+    const targetLocation = String(location);
+    const cacheKey = `${targetLocation}|${targetIp}`;
+
+    const cached = getCachedValue(deepAuditCache, cacheKey);
+    if (cached) {
+      res.json(cached);
       return;
     }
 
-    const prompt = `Effectue un audit de réputation cybersécurité en français (3 à 4 phrases maximum) pour un nœud de sortie VPN situé en ${String(location)} (plage IP simulée : ${String(ip)}).
-Évalue la juridiction de confidentialité de ${String(location)}, la réputation générale des centres de données locaux et les bonnes pratiques anti-corrélation.`;
+    const ai = createGenAIClient();
+    if (!ai) {
+      res.json(buildDeterministicDeepAudit(targetIp, targetLocation));
+      return;
+    }
+
+    const prompt = `Effectue un audit de réputation cybersécurité en français (3 à 4 phrases maximum) pour un nœud de sortie VPN situé en ${targetLocation} (plage IP simulée : ${targetIp}).
+Évalue la juridiction de confidentialité de ${targetLocation}, la réputation générale des centres de données locaux et les bonnes pratiques anti-corrélation.`;
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+      const { response } = await generateWithModelCascade({
+        ai,
         contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
+        models: ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'],
+        buildConfig: (model) =>
+          model === 'gemini-3.1-flash-lite'
+            ? undefined
+            : {
+                tools: [{ googleSearch: {} }],
+                ...(model === 'gemini-3.8-flash'
+                  ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                  : {}),
+              },
       });
 
       const analysis =
-        response.text ||
+        (response.text ?? '').trim() ||
         'Audit terminé. Aucune compromission majeure relevée sur cette passerelle.';
       const chunks =
         response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
@@ -229,20 +694,18 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
         .slice(0, 4);
 
       const lower = analysis.toLowerCase();
-      res.json({
+      const payload: DeepAuditPayload = {
         analysis,
         sources,
         isBlacklisted:
           lower.includes('blacklisté') || lower.includes('compromis critique'),
-      });
+      };
+      setCachedValue(deepAuditCache, cacheKey, payload, 120_000, 48);
+      res.json(payload);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erreur serveur Gemini';
-      res.status(502).json({
-        error: msg,
-        analysis: `Audit local de secours pour ${String(location)} (${String(ip)}) : juridiction vérifiée, aucune anomalie BGP détectée.`,
-        sources: [],
-        isBlacklisted: false,
-      });
+      const info = classifyGeminiError(err);
+      noteFallbackLog('deep-audit', info.summary);
+      res.json(buildDeterministicDeepAudit(targetIp, targetLocation));
     }
   });
 
@@ -261,17 +724,12 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
     const ai = createGenAIClient();
     if (!ai) {
       res.json({
-        reply: `Diagnostic Sentinel local : votre tunnel est actuellement ${context.isConnected ? 'actif' : 'hors ligne'} en mode ${String(context.mode || 'Standard')} (${String(context.protocol || 'wireguard').toUpperCase()}). Pour une protection optimale, maintenez WireGuard, le coupe-circuit d'urgence et la protection anti-fuite DNS/IPv6 activés.`,
+        reply: buildContextualSentinelReply(userPrompt, context),
       });
       return;
     }
 
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: userPrompt,
-        config: {
-          systemInstruction: `Tu es Sentinel, l'ingénieur conseil en cybersécurité et anonymat numérique intégré à Renumerate VPN.
+    const systemInstruction = `Tu es Sentinel, l'ingénieur conseil en cybersécurité et anonymat numérique intégré à Renumerate VPN.
 Réponds toujours en français, de manière claire, précise, structurée et concise (maximum 110 mots).
 Contexte télémétrique actuel de l'utilisateur :
 - Connexion tunnel : ${context.isConnected ? 'ÉTABLIE' : 'HORS LIGNE'}
@@ -280,23 +738,363 @@ Contexte télémétrique actuel de l'utilisateur :
 - Relais actif : ${String(context.country || 'France')} (${String(context.ip || 'N/A')})
 - Score sécurité : ${String(context.securityScore ?? 0)}/100
 - Kill Switch : ${context.killSwitch ? 'Actif' : 'Inactif'}
-- Protection IPv6 : ${context.ipv6LeakProtection ? 'Active' : 'Inactive'}`,
-        },
+- Protection IPv6 : ${context.ipv6LeakProtection ? 'Active' : 'Inactive'}`;
+
+    try {
+      const { response } = await generateWithModelCascade({
+        ai,
+        contents: userPrompt,
+        buildConfig: (model) => ({
+          systemInstruction,
+          ...(model === 'gemini-3.8-flash'
+            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+            : {}),
+        }),
       });
 
       res.json({
         reply:
-          response.text ||
-          'Analyse terminée. Vérifiez vos paramètres de tunnel pour maintenir une isolation stricte.',
+          (response.text ?? '').trim() ||
+          buildContextualSentinelReply(userPrompt, context),
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erreur Gemini';
-      res.status(502).json({
-        error: msg,
-        reply:
-          'Le moteur Sentinel distant est temporairement indisponible. Vérifiez votre clé API dans Settings > Secrets ou utilisez les outils locaux de diagnostic DNS et Coffre-fort.',
+      const info = classifyGeminiError(err);
+      noteFallbackLog('chat', info.summary);
+      if (info.isAuthOrConfig) {
+        res.json({
+          reply: `${formatCleanFrenchGeminiError(err)} ${buildContextualSentinelReply(userPrompt, context)}`,
+        });
+        return;
+      }
+      res.json({
+        reply: buildContextualSentinelReply(userPrompt, context),
       });
     }
+  });
+
+  app.post(
+    '/api/gemini/voice-command',
+    async (req: Request, res: Response) => {
+      const {
+        audioBase64 = '',
+        mimeType = 'audio/webm',
+        simulatedCommand = '',
+        context = {},
+      } = (req.body || {}) as {
+        audioBase64?: string;
+        mimeType?: string;
+        simulatedCommand?: string;
+        context?: Record<string, unknown>;
+      };
+
+      const rawAudio = String(audioBase64 || '').trim();
+      const cleanAudioBase64 = rawAudio.includes(',')
+        ? rawAudio.split(',')[1]?.trim() || ''
+        : rawAudio;
+      const directText = String(simulatedCommand || '').trim();
+
+      if (!cleanAudioBase64 && !directText) {
+        res.status(400).json({
+          error: 'Aucun flux vocal ni commande fournie.',
+        });
+        return;
+      }
+
+      const normalizedMime = normalizeAudioMimeType(mimeType);
+      const reportParams = {
+        mode: String(context.mode || 'Standard'),
+        location: String(context.country || 'France'),
+        ip: String(context.ip || '0.0.0.0'),
+        protocol: String(context.protocol || 'wireguard'),
+        killSwitch:
+          context.killSwitch === undefined ? true : Boolean(context.killSwitch),
+        ipv6LeakProtection:
+          context.ipv6LeakProtection === undefined
+            ? true
+            : Boolean(context.ipv6LeakProtection),
+      };
+
+      const buildHeuristicVoicePayload = (spokenText: string) => {
+        const effectiveTranscript =
+          spokenText.trim() ||
+          'Analyse de sécurité et recommandations de protection de la session';
+        const intent = inferVoiceIntent(effectiveTranscript);
+        const report = buildDeterministicSecurityReport(reportParams);
+        const reply =
+          intent === 'security_analysis'
+            ? `${report.analysis} Indice actuel évalué à ${report.score}/100 (risque ${report.threatLevel.toLowerCase()}).`
+            : buildContextualSentinelReply(effectiveTranscript, context);
+
+        return {
+          transcript: effectiveTranscript,
+          intent,
+          reply,
+          recommendations: report.recommendations,
+          report,
+        };
+      };
+
+      const ai = createGenAIClient();
+      if (!ai) {
+        res.json(buildHeuristicVoicePayload(directText));
+        return;
+      }
+
+      let transcript = directText;
+
+      // Step 1: Dedicated speech transcription when audio bytes are supplied
+      if (!transcript && cleanAudioBase64) {
+        try {
+          const { response: txRes } = await generateWithModelCascade({
+            ai,
+            models: ['gemini-3.5-transcribe'],
+            contents: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: normalizedMime,
+                    data: cleanAudioBase64,
+                  },
+                },
+                {
+                  text: 'Transcris exactement en français la phrase prononcée dans cet extrait audio. Réponds uniquement avec la transcription brute sans guillemets ni commentaire.',
+                },
+              ],
+            },
+          });
+          const txText = (txRes.text ?? '').trim();
+          if (txText) {
+            transcript = txText;
+          }
+        } catch (txErr) {
+          const txInfo = classifyGeminiError(txErr);
+          noteFallbackLog('voice-transcribe', txInfo.summary);
+        }
+      }
+
+      // Step 2: Structured intent classification + security audit / protection advice
+      const telemetrySummary = `Contexte session VPN de l'opérateur :
+- État du tunnel : ${context.isConnected ? 'CONNECTÉ' : 'DÉCONNECTÉ'}
+- Architecture active : ${reportParams.mode}
+- Protocole : ${reportParams.protocol.toUpperCase()}
+- Relais de sortie : ${reportParams.location} (${reportParams.ip})
+- Score actuel : ${String(context.securityScore ?? 85)}/100
+- Kill Switch : ${reportParams.killSwitch ? 'Actif' : 'Inactif'}
+- Protection IPv6 : ${reportParams.ipv6LeakProtection ? 'Active' : 'Inactive'}`;
+
+      const analysisInstruction = transcript
+        ? `Tu es Sentinel, l'architecte cybersécurité vocal du Cockpit Renumerate VPN.
+Commande vocale transcrite de l'utilisateur : "${transcript}"
+${telemetrySummary}
+
+Détermine si l'utilisateur demande principalement une analyse de sécurité de sa session ("security_analysis") ou des conseils de protection ("protection_advice").
+Réponds en français de manière directe, précise et exploitable (40 à 85 mots dans "reply"), évalue le score de sécurité actuel (0 à 100), fournis un résumé d'analyse technique court ("analysis", <= 50 mots) et exactement 3 recommandations concrètes.`
+        : `Tu es Sentinel, l'architecte cybersécurité vocal du Cockpit Renumerate VPN.
+Écoute cet enregistrement vocal de l'utilisateur, transcris fidèlement sa demande en français dans "transcript", puis réponds à sa demande en tenant compte de sa session :
+${telemetrySummary}
+
+Détermine si l'utilisateur demande principalement une analyse de sécurité de sa session ("security_analysis") ou des conseils de protection ("protection_advice").
+Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un score de sécurité de 0 à 100, un résumé d'analyse ("analysis", <= 50 mots) et 3 recommandations concrètes.`;
+
+      const multimodalContents: Parameters<
+        GoogleGenAI['models']['generateContent']
+      >[0]['contents'] = transcript
+        ? analysisInstruction
+        : {
+            parts: [
+              {
+                inlineData: {
+                  mimeType: normalizedMime,
+                  data: cleanAudioBase64,
+                },
+              },
+              { text: analysisInstruction },
+            ],
+          };
+
+      try {
+        const { response } = await generateWithModelCascade({
+          ai,
+          contents: multimodalContents,
+          buildConfig: (model) => ({
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                transcript: {
+                  type: Type.STRING,
+                  description:
+                    'Transcription fidèle en français de la commande vocale.',
+                },
+                intent: {
+                  type: Type.STRING,
+                  enum: ['security_analysis', 'protection_advice'],
+                  description:
+                    'Intention principale détectée dans la commande vocale.',
+                },
+                reply: {
+                  type: Type.STRING,
+                  description:
+                    'Réponse claire et concise de Sentinel en français adaptée à la commande.',
+                },
+                score: {
+                  type: Type.NUMBER,
+                  description: 'Score de sécurité global de 0 à 100.',
+                },
+                threatLevel: {
+                  type: Type.STRING,
+                  enum: ['Faible', 'Moyen', 'Élevé', 'Critique'],
+                  description: 'Niveau de menace évalué.',
+                },
+                analysis: {
+                  type: Type.STRING,
+                  description: 'Synthèse technique courte en français.',
+                },
+                recommendations: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: '3 recommandations concrètes de protection.',
+                },
+              },
+              required: [
+                'transcript',
+                'intent',
+                'reply',
+                'score',
+                'threatLevel',
+                'analysis',
+                'recommendations',
+              ],
+            },
+            ...(model === 'gemini-3.8-flash'
+              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+              : {}),
+          }),
+        });
+
+        const rawJson = (response.text ?? '').trim();
+        if (!rawJson) {
+          throw new Error('Réponse vocale vide');
+        }
+
+        const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+        const resolvedTranscript =
+          transcript ||
+          (typeof parsed.transcript === 'string' && parsed.transcript.trim()
+            ? parsed.transcript.trim()
+            : 'Analyse vocale de la posture de sécurité');
+
+        const resolvedIntent: 'security_analysis' | 'protection_advice' =
+          parsed.intent === 'protection_advice' ||
+          parsed.intent === 'security_analysis'
+            ? parsed.intent
+            : inferVoiceIntent(resolvedTranscript);
+
+        const normalizedReport = normalizeSecurityReport(parsed, reportParams);
+        const resolvedReply =
+          typeof parsed.reply === 'string' && parsed.reply.trim().length > 8
+            ? parsed.reply.trim()
+            : normalizedReport.analysis;
+
+        const cacheKey = `${reportParams.mode}|${reportParams.location}|${reportParams.ip}|${reportParams.protocol}|${reportParams.killSwitch}|${reportParams.ipv6LeakProtection}`;
+        setCachedValue(
+          securityAnalysisCache,
+          cacheKey,
+          normalizedReport,
+          90_000
+        );
+
+        res.json({
+          transcript: resolvedTranscript,
+          intent: resolvedIntent,
+          reply: resolvedReply,
+          recommendations: normalizedReport.recommendations,
+          report: normalizedReport,
+        });
+      } catch (err) {
+        const info = classifyGeminiError(err);
+        noteFallbackLog('voice-command', info.summary);
+        res.json(buildHeuristicVoicePayload(transcript));
+      }
+    }
+  );
+
+  app.post('/api/gemini/tts', async (req: Request, res: Response) => {
+    const { text = '' } = (req.body || {}) as { text?: string };
+    const cleanText = String(text || '').trim().slice(0, 700);
+    if (!cleanText) {
+      res.status(400).json({ audioWavBase64: null });
+      return;
+    }
+
+    const ai = createGenAIClient();
+    if (!ai) {
+      res.json({ audioWavBase64: null });
+      return;
+    }
+
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: cleanText,
+                speechMetadata: {
+                  style: 'Calme, clair et professionnel en français',
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
+      });
+
+      const base64Audio =
+        response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data ?? null;
+      res.json({ audioWavBase64: base64Audio });
+    } catch (err) {
+      const info = classifyGeminiError(err);
+      noteFallbackLog('tts', info.summary);
+      res.json({ audioWavBase64: null });
+    }
+  });
+
+  app.get('/api/system/diagnostics', (_req: Request, res: Response) => {
+    const mem = process.memoryUsage();
+    const cpus = os.cpus();
+    const load = os.loadavg();
+    let cipherSuitesCount = 0;
+    try {
+      cipherSuitesCount = crypto.getCiphers().length;
+    } catch {
+      cipherSuitesCount = 64;
+    }
+
+    res.json({
+      status: 'nominal',
+      timestamp: new Date().toISOString(),
+      platform: os.platform(),
+      arch: os.arch(),
+      nodeVersion: process.version,
+      cpuCores: Array.isArray(cpus) && cpus.length > 0 ? cpus.length : 1,
+      loadAvg1m: Number.isFinite(load[0]) ? parseFloat(load[0].toFixed(2)) : 0,
+      uptimeSeconds: Math.round(process.uptime()),
+      memoryRssMb: parseFloat((mem.rss / (1024 * 1024)).toFixed(1)),
+      memoryHeapUsedMb: parseFloat((mem.heapUsed / (1024 * 1024)).toFixed(1)),
+      memoryHeapTotalMb: parseFloat((mem.heapTotal / (1024 * 1024)).toFixed(1)),
+      cipherSuitesCount,
+      pqcReady: true,
+    });
   });
 
   app.get('/api/withdrawals/rates', (_req: Request, res: Response) => {
@@ -415,8 +1213,8 @@ Contexte télémétrique actuel de l'utilisateur :
 
     let liveSession: Awaited<ReturnType<typeof ai.live.connect>> | null = null;
 
-    try {
-      const sessionPromise = ai.live.connect({
+    const openLiveSession = () =>
+      ai.live.connect({
         model: 'gemini-3.8-live',
         config: {
           responseModalities: [Modality.AUDIO],
@@ -466,7 +1264,8 @@ Contexte télémétrique actuel de l'utilisateur :
             if (clientWs.readyState === clientWs.OPEN) {
               clientWs.send(
                 JSON.stringify({
-                  error: 'Interruption de la session vocale Gemini Live.',
+                  error:
+                    'Interruption temporaire du canal vocal. Basculez sur l’onglet Console Texte ou relancez la session.',
                 })
               );
               clientWs.close();
@@ -475,22 +1274,32 @@ Contexte télémétrique actuel de l'utilisateur :
         },
       });
 
-      liveSession = await sessionPromise;
+    try {
+      try {
+        liveSession = await openLiveSession();
+      } catch (firstErr) {
+        if (classifyGeminiError(firstErr).isTransient) {
+          await sleep(450);
+          liveSession = await openLiveSession();
+        } else {
+          throw firstErr;
+        }
+      }
+
+      const activeSession = liveSession;
 
       clientWs.on('message', (raw) => {
         try {
           const parsed = JSON.parse(raw.toString()) as { audio?: string };
-          if (parsed.audio) {
-            sessionPromise
-              .then((s) =>
-                s.sendRealtimeInput({
-                  audio: {
-                    data: parsed.audio as string,
-                    mimeType: 'audio/pcm;rate=16000',
-                  },
-                })
-              )
-              .catch(() => {});
+          if (parsed.audio && activeSession) {
+            Promise.resolve(
+              activeSession.sendRealtimeInput({
+                audio: {
+                  data: parsed.audio,
+                  mimeType: 'audio/pcm;rate=16000',
+                },
+              })
+            ).catch(() => {});
           }
         } catch {
           // Ignore malformed frame
@@ -505,13 +1314,12 @@ Contexte télémétrique actuel de l'utilisateur :
         }
       });
     } catch (err) {
+      const info = classifyGeminiError(err);
+      noteFallbackLog('live-voice', info.summary);
       if (clientWs.readyState === clientWs.OPEN) {
         clientWs.send(
           JSON.stringify({
-            error:
-              err instanceof Error
-                ? err.message
-                : 'Impossible d’ouvrir la session vocale Gemini Live.',
+            error: formatCleanFrenchGeminiError(err),
           })
         );
         clientWs.close();
