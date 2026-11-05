@@ -28,6 +28,12 @@ import {
   BookmarkPlus,
   Trash2,
   Network,
+  Pause,
+  Eye,
+  Radio,
+  ArrowDown,
+  ArrowUp,
+  X,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -72,6 +78,7 @@ interface SystemCenterProps {
   sessionsCount: number;
   onOpenSettingsModal: () => void;
   onExecutePanic: () => void;
+  initialTab?: SystemWorkspaceTab;
   addLog: (
     event: string,
     type?: 'info' | 'warning' | 'success' | 'error',
@@ -79,7 +86,12 @@ interface SystemCenterProps {
   ) => void;
 }
 
-type SystemWorkspaceTab = 'audit' | 'lab' | 'compiler' | 'snapshots';
+type SystemWorkspaceTab =
+  | 'audit'
+  | 'lab'
+  | 'compiler'
+  | 'snapshots'
+  | 'inspector';
 
 type CompilerTab =
   | 'tunnel'
@@ -158,6 +170,283 @@ function countSnapshotDifferences(a: AppSettings, b: AppSettings): number {
   return diff;
 }
 
+export interface InspectedPacket {
+  id: string;
+  timeStr: string;
+  timestampRaw: number;
+  direction: 'out' | 'in';
+  iface: 'wg0' | 'tun0' | 'eth0' | 'sinkhole0' | 'lo';
+  protocol: 'WireGuard' | 'DoH' | 'DNS' | 'TCP-TLS' | 'QUIC' | 'ICMP';
+  verdict: 'ACCEPT' | 'BYPASS' | 'DROP' | 'REJECT';
+  source: string;
+  destination: string;
+  port: number;
+  lengthBytes: number;
+  entropyBits: number;
+  summary: string;
+  ruleTag: string;
+  ipHeader: {
+    version: 4 | 6;
+    ttl: number;
+    dscp: string;
+    flowLabel?: string;
+  };
+  hexPreview: string;
+  asciiPreview: string;
+}
+
+function generateHexDumpAndEntropy(
+  byteCount: number,
+  isPlaintext = false,
+  label = ''
+): {
+  hex: string;
+  ascii: string;
+  entropy: number;
+} {
+  const bytes = new Uint8Array(Math.min(64, byteCount));
+  if (isPlaintext) {
+    const text =
+      label ||
+      'GET / HTTP/1.1\r\nHost: intranet.lan\r\nUser-Agent: Renumerate/2.0\r\n';
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = i < text.length ? text.charCodeAt(i) : 0x20;
+    }
+  } else {
+    crypto.getRandomValues(bytes);
+  }
+
+  const freq: Record<number, number> = {};
+  for (let i = 0; i < bytes.length; i++) {
+    freq[bytes[i]] = (freq[bytes[i]] || 0) + 1;
+  }
+  let entropy = 0;
+  for (const byteVal in freq) {
+    const p = freq[byteVal] / bytes.length;
+    entropy -= p * Math.log2(p);
+  }
+  const entropyClamped = isPlaintext
+    ? Number((4.12 + (bytes[0] % 5) * 0.1).toFixed(2))
+    : Number(Math.min(7.99, Math.max(7.75, entropy)).toFixed(2));
+
+  const rows: string[] = [];
+  const asciiRows: string[] = [];
+  for (let r = 0; r < bytes.length; r += 16) {
+    const slice = bytes.slice(r, r + 16);
+    const hexParts = Array.from(slice)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(' ');
+    rows.push(hexParts);
+    const ascii = Array.from(slice)
+      .map((b) => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.'))
+      .join('');
+    asciiRows.push(ascii);
+  }
+
+  return {
+    hex: rows.join('\n'),
+    ascii: asciiRows.join('\n'),
+    entropy: entropyClamped,
+  };
+}
+
+function generateRealisticPacket(params: {
+  settings: AppSettings;
+  currentIdentity: VirtualIdentity;
+  isConnected: boolean;
+  isEmergency: boolean;
+  forceType?: 'https' | 'tracker' | 'quic' | 'lan' | 'pqc';
+}): InspectedPacket {
+  const { settings, currentIdentity, isConnected, isEmergency, forceType } =
+    params;
+  const now = new Date();
+  const timeStr =
+    now.toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }) +
+    '.' +
+    String(now.getMilliseconds()).padStart(3, '0');
+
+  const id = `pkt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const localTunnelIp = '10.66.42.18';
+  const defaultIface = settings.protocol === 'wireguard' ? 'wg0' : 'tun0';
+
+  let type = forceType;
+  if (!type) {
+    const roll = Math.random();
+    if (roll < 0.45) type = 'https';
+    else if (roll < 0.65) type = 'tracker';
+    else if (roll < 0.8) type = 'quic';
+    else if (roll < 0.92) type = 'lan';
+    else type = 'pqc';
+  }
+
+  if (isEmergency) {
+    const hex = generateHexDumpAndEntropy(128, false);
+    return {
+      id,
+      timeStr,
+      timestampRaw: Date.now(),
+      direction: 'out',
+      iface: 'lo',
+      protocol: 'TCP-TLS',
+      verdict: 'DROP',
+      source: localTunnelIp,
+      destination: currentIdentity.ip,
+      port: 443,
+      lengthBytes: 128,
+      entropyBits: hex.entropy,
+      summary: 'Trame interceptée et stoppée : Coupe-circuit d’urgence actif',
+      ruleTag: 'nftables :: emergency_lockdown output drop',
+      ipHeader: { version: 4, ttl: 64, dscp: 'CS0 (0x00)' },
+      hexPreview: hex.hex,
+      asciiPreview: hex.ascii,
+    };
+  }
+
+  if (type === 'tracker') {
+    const isBlocked = settings.adBlocker;
+    const dest = 'telemetry.ad-tracker.example';
+    const hex = generateHexDumpAndEntropy(
+      68,
+      true,
+      `\x00\x01\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00${dest}\x00\x00\x01\x00\x01`
+    );
+    return {
+      id,
+      timeStr,
+      timestampRaw: Date.now(),
+      direction: 'out',
+      iface: isBlocked ? 'sinkhole0' : defaultIface,
+      protocol: 'DNS',
+      verdict: isBlocked ? 'DROP' : 'ACCEPT',
+      source: localTunnelIp,
+      destination: isBlocked ? '0.0.0.0' : '1.1.1.1',
+      port: 53,
+      lengthBytes: 68,
+      entropyBits: hex.entropy,
+      summary: isBlocked
+        ? `DNS Sinkhole neutralisé : ${dest} -> 0.0.0.0`
+        : `Résolution DNS autorisée : ${dest}`,
+      ruleTag: isBlocked
+        ? 'dns_shield :: threat-feed match -> NXDOMAIN'
+        : 'dns_shield :: pass-through',
+      ipHeader: { version: 4, ttl: 64, dscp: 'CS0 (0x00)' },
+      hexPreview: hex.hex,
+      asciiPreview: hex.ascii,
+    };
+  }
+
+  if (type === 'quic') {
+    const isQuicBlocked = settings.blockQuicUdp443;
+    const hex = generateHexDumpAndEntropy(1250, false);
+    return {
+      id,
+      timeStr,
+      timestampRaw: Date.now(),
+      direction: 'out',
+      iface: defaultIface,
+      protocol: 'QUIC',
+      verdict: isQuicBlocked ? 'REJECT' : 'ACCEPT',
+      source: localTunnelIp,
+      destination: '142.250.190.46',
+      port: 443,
+      lengthBytes: 1250,
+      entropyBits: hex.entropy,
+      summary: isQuicBlocked
+        ? 'Flux HTTP/3 QUIC rejeté par règle pare-feu (repli TCP forcé)'
+        : 'Trafic UDP QUIC autorisé dans le tunnel',
+      ruleTag: isQuicBlocked
+        ? 'nftables :: udp dport 443 reject with icmpx admin-prohibited'
+        : 'default_tunnel :: accept',
+      ipHeader: { version: 4, ttl: 64, dscp: 'CS0 (0x00)' },
+      hexPreview: hex.hex,
+      asciiPreview: hex.ascii,
+    };
+  }
+
+  if (type === 'lan') {
+    const isLanBypass = settings.lanBypass;
+    const hex = generateHexDumpAndEntropy(
+      112,
+      true,
+      'GET /printer/status HTTP/1.1\r\nHost: 192.168.1.42\r\n'
+    );
+    return {
+      id,
+      timeStr,
+      timestampRaw: Date.now(),
+      direction: 'out',
+      iface: isLanBypass ? 'eth0' : defaultIface,
+      protocol: 'TCP-TLS',
+      verdict: isLanBypass ? 'BYPASS' : isConnected ? 'ACCEPT' : 'DROP',
+      source: '192.168.1.15',
+      destination: '192.168.1.42',
+      port: 631,
+      lengthBytes: 112,
+      entropyBits: hex.entropy,
+      summary: isLanBypass
+        ? 'Trafic LAN local contournant le tunnel via la table main'
+        : 'Accès LAN local routé ou isolé selon la configuration',
+      ruleTag: isLanBypass
+        ? 'ip-rule 32600 :: to 192.168.0.0/16 lookup main (lanBypass=true)'
+        : 'rfc1918_strict_isolation',
+      ipHeader: { version: 4, ttl: 64, dscp: 'CS0 (0x00)' },
+      hexPreview: hex.hex,
+      asciiPreview: hex.ascii,
+    };
+  }
+
+  if (type === 'pqc') {
+    const hex = generateHexDumpAndEntropy(1184, false);
+    return {
+      id,
+      timeStr,
+      timestampRaw: Date.now(),
+      direction: 'out',
+      iface: defaultIface,
+      protocol: 'WireGuard',
+      verdict: 'ACCEPT',
+      source: localTunnelIp,
+      destination: `${currentIdentity.ip}`,
+      port: settings.tunnelPort,
+      lengthBytes: 1184,
+      entropyBits: hex.entropy,
+      summary: `Encapsulation cryptographique ${settings.postQuantumKex.toUpperCase()} (FwMark 0xca6c)`,
+      ruleTag: `pqc_kex :: ${settings.postQuantumKex} hybrid handshake`,
+      ipHeader: { version: 4, ttl: 64, dscp: 'EF / Exp. Forwarding (0xB8)' },
+      hexPreview: hex.hex,
+      asciiPreview: hex.ascii,
+    };
+  }
+
+  const isDoH = Math.random() < 0.25;
+  const hex = generateHexDumpAndEntropy(settings.mtuSize || 1420, false);
+  return {
+    id,
+    timeStr,
+    timestampRaw: Date.now(),
+    direction: Math.random() < 0.7 ? 'out' : 'in',
+    iface: defaultIface,
+    protocol: isDoH ? 'DoH' : 'WireGuard',
+    verdict: isConnected ? 'ACCEPT' : settings.killSwitch ? 'DROP' : 'BYPASS',
+    source: localTunnelIp,
+    destination: isDoH ? '1.1.1.1' : currentIdentity.ip,
+    port: isDoH ? 443 : settings.tunnelPort,
+    lengthBytes: isDoH ? 248 : settings.mtuSize,
+    entropyBits: hex.entropy,
+    summary: isDoH
+      ? 'Requête DNS-over-HTTPS RFC 8484 chiffrée vers Cloudflare Security'
+      : `Trame de données ${settings.protocol.toUpperCase()} chiffrée AEAD (ChaCha20-Poly1305)`,
+    ruleTag: `ip-rule 51820 :: oifname "${defaultIface}" accept`,
+    ipHeader: { version: 4, ttl: 64, dscp: 'CS0 (0x00)' },
+    hexPreview: hex.hex,
+    asciiPreview: hex.ascii,
+  };
+}
+
 export const SystemCenter: React.FC<SystemCenterProps> = ({
   settings,
   updateSettings,
@@ -173,10 +462,62 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
   sessionsCount,
   onOpenSettingsModal,
   onExecutePanic,
+  initialTab,
   addLog,
 }) => {
-  const [workspaceTab, setWorkspaceTab] =
-    useState<SystemWorkspaceTab>('audit');
+  const [workspaceTab, setWorkspaceTab] = useState<SystemWorkspaceTab>(() => {
+    if (initialTab) return initialTab;
+    try {
+      const saved = localStorage.getItem('renumerate_system_workspace_tab');
+      if (
+        saved === 'audit' ||
+        saved === 'lab' ||
+        saved === 'compiler' ||
+        saved === 'snapshots' ||
+        saved === 'inspector'
+      ) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'audit';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('renumerate_system_workspace_tab', workspaceTab);
+    } catch {
+      // ignore
+    }
+  }, [workspaceTab]);
+
+  useEffect(() => {
+    if (initialTab) {
+      setWorkspaceTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    const handleTabSwitch = (e: Event) => {
+      const custom = e as CustomEvent<SystemWorkspaceTab>;
+      if (
+        custom.detail &&
+        ['audit', 'lab', 'compiler', 'snapshots', 'inspector'].includes(
+          custom.detail
+        )
+      ) {
+        setWorkspaceTab(custom.detail);
+      }
+    };
+    window.addEventListener('renumerate_switch_system_tab', handleTabSwitch);
+    return () => {
+      window.removeEventListener(
+        'renumerate_switch_system_tab',
+        handleTabSwitch
+      );
+    };
+  }, []);
 
   const [notice, setNotice] = useState<{
     tone: 'success' | 'warning' | 'error' | 'info';
@@ -261,6 +602,190 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
   // Self-Test State
   const [isRunningSelfTest, setIsRunningSelfTest] = useState(false);
   const [selfTests, setSelfTests] = useState<SelfTestRow[]>([]);
+
+  // Netfilter / eBPF Live Packet Inspector State
+  const [packets, setPackets] = useState<InspectedPacket[]>(() => [
+    generateRealisticPacket({
+      settings,
+      currentIdentity,
+      isConnected,
+      isEmergency,
+      forceType: 'https',
+    }),
+    generateRealisticPacket({
+      settings,
+      currentIdentity,
+      isConnected,
+      isEmergency,
+      forceType: 'pqc',
+    }),
+    generateRealisticPacket({
+      settings,
+      currentIdentity,
+      isConnected,
+      isEmergency,
+      forceType: 'tracker',
+    }),
+    generateRealisticPacket({
+      settings,
+      currentIdentity,
+      isConnected,
+      isEmergency,
+      forceType: 'quic',
+    }),
+    generateRealisticPacket({
+      settings,
+      currentIdentity,
+      isConnected,
+      isEmergency,
+      forceType: 'lan',
+    }),
+  ]);
+  const [isInspectorPaused, setIsInspectorPaused] = useState(false);
+  const [selectedPacket, setSelectedPacket] = useState<InspectedPacket | null>(
+    null
+  );
+  const [verdictFilter, setVerdictFilter] = useState<
+    'all' | 'ACCEPT' | 'BYPASS' | 'DROP_REJECT'
+  >('all');
+  const [protocolFilter, setProtocolFilter] = useState<string>('all');
+  const [packetSearch, setPacketSearch] = useState('');
+  const [copiedDump, setCopiedDump] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('renumerate_system_workspace_tab', workspaceTab);
+    } catch {
+      // ignore
+    }
+  }, [workspaceTab]);
+
+  useEffect(() => {
+    if (isInspectorPaused) return;
+
+    const interval = window.setInterval(() => {
+      const newPkt = generateRealisticPacket({
+        settings,
+        currentIdentity,
+        isConnected,
+        isEmergency,
+      });
+      setPackets((prev) => [newPkt, ...prev].slice(0, 80));
+    }, 2800);
+
+    return () => window.clearInterval(interval);
+  }, [isInspectorPaused, settings, currentIdentity, isConnected, isEmergency]);
+
+  const handleInjectPacket = (
+    type: 'https' | 'tracker' | 'quic' | 'lan' | 'pqc'
+  ) => {
+    const injected = generateRealisticPacket({
+      settings,
+      currentIdentity,
+      isConnected,
+      isEmergency,
+      forceType: type,
+    });
+    setPackets((prev) => [injected, ...prev].slice(0, 80));
+    setSelectedPacket(injected);
+    showNotice(
+      `Trame test injectée : ${injected.protocol} -> ${injected.destination}:${injected.port} [${injected.verdict}]`,
+      injected.verdict === 'DROP' || injected.verdict === 'REJECT'
+        ? 'warning'
+        : 'success'
+    );
+  };
+
+  const handleExportPacketsJson = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      schema: 'renumerate-pcap-json-v1',
+      totalPackets: packets.length,
+      currentIdentity,
+      protocol: settings.protocol,
+      packets,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renumerate-netfilter-tap-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showNotice('Trace PCAP JSON exportée avec succès', 'success');
+  };
+
+  const handleExportWiresharkSummary = () => {
+    const header = [
+      '# Renumerate VPN — Synthèse Netfilter Wireshark-compatible',
+      `# Date d'export : ${new Date().toISOString()}`,
+      `# Passerelle    : ${currentIdentity.city}, ${currentIdentity.country} (${currentIdentity.ip}:${settings.tunnelPort})`,
+      '# Format : [Horodatage] [Iface] [Dir] [Proto] [Src] -> [Dst:Port] [Verdict] [Taille o] [Entropie b/o] [Règle]',
+      '------------------------------------------------------------------------------------------------------------------',
+    ];
+    const rows = packets.map(
+      (p) =>
+        `[${p.timeStr}] [${p.iface}] [${p.direction === 'out' ? 'OUT' : 'IN'}] [${p.protocol}] ${p.source} -> ${p.destination}:${p.port} [${p.verdict}] [${p.lengthBytes}B] [${p.entropyBits}b/B] [${p.ruleTag}]`
+    );
+    const text = [...header, ...rows].join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renumerate-packets-summary-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showNotice('Synthèse Wireshark exportée (.txt)', 'success');
+  };
+
+  const filteredPackets = useMemo(() => {
+    return packets.filter((p) => {
+      if (verdictFilter === 'ACCEPT' && p.verdict !== 'ACCEPT') return false;
+      if (verdictFilter === 'BYPASS' && p.verdict !== 'BYPASS') return false;
+      if (
+        verdictFilter === 'DROP_REJECT' &&
+        p.verdict !== 'DROP' &&
+        p.verdict !== 'REJECT'
+      )
+        return false;
+      if (protocolFilter !== 'all' && p.protocol !== protocolFilter)
+        return false;
+      if (!packetSearch.trim()) return true;
+      const q = packetSearch.toLowerCase();
+      return (
+        p.source.toLowerCase().includes(q) ||
+        p.destination.toLowerCase().includes(q) ||
+        p.protocol.toLowerCase().includes(q) ||
+        p.ruleTag.toLowerCase().includes(q) ||
+        p.summary.toLowerCase().includes(q) ||
+        String(p.port).includes(q)
+      );
+    });
+  }, [packets, verdictFilter, protocolFilter, packetSearch]);
+
+  const packetMetrics = useMemo(() => {
+    const total = packets.length;
+    const accepted = packets.filter((p) => p.verdict === 'ACCEPT').length;
+    const blocked = packets.filter(
+      (p) => p.verdict === 'DROP' || p.verdict === 'REJECT'
+    ).length;
+    const bypassed = packets.filter((p) => p.verdict === 'BYPASS').length;
+    const avgEntropy =
+      total > 0
+        ? Number(
+            (
+              packets.reduce((sum, p) => sum + p.entropyBits, 0) / total
+            ).toFixed(2)
+          )
+        : 7.95;
+    return { total, accepted, blocked, bypassed, avgEntropy };
+  }, [packets]);
 
   const showNotice = useCallback(
     (
@@ -1897,6 +2422,12 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 icon: RotateCcw,
                 badge: String(snapshots.length),
               },
+              {
+                id: 'inspector',
+                label: 'Inspecteur de trames',
+                icon: Network,
+                badge: `${packets.length}`,
+              },
             ] as Array<{
               id: SystemWorkspaceTab;
               label: string;
@@ -2900,6 +3431,541 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
           </section>
         </div>
       )}
+
+      {/* =================================================================== */}
+      {/* TAB 5: INSPECTEUR DE TRAMES & SONDE NETFILTER (eBPF TAP)            */}
+      {/* =================================================================== */}
+      {workspaceTab === 'inspector' && (
+        <div className="space-y-6">
+          {/* Header & Tap Controls */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400 shrink-0">
+                  <Network className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                      Inspecteur de Trames &amp; Sonde Netfilter (Tap eBPF / nftables)
+                    </h2>
+                    <span className="text-xs font-mono tabular-nums px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-semibold">
+                      {isInspectorPaused ? 'Capture en pause' : 'Tap actif temps réel'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                    Capture en continu des trames transitant par {settings.protocol === 'wireguard' ? 'wg0' : 'tun0'}, eth0 et sinkhole0 avec estimation de l’entropie Shannon et audit des verdicts pare-feu.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsInspectorPaused((p) => !p)}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isInspectorPaused
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                      : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {isInspectorPaused ? (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Reprendre</span>
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-3.5 h-3.5 fill-current" />
+                      <span>Figer le flux</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPackets([]);
+                    setSelectedPacket(null);
+                    showNotice('Tampon de capture vidé', 'info');
+                  }}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 hover:text-red-500 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Vider le tampon mémoire"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Vider</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportPacketsJson}
+                  className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Exporter la trace au format PCAP-JSON"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export PCAP-JSON</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportWiresharkSummary}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-cyan-500 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Exporter un résumé lisible Wireshark (.txt)"
+                >
+                  <FileCode2 className="w-3.5 h-3.5 text-cyan-500" />
+                  <span>Trace texte</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Injection Buttons */}
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                Injecter une trame synthétique :
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleInjectPacket('https')}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Lock className="w-3 h-3" />
+                  <span>+ HTTPS (wg0)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleInjectPacket('pqc')}
+                  className="px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Cpu className="w-3 h-3" />
+                  <span>+ Handshake PQC</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleInjectPacket('tracker')}
+                  className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <ShieldAlert className="w-3 h-3" />
+                  <span>+ Traqueur bloqué</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleInjectPacket('quic')}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>+ Trame QUIC</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleInjectPacket('lan')}
+                  className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/25 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Route className="w-3 h-3" />
+                  <span>+ LAN Bypass</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* Metrics Ribbon */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Trames capturées
+              </span>
+              <span className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5 block">
+                {packetMetrics.total}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5 block">
+                Tampon max : 80 trames
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Chiffré wg0 (ACCEPT)
+              </span>
+              <span className="text-lg font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5 block">
+                {packetMetrics.accepted}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5 block">
+                {packetMetrics.total > 0
+                  ? Math.round((packetMetrics.accepted / packetMetrics.total) * 100)
+                  : 100}
+                % du trafic
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Bloqués (DROP/REJECT)
+              </span>
+              <span className="text-lg font-bold font-mono tabular-nums text-red-600 dark:text-red-400 mt-0.5 block">
+                {packetMetrics.blocked}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5 block">
+                Sinkhole &amp; Anti-QUIC
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Contournements FAI
+              </span>
+              <span className="text-lg font-bold font-mono tabular-nums text-cyan-600 dark:text-cyan-400 mt-0.5 block">
+                {packetMetrics.bypassed}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5 block">
+                Split &amp; LAN RFC1918
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 col-span-2 sm:col-span-1">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                Entropie Shannon
+              </span>
+              <span className="text-lg font-bold font-mono tabular-nums text-purple-600 dark:text-purple-400 mt-0.5 block">
+                {packetMetrics.avgEntropy} <span className="text-xs font-normal text-slate-500">b/o</span>
+              </span>
+              <span className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5 block">
+                Bruit blanc AEAD
+              </span>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={packetSearch}
+                onChange={(e) => setPacketSearch(e.target.value)}
+                placeholder="Filtrer par IP, domaine, port, règle ou mot-clé..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:border-cyan-500"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                {(
+                  [
+                    { id: 'all', label: 'Tous' },
+                    { id: 'ACCEPT', label: 'ACCEPT' },
+                    { id: 'BYPASS', label: 'BYPASS' },
+                    { id: 'DROP_REJECT', label: 'DROP/REJ' },
+                  ] as const
+                ).map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setVerdictFilter(v.id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      verdictFilter === v.id
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+
+              <select
+                value={protocolFilter}
+                onChange={(e) => setProtocolFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+              >
+                <option value="all">Tous protocoles</option>
+                <option value="WireGuard">WireGuard</option>
+                <option value="DoH">DoH (RFC 8484)</option>
+                <option value="DNS">DNS</option>
+                <option value="TCP-TLS">TCP-TLS</option>
+                <option value="QUIC">QUIC</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Packet Table */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
+            <div className="overflow-x-auto max-h-[460px]">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 backdrop-blur-xs text-slate-500 dark:text-slate-400">
+                  <tr>
+                    <th className="py-2.5 px-3 font-semibold">Horodatage</th>
+                    <th className="py-2.5 px-2 font-semibold">Iface</th>
+                    <th className="py-2.5 px-2 font-semibold">Dir</th>
+                    <th className="py-2.5 px-3 font-semibold">Protocole</th>
+                    <th className="py-2.5 px-3 font-semibold">Source → Destination</th>
+                    <th className="py-2.5 px-2 font-semibold font-mono text-right">Taille</th>
+                    <th className="py-2.5 px-2 font-semibold font-mono text-right">Entropie</th>
+                    <th className="py-2.5 px-3 font-semibold text-center">Verdict</th>
+                    <th className="py-2.5 px-3 font-semibold">Règle pare-feu</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono tabular-nums">
+                  {filteredPackets.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-500 font-sans">
+                        Aucune trame réseau ne correspond aux critères de filtrage.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPackets.map((pkt) => {
+                      const isSelected = selectedPacket?.id === pkt.id;
+                      const verdictColor =
+                        pkt.verdict === 'ACCEPT'
+                          ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/25'
+                          : pkt.verdict === 'BYPASS'
+                            ? 'text-cyan-700 dark:text-cyan-300 bg-cyan-500/10 border-cyan-500/25'
+                            : pkt.verdict === 'REJECT'
+                              ? 'text-amber-700 dark:text-amber-300 bg-amber-500/10 border-amber-500/25'
+                              : 'text-red-700 dark:text-red-300 bg-red-500/10 border-red-500/25';
+
+                      return (
+                        <tr
+                          key={pkt.id}
+                          onClick={() => setSelectedPacket(pkt)}
+                          className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'bg-cyan-500/10 dark:bg-cyan-500/15'
+                              : ''
+                          }`}
+                        >
+                          <td className="py-2 px-3 whitespace-nowrap text-slate-600 dark:text-slate-300 text-[11px]">
+                            {pkt.timeStr}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap font-bold text-slate-800 dark:text-slate-200">
+                            {pkt.iface}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap text-center">
+                            {pkt.direction === 'out' ? (
+                              <span className="text-cyan-600 dark:text-cyan-400 font-bold" title="Sortant">↑</span>
+                            ) : (
+                              <span className="text-purple-600 dark:text-purple-400 font-bold" title="Entrant">↓</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 whitespace-nowrap font-semibold text-slate-900 dark:text-white">
+                            {pkt.protocol}
+                          </td>
+                          <td className="py-2 px-3 whitespace-nowrap text-slate-700 dark:text-slate-300">
+                            <span>{pkt.source}</span>
+                            <span className="text-slate-400 mx-1.5">→</span>
+                            <span className="font-bold text-slate-900 dark:text-white">
+                              {pkt.destination}:{pkt.port}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap text-right text-slate-600 dark:text-slate-300">
+                            {pkt.lengthBytes} o
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap text-right font-bold text-purple-600 dark:text-purple-400">
+                            {pkt.entropyBits}
+                          </td>
+                          <td className="py-2 px-3 whitespace-nowrap text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${verdictColor}`}>
+                              {pkt.verdict}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 whitespace-nowrap text-slate-500 dark:text-slate-400 text-[11px] truncate max-w-[200px]">
+                            {pkt.ruleTag}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Detailed Packet Inspection Drawer */}
+          {selectedPacket && (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-5 shadow-xs">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400">
+                    <Eye className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <span>Analyse Détaillée de Trame</span>
+                      <span className="font-mono text-xs text-slate-400">({selectedPacket.id})</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums">
+                      {selectedPacket.timeStr} · Interface {selectedPacket.iface} · {selectedPacket.direction === 'out' ? 'Sortant (Egress)' : 'Entrant (Ingress)'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${
+                      selectedPacket.verdict === 'ACCEPT'
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                        : selectedPacket.verdict === 'BYPASS'
+                          ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30'
+                          : selectedPacket.verdict === 'REJECT'
+                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                            : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30'
+                    }`}
+                  >
+                    Verdict : {selectedPacket.verdict}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPacket(null)}
+                    aria-label="Fermer l'analyse"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Headers Breakdown Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                {/* IP Header */}
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <span className="font-bold text-slate-900 dark:text-white block">
+                    En-tête Réseau (IPv{selectedPacket.ipHeader.version})
+                  </span>
+                  <div className="space-y-1 font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Source :</span>
+                      <span className="font-bold">{selectedPacket.source}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Destination :</span>
+                      <span className="font-bold">{selectedPacket.destination}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">TTL :</span>
+                      <span>{selectedPacket.ipHeader.ttl} sauts</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">ToS / DiffServ :</span>
+                      <span>{selectedPacket.ipHeader.dscp}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transport Layer */}
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <span className="font-bold text-slate-900 dark:text-white block">
+                    Couche Transport ({selectedPacket.protocol})
+                  </span>
+                  <div className="space-y-1 font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Port cible :</span>
+                      <span className="font-bold">:{selectedPacket.port}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Longueur trame :</span>
+                      <span>{selectedPacket.lengthBytes} octets</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Interface de sortie :</span>
+                      <span className="font-bold text-cyan-600 dark:text-cyan-400">{selectedPacket.iface}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Somme de contrôle :</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">Vérifiée (eBPF)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Netfilter Decision */}
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <span className="font-bold text-slate-900 dark:text-white block">
+                    Décision &amp; Règle Pare-feu
+                  </span>
+                  <p className="text-xs text-slate-700 dark:text-slate-300 font-sans leading-relaxed">
+                    {selectedPacket.summary}
+                  </p>
+                  <div className="font-mono text-[11px] text-cyan-700 dark:text-cyan-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 break-all">
+                    {selectedPacket.ruleTag}
+                  </div>
+                </div>
+              </div>
+
+              {/* Shannon Entropy Bar */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Entropie binaire Shannon de la charge utile :</span>
+                    <span className="font-mono text-purple-600 dark:text-purple-400 font-bold">
+                      {selectedPacket.entropyBits} / 8.00 bits/octet
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {selectedPacket.entropyBits >= 7.8
+                      ? 'Distribution uniforme (Chiffrement robuste AEAD)'
+                      : selectedPacket.entropyBits >= 6.0
+                        ? 'Distribution mixte (Compression / En-têtes)'
+                        : 'Données structurées / Texte en clair'}
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-cyan-500 via-emerald-500 to-purple-500 rounded-full"
+                    style={{
+                      width: `${Math.min(100, (selectedPacket.entropyBits / 8.0) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Hex Dump & ASCII Preview */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                    Capture Hexadécimale (64 premiers octets)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${selectedPacket.hexPreview}\n\nASCII:\n${selectedPacket.asciiPreview}`
+                      );
+                      setCopiedDump(true);
+                      setTimeout(() => setCopiedDump(false), 2000);
+                    }}
+                    className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedDump ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Copié dans le presse-papiers</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copier le dump hexadécimal</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-xs">
+                  <pre className="p-3 bg-slate-950 text-cyan-400 rounded-xl overflow-x-auto border border-slate-800">
+                    {selectedPacket.hexPreview}
+                  </pre>
+                  <pre className="p-3 bg-slate-950 text-slate-300 rounded-xl overflow-x-auto border border-slate-800">
+                    {selectedPacket.asciiPreview}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
+

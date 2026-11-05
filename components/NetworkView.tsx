@@ -34,7 +34,6 @@ import {
   Route,
   Radar,
   ShieldCheck,
-  Sparkles,
   Power,
 } from 'lucide-react';
 import { DeviceNode, ConnectionMode, AppSettings } from '../types';
@@ -1080,7 +1079,7 @@ export const NetworkView: React.FC<Props> = ({
               onClick={handleConnectOptimalRelay}
               className="flex-1 py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5" />
+              <Zap className="w-3.5 h-3.5" />
               <span>Relais optimal</span>
             </button>
           </div>

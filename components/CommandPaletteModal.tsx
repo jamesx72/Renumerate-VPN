@@ -19,6 +19,7 @@ import {
   CornerDownLeft,
   X,
   Fingerprint,
+  Network,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -289,6 +290,34 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         icon: Cpu,
         tone: 'purple',
         onExecute: () => onNavigateSection('system'),
+      },
+      {
+        id: 'nav-inspector',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir l’Inspecteur de Trames & Sonde Netfilter',
+        subtitle:
+          'Capture eBPF en direct, entropie Shannon (b/o), verdicts pare-feu et analyse hexadécimale',
+        keywords:
+          'inspecteur trames netfilter ebpf pcap capture dump hex paquets shannon wireshark sondes',
+        icon: Network,
+        tone: 'cyan',
+        onExecute: () => {
+          try {
+            localStorage.setItem(
+              'renumerate_system_workspace_tab',
+              'inspector'
+            );
+          } catch {
+            // ignore
+          }
+          window.dispatchEvent(
+            new CustomEvent('renumerate_switch_system_tab', {
+              detail: 'inspector',
+            })
+          );
+          onNavigateSection('system');
+        },
       },
 
       // Profils & Durcissement
