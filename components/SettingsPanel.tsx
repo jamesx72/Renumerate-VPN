@@ -44,6 +44,8 @@ import {
   Sliders,
   EyeOff,
   FileCode2,
+  Undo2,
+  Code,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -59,6 +61,7 @@ import {
   SystemPowerProfile,
   PanicActionMode,
   TrafficPaddingJitterMs,
+  ConfigurationAuditIssue,
 } from '../types';
 import {
   DEFAULT_APP_SETTINGS,
@@ -74,7 +77,9 @@ import {
   compileNativeTunnelConfig,
   compileSysctlConfig,
   compileNftablesConfig,
+  compileSystemdServiceConfig,
   computeModifiedSettingsDiff,
+  auditConfigurationIntegrity,
 } from '../constants';
 
 interface SettingsPanelProps {
@@ -114,6 +119,7 @@ interface SettingsPanelProps {
 }
 
 type TabId =
+  | 'audit'
   | 'wizard'
   | 'general'
   | 'security'
@@ -473,6 +479,27 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     dpiResistance: string;
   } | null>(null);
 
+  // Configuration Audit & Conflict Detection
+  const [auditSeverityFilter, setAuditSeverityFilter] = useState<
+    'all' | 'critical' | 'warning' | 'info'
+  >('all');
+
+  // Interactive Compiled Config Files Inspector
+  const [compiledFileTab, setCompiledFileTab] = useState<
+    'wireguard' | 'nftables' | 'sysctl' | 'systemd' | 'json'
+  >('wireguard');
+  const [copiedFile, setCopiedFile] = useState(false);
+
+  // Config Undo / Session Rollback Stack
+  const [configHistory, setConfigHistory] = useState<
+    Array<{
+      id: string;
+      timestamp: string;
+      reason: string;
+      patchToRevert: Partial<AppSettings>;
+    }>
+  >([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isPremium = userPlan !== 'free';
@@ -481,11 +508,70 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     [settings]
   );
 
+  const auditIssues = useMemo(
+    () => auditConfigurationIntegrity(settings, isConnected),
+    [settings, isConnected]
+  );
+
   const notify = (
     message: string,
     tone: 'success' | 'warning' | 'error' | 'info' = 'success'
   ) => {
     setStatusFeedback({ message, tone });
+  };
+
+  const applyPatchWithHistory = (
+    patch: Partial<AppSettings>,
+    reason: string
+  ) => {
+    const revertPatch: Partial<AppSettings> = {};
+    for (const k in patch) {
+      const key = k as keyof AppSettings;
+      revertPatch[key] = settings[key] as any;
+    }
+    setConfigHistory((prev) => [
+      {
+        id: `hist-${Date.now().toString(36)}`,
+        timestamp: new Date().toLocaleTimeString('fr-FR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+        reason,
+        patchToRevert: revertPatch,
+      },
+      ...prev.slice(0, 9),
+    ]);
+    patchSettings(patch, reason);
+  };
+
+  const handleUndoLastConfigChange = () => {
+    if (configHistory.length === 0) return;
+    const [latest, ...rest] = configHistory;
+    patchSettings(latest.patchToRevert, `Annulation : ${latest.reason}`);
+    setConfigHistory(rest);
+    notify(`Modification « ${latest.reason} » annulée`, 'info');
+  };
+
+  const handleFixAllIssues = () => {
+    if (auditIssues.length === 0) return;
+    const mergedPatch: Partial<AppSettings> = {};
+    for (const issue of auditIssues) {
+      Object.assign(mergedPatch, issue.patch);
+    }
+    applyPatchWithHistory(
+      mergedPatch,
+      `Résolution globale de ${auditIssues.length} conflit(s) de configuration`
+    );
+    notify(
+      `${auditIssues.length} conflit(s) et incohérence(s) résolu(s) automatiquement`,
+      'success'
+    );
+  };
+
+  const handleFixSingleIssue = (issue: ConfigurationAuditIssue) => {
+    applyPatchWithHistory(issue.patch, `Correction : ${issue.title}`);
+    notify(`Correctif appliqué : ${issue.patchLabel}`, 'success');
   };
 
   useEffect(() => {
@@ -508,7 +594,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     badge?: string;
+    badgeTone?: 'default' | 'danger' | 'warning' | 'emerald';
   }> = [
+    {
+      id: 'audit',
+      label: 'Audit & Conflits',
+      icon: ShieldAlert,
+      badge:
+        auditIssues.length > 0
+          ? `${auditIssues.length} alerte${auditIssues.length > 1 ? 's' : ''}`
+          : 'Optimal',
+      badgeTone: auditIssues.length > 0 ? 'warning' : 'emerald',
+    },
     { id: 'general', label: 'Réseau & Tunnel', icon: Network },
     { id: 'security', label: 'Bouclier & DNS', icon: Shield },
     { id: 'renumbering', label: 'Identité & Morphing', icon: Fingerprint },
@@ -621,14 +718,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleExportNativeConfig = (
-    target: 'tunnel' | 'sysctl' | 'nftables'
+    target: 'tunnel' | 'sysctl' | 'nftables' | 'systemd'
   ) => {
     const compiled =
       target === 'sysctl'
         ? compileSysctlConfig(settings)
         : target === 'nftables'
           ? compileNftablesConfig(settings, currentIdentity)
-          : compileNativeTunnelConfig(settings, currentIdentity);
+          : target === 'systemd'
+            ? compileSystemdServiceConfig(settings)
+            : compileNativeTunnelConfig(settings, currentIdentity);
 
     const blob = new Blob([compiled.content], {
       type: 'text/plain;charset=utf-8',
@@ -644,6 +743,76 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     addLog(`Fichier système natif généré : ${compiled.filename}`, 'success');
     notify(`Fichier ${compiled.filename} téléchargé`, 'success');
   };
+
+  const handleCopyCompiledFile = async (content: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      scheduleClipboardSanitize();
+      setCopiedFile(true);
+      setTimeout(() => setCopiedFile(false), 2000);
+      notify(
+        `${label} copié dans le presse-papiers${
+          settings.clipboardAutoClearSeconds > 0
+            ? ` (purge auto dans ${settings.clipboardAutoClearSeconds}s)`
+            : ''
+        }`,
+        'success'
+      );
+    } catch {
+      notify('Impossible d’accéder au presse-papiers', 'error');
+    }
+  };
+
+  const compiledFiles = useMemo(() => {
+    const wg = compileNativeTunnelConfig(settings, currentIdentity);
+    const nft = compileNftablesConfig(settings, currentIdentity);
+    const sys = compileSysctlConfig(settings);
+    const systemd = compileSystemdServiceConfig(settings);
+    const jsonStr = JSON.stringify(sanitizeAppSettings(settings), null, 2);
+
+    return {
+      wireguard: {
+        id: 'wireguard' as const,
+        filename: wg.filename,
+        content: wg.content,
+        label: `Profil ${settings.protocol.toUpperCase()} (${wg.filename})`,
+        lang: 'ini',
+        desc: 'Interface client chiffrée, pair distant et directive MTU/FwMark.',
+      },
+      nftables: {
+        id: 'nftables' as const,
+        filename: nft.filename,
+        content: nft.content,
+        label: 'Pare-feu (renumerate-egress.nft)',
+        lang: 'nftables',
+        desc: 'Règles Netfilter L3/L4, coupe-circuit d’urgence et drop QUIC.',
+      },
+      sysctl: {
+        id: 'sysctl' as const,
+        filename: sys.filename,
+        content: sys.content,
+        label: 'Directives Noyau (sysctl.d)',
+        lang: 'conf',
+        desc: 'rp_filter strict, congestion BBR, mémoire mlockall et eBPF.',
+      },
+      systemd: {
+        id: 'systemd' as const,
+        filename: systemd.filename,
+        content: systemd.content,
+        label: 'Unité Démon (systemd.service)',
+        lang: 'ini',
+        desc: 'Service Linux confiné, redémarrage auto et politique temps réel.',
+      },
+      json: {
+        id: 'json' as const,
+        filename: 'renumerate-config.json',
+        content: jsonStr,
+        label: 'Schéma JSON Export',
+        lang: 'json',
+        desc: 'Représentation sérialisée intégrale pour sauvegarde et CI/CD.',
+      },
+    };
+  }, [settings, currentIdentity]);
 
   const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -918,6 +1087,66 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   // Global Search Directory across all Settings
   const searchableDirectory = useMemo<SearchableSettingItem[]>(
     () => [
+      {
+        id: 'audit_conf',
+        title: 'Audit de Cohérence & Détecteur de Conflits de Configuration',
+        description:
+          'Vérification automatique de la pile L2/L3/L4, MTU vs MSS, Kill Switch et primitives PQC.',
+        tab: 'audit',
+        tabLabel: 'Audit & Conflits',
+        keywords: [
+          'audit',
+          'conflit',
+          'intégrité',
+          'incohérence',
+          'invariants',
+          'pmtu',
+          'fuite',
+          'anomalie',
+        ],
+        currentValue:
+          auditIssues.length === 0
+            ? 'Intègre (10/10)'
+            : `${auditIssues.length} conflit(s)`,
+      },
+      {
+        id: 'compiled_files',
+        title:
+          'Inspecteur & Export des Fichiers de Configuration Compilés',
+        description:
+          'Prévisualisation et export de wg0.conf, nftables.nft, sysctl.d et unités systemd.',
+        tab: 'wizard',
+        tabLabel: 'Profils & Sauvegarde',
+        keywords: [
+          'wg0',
+          'conf',
+          'nftables',
+          'sysctl',
+          'systemd',
+          'json',
+          'code',
+          'export',
+          'compilateur',
+        ],
+        currentValue: `${Object.keys(compiledFiles).length} formats`,
+      },
+      {
+        id: 'rollback_history',
+        title: 'Historique des Modifications de Session (Rollback)',
+        description:
+          'Annuler rapidement les dernières modifications apportées lors de la session.',
+        tab: 'audit',
+        tabLabel: 'Audit & Conflits',
+        keywords: [
+          'annuler',
+          'undo',
+          'rollback',
+          'historique',
+          'revenir',
+          'restaurer',
+        ],
+        currentValue: `${configHistory.length} modification(s)`,
+      },
       {
         id: 'proto',
         title: 'Protocole de tunnel & Port de transport',
@@ -1230,7 +1459,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       className={`font-mono tabular-nums text-[11px] px-2 py-0.5 rounded-md ${
                         active
                           ? 'bg-white/20 text-white'
-                          : 'bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          : tab.badgeTone === 'warning'
+                            ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                            : tab.badgeTone === 'emerald'
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+                              : 'bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                       }`}
                     >
                       {tab.badge}
@@ -1294,6 +1527,46 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {configHistory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleUndoLastConfigChange}
+                  className="px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                  title={`Annuler : ${configHistory[0].reason}`}
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">Annuler</span>
+                  <span className="font-mono text-[10px] opacity-75">
+                    ({configHistory.length})
+                  </span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('audit');
+                  setSearchQuery('');
+                }}
+                className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                  auditIssues.length > 0
+                    ? 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                    : 'border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                }`}
+                title="Consulter l'audit de cohérence de configuration"
+              >
+                {auditIssues.length > 0 ? (
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                ) : (
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                )}
+                <span className="font-mono tabular-nums">
+                  {auditIssues.length > 0
+                    ? `${auditIssues.length} conflit${auditIssues.length > 1 ? 's' : ''}`
+                    : '0 conflit'}
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleExportJson}
@@ -1460,6 +1733,340 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             ) : (
               <>
+                {/* TAB AUDIT: AUDIT DE COHÉRENCE & DÉTECTEUR DE CONFLITS */}
+                {activeTab === 'audit' && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-cyan-500" />
+                        Audit de Cohérence & Détecteur de Conflits
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Analyse heuristique de la pile réseau L2/L3/L4, cohérence cryptographique PQC et règles pare-feu en temps réel.
+                      </p>
+                    </div>
+
+                    {/* Stat Cards Strip */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* Health Status */}
+                      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                        <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          État global de la configuration
+                        </div>
+                        <div className="flex items-baseline justify-between">
+                          <span
+                            className={`text-xl font-bold ${
+                              auditIssues.length === 0
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                            }`}
+                          >
+                            {auditIssues.length === 0
+                              ? 'Intègre & Optimale'
+                              : `${auditIssues.length} Incohérence${auditIssues.length > 1 ? 's' : ''}`}
+                          </span>
+                          <span className="font-mono text-xs text-slate-400">
+                            {auditIssues.length === 0 ? '10/10 OK' : 'À ajuster'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {auditIssues.length === 0
+                            ? 'Aucun risque de fuite ni de goulot détecté.'
+                            : `${auditIssues.filter((i) => i.severity === 'critical').length} critique(s) · ${auditIssues.filter((i) => i.severity === 'warning').length} avertissement(s)`}
+                        </p>
+                      </div>
+
+                      {/* Hardening Score */}
+                      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                        <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          Score de durcissement
+                        </div>
+                        <div className="flex items-baseline justify-between font-mono">
+                          <span className="text-xl font-bold text-slate-900 dark:text-white">
+                            {hardeningScore}/100
+                          </span>
+                          <span className="text-xs text-cyan-600 dark:text-cyan-400 font-sans">
+                            {hardeningScore >= 80 ? 'Forteresse' : hardeningScore >= 55 ? 'Standard' : 'Basique'}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              hardeningScore >= 80
+                                ? 'bg-emerald-500'
+                                : hardeningScore >= 55
+                                  ? 'bg-amber-500'
+                                  : 'bg-red-500'
+                            }`}
+                            style={{ width: `${hardeningScore}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Global Quick Action */}
+                      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                        <div>
+                          <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                            Action globale recommandée
+                          </div>
+                          <div className="text-xs font-bold text-slate-900 dark:text-white mt-0.5">
+                            {auditIssues.length === 0
+                              ? 'Aucune action requise'
+                              : 'Résolution atomique'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleFixAllIssues}
+                          disabled={auditIssues.length === 0}
+                          className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
+                            auditIssues.length > 0
+                              ? 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-xs'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>
+                            {auditIssues.length > 0
+                              ? `Tout corriger automatiquement (${auditIssues.length})`
+                              : 'Configuration vérifiée'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filter Segmented Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {(
+                          [
+                            { id: 'all', label: `Toutes (${auditIssues.length})` },
+                            {
+                              id: 'critical',
+                              label: `Critiques (${auditIssues.filter((i) => i.severity === 'critical').length})`,
+                            },
+                            {
+                              id: 'warning',
+                              label: `Avertissements (${auditIssues.filter((i) => i.severity === 'warning').length})`,
+                            },
+                            {
+                              id: 'info',
+                              label: `Optimisations (${auditIssues.filter((i) => i.severity === 'info').length})`,
+                            },
+                          ] as const
+                        ).map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setAuditSeverityFilter(f.id)}
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                              auditSeverityFilter === f.id
+                                ? 'bg-cyan-600 text-white'
+                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                        {modifiedDiffCount} paramètre(s) personnalisé(s)
+                      </span>
+                    </div>
+
+                    {/* Issues List or Verified Empty State */}
+                    {auditIssues.length === 0 ? (
+                      <div className="p-8 rounded-2xl bg-emerald-500/5 border border-emerald-500/25 space-y-6">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+                            <ShieldCheck className="w-6 h-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                              Pile système saine et parfaitement calibrée
+                            </h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-300">
+                              L&apos;analyseur d&apos;intégrité n&apos;a détecté aucune anomalie de transport, aucun risque de fuite WebRTC/DNS et aucun conflit avec votre pare-feu ou le coupe-circuit.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          {[
+                            {
+                              title: 'MTU & MSS Clamping',
+                              desc: `Segment ${settings.mtuSize}B sans risque de fragmentation WAN sur ${settings.protocol.toUpperCase()}.`,
+                            },
+                            {
+                              title: 'Coupe-circuit Kill Switch',
+                              desc: `Politique ${settings.killSwitch ? settings.killSwitchMode.toUpperCase() : 'Inactive'} cohérente avec le LAN Bypass.`,
+                            },
+                            {
+                              title: 'Handshake Post-Quantique',
+                              desc: `Échange hybride ${settings.postQuantumKex.toUpperCase()} compatible avec le PMTU.`,
+                            },
+                            {
+                              title: 'Bouclier WebRTC & IPv6',
+                              desc: 'Sondes mDNS confinées, protection contre la désanonymisation STUN/ICE.',
+                            },
+                            {
+                              title: 'Résolveur DNS Chiffré',
+                              desc: `Serveur ${settings.dns.toUpperCase()} actif avec protection contre les requêtes en clair.`,
+                            },
+                            {
+                              title: 'Gouvernance des Journaux',
+                              desc: `Rétention locale (${settings.logRetentionHours}h) en adéquation avec votre niveau d&apos;anonymat.`,
+                            },
+                          ].map((item, idx) => (
+                            <div
+                              key={idx}
+                              className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-emerald-500/20 flex items-start gap-2.5"
+                            >
+                              <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <span className="font-semibold text-slate-900 dark:text-white">
+                                  {item.title}
+                                </span>
+                                <p className="text-slate-500 dark:text-slate-400 text-[11px] mt-0.5">
+                                  {item.desc}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {auditIssues
+                          .filter((issue) =>
+                            auditSeverityFilter === 'all'
+                              ? true
+                              : issue.severity === auditSeverityFilter
+                          )
+                          .map((issue) => {
+                            const sevClasses =
+                              issue.severity === 'critical'
+                                ? 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30'
+                                : issue.severity === 'warning'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                                  : 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30';
+
+                            const categoryLabel =
+                              issue.category === 'mtu_transport'
+                                ? 'Transport & MTU'
+                                : issue.category === 'leak_killswitch'
+                                  ? 'Anti-Fuite & Kill Switch'
+                                  : issue.category === 'pqc_kex'
+                                    ? 'Post-Quantique'
+                                    : issue.category === 'tor_privacy'
+                                      ? 'Onion Vortex'
+                                      : issue.category === 'performance_jitter'
+                                        ? 'Gouvernance & Jitter'
+                                        : issue.category === 'dns'
+                                          ? 'Résolveur DNS'
+                                          : 'Sécurité Générale';
+
+                            return (
+                              <div
+                                key={issue.id}
+                                className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 hover:border-cyan-500/40 transition-colors"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase border ${sevClasses}`}
+                                    >
+                                      {issue.severity === 'critical'
+                                        ? 'Critique'
+                                        : issue.severity === 'warning'
+                                          ? 'Avertissement'
+                                          : 'Optimisation'}
+                                    </span>
+                                    <span className="text-xs font-mono text-slate-500 dark:text-slate-400">
+                                      {categoryLabel}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleFixSingleIssue(issue)}
+                                    className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>{issue.patchLabel}</span>
+                                  </button>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                                    {issue.title}
+                                  </h4>
+                                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                                    {issue.description}
+                                  </p>
+                                </div>
+
+                                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 font-mono">
+                                  <span className="font-bold text-slate-700 dark:text-slate-300">
+                                    Impact opérationnel :{' '}
+                                  </span>
+                                  {issue.impact}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+
+                    {/* Session Rollback / History Stack */}
+                    <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                          <Undo2 className="w-4 h-4 text-cyan-500" />
+                          <span>Historique des modifications de session (Rollback)</span>
+                        </div>
+                        <span className="font-mono text-[11px] text-slate-500">
+                          {configHistory.length} entrée(s)
+                        </span>
+                      </div>
+
+                      {configHistory.length === 0 ? (
+                        <p className="text-xs text-slate-500">
+                          Aucun changement récent enregistré dans la pile d&apos;annulation de cette session.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {configHistory.map((h, idx) => (
+                            <div
+                              key={h.id}
+                              className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="min-w-0">
+                                <div className="font-semibold text-slate-900 dark:text-white truncate">
+                                  {h.reason}
+                                </div>
+                                <div className="font-mono text-[11px] text-slate-400 mt-0.5">
+                                  {h.timestamp} · {Object.keys(h.patchToRevert).length} clé(s) modifiée(s)
+                                </div>
+                              </div>
+                              {idx === 0 && (
+                                <button
+                                  type="button"
+                                  onClick={handleUndoLastConfigChange}
+                                  className="px-2.5 py-1 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold cursor-pointer"
+                                >
+                                  Annuler
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* TAB 1: RÉSEAU & TUNNEL */}
                 {activeTab === 'general' && (
                   <div className="space-y-6">
@@ -3930,22 +4537,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* 4 Native Compilation Download Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                         <button
                           type="button"
                           onClick={() => handleExportNativeConfig('tunnel')}
                           className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-left transition-colors cursor-pointer"
                         >
                           <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
-                            <span>Profil Tunnel ({settings.protocol.toUpperCase()})</span>
+                            <span>Profil Tunnel</span>
                             <Download className="w-3.5 h-3.5 text-cyan-500" />
                           </div>
-                          <div className="font-mono text-[11px] text-slate-500 mt-0.5">
-                            {settings.protocol === 'openvpn'
-                              ? 'renumerate-client.ovpn'
-                              : settings.protocol === 'ikev2'
-                                ? 'ipsec-renumerate.conf'
-                                : 'wg0-renumerate.conf'}
+                          <div className="font-mono text-[11px] text-slate-500 mt-0.5 truncate">
+                            {compiledFiles.wireguard.filename}
                           </div>
                         </button>
 
@@ -3955,11 +4559,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-left transition-colors cursor-pointer"
                         >
                           <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
-                            <span>Durcissement Noyau</span>
+                            <span>Directives Noyau</span>
                             <Download className="w-3.5 h-3.5 text-cyan-500" />
                           </div>
-                          <div className="font-mono text-[11px] text-slate-500 mt-0.5">
-                            99-renumerate-hardening.sysctl.conf
+                          <div className="font-mono text-[11px] text-slate-500 mt-0.5 truncate">
+                            {compiledFiles.sysctl.filename}
                           </div>
                         </button>
 
@@ -3972,10 +4576,93 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             <span>Pare-feu Netfilter</span>
                             <Download className="w-3.5 h-3.5 text-cyan-500" />
                           </div>
-                          <div className="font-mono text-[11px] text-slate-500 mt-0.5">
-                            renumerate-egress.nft
+                          <div className="font-mono text-[11px] text-slate-500 mt-0.5 truncate">
+                            {compiledFiles.nftables.filename}
                           </div>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleExportNativeConfig('systemd')}
+                          className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-left transition-colors cursor-pointer"
+                        >
+                          <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                            <span>Unité systemd</span>
+                            <Download className="w-3.5 h-3.5 text-cyan-500" />
+                          </div>
+                          <div className="font-mono text-[11px] text-slate-500 mt-0.5 truncate">
+                            {compiledFiles.systemd.filename}
+                          </div>
+                        </button>
+                      </div>
+
+                      {/* Interactive Code Preview Drawer */}
+                      <div className="p-4 rounded-xl bg-slate-950 text-slate-100 border border-slate-800 space-y-3 font-mono">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                          {/* File Tabs */}
+                          <div className="flex flex-wrap items-center gap-1">
+                            {(
+                              [
+                                { id: 'wireguard', label: 'wg0.conf' },
+                                { id: 'nftables', label: 'nftables.nft' },
+                                { id: 'sysctl', label: 'sysctl.d' },
+                                { id: 'systemd', label: 'systemd.service' },
+                                { id: 'json', label: 'settings.json' },
+                              ] as const
+                            ).map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setCompiledFileTab(t.id)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                                  compiledFileTab === t.id
+                                    ? 'bg-cyan-600 text-white'
+                                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                                }`}
+                              >
+                                {t.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Quick File Action */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-400">
+                              {compiledFiles[compiledFileTab].content.split('\n').length} lignes ·{' '}
+                              {compiledFiles[compiledFileTab].content.length} octets
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCopyCompiledFile(
+                                  compiledFiles[compiledFileTab].content,
+                                  compiledFiles[compiledFileTab].label
+                                )
+                              }
+                              className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-800"
+                            >
+                              {copiedFile ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5 text-cyan-400" />
+                              )}
+                              <span>{copiedFile ? 'Copié' : 'Copier'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Description strip */}
+                        <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                          <span>{compiledFiles[compiledFileTab].desc}</span>
+                          <span className="text-cyan-400">
+                            {compiledFiles[compiledFileTab].filename}
+                          </span>
+                        </div>
+
+                        {/* Monospace Code Frame */}
+                        <pre className="text-xs leading-relaxed overflow-x-auto max-h-60 p-3 rounded-lg bg-slate-900/90 border border-slate-800/80 text-emerald-400 font-mono select-text">
+                          {compiledFiles[compiledFileTab].content}
+                        </pre>
                       </div>
 
                       <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4">

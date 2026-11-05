@@ -13,6 +13,7 @@ import {
   SystemPowerProfile,
   PanicActionMode,
   TrafficPaddingJitterMs,
+  ConfigurationAuditIssue,
 } from './types';
 
 export const REALISTIC_USER_AGENTS = [
@@ -2581,3 +2582,202 @@ export function computeModifiedSettingsDiff(
   }
   return diffs;
 }
+
+export function auditConfigurationIntegrity(
+  settings: AppSettings,
+  isConnected = false
+): ConfigurationAuditIssue[] {
+  const issues: ConfigurationAuditIssue[] = [];
+
+  // 1. WireGuard MTU vs MSS Clamping
+  if (
+    settings.protocol === 'wireguard' &&
+    settings.mtuSize > 1420 &&
+    !settings.mssClamping
+  ) {
+    issues.push({
+      id: 'conf_mtu_wireguard_fragmentation',
+      severity: 'warning',
+      category: 'mtu_transport',
+      title: 'Risque de fragmentation Path-MTU sur tunnel WireGuard',
+      description: `Le MTU (${settings.mtuSize}B) avec l'encapsulation WireGuard (80B) excède le standard Ethernet (1500B) sans MSS Clamping.`,
+      impact:
+        'Pertes de paquets et retransmissions excessives sur liaisons WAN ou modems 4G/5G.',
+      patchLabel: 'Fixer le MTU à 1420B et activer le MSS Clamping',
+      patch: { mtuSize: 1420, mssClamping: true },
+    });
+  }
+
+  // 2. Kill Switch Strict vs LAN Bypass
+  if (
+    settings.killSwitch &&
+    settings.killSwitchMode === 'strict' &&
+    settings.lanBypass
+  ) {
+    issues.push({
+      id: 'conf_strict_killswitch_lan_bypass',
+      severity: 'warning',
+      category: 'leak_killswitch',
+      title: 'Incohérence Kill Switch Strict et Bypass Réseau Local (LAN)',
+      description:
+        'Le Kill Switch strict applique une règle de rejet absolu en amont des exceptions RFC 1918 locales (LAN Bypass).',
+      impact:
+        "Les imprimantes réseau, NAS et flux locaux risquent d'être coupés brutalement.",
+      patchLabel: 'Basculer le Kill Switch en mode souple (soft)',
+      patch: { killSwitchMode: 'soft' },
+    });
+  }
+
+  // 3. Post-Quantum KEX (ML-KEM-1024) vs Low MTU
+  if (settings.postQuantumKex === 'ml-kem-1024' && settings.mtuSize < 1280) {
+    issues.push({
+      id: 'conf_pqc_kem_mtu_underrun',
+      severity: 'critical',
+      category: 'pqc_kex',
+      title: 'MTU insuffisant pour le Handshake Post-Quantique ML-KEM-1024',
+      description:
+        'Les clés hybrides FIPS-203 (1184 octets) requièrent un segment non fragmenté supérieur à 1280B.',
+      impact:
+        'Échec de négociation cryptographique avec les nœuds de transit durcis.',
+      patchLabel: 'Rehausser le segment MTU à 1380 octets',
+      patch: { mtuSize: 1380 },
+    });
+  }
+
+  // 4. WebRTC Leak Shield Inactif
+  if (!settings.webrtcLeakShield) {
+    issues.push({
+      id: 'conf_webrtc_leak_unshielded',
+      severity: 'critical',
+      category: 'leak_killswitch',
+      title: 'Bouclier anti-fuite WebRTC mDNS inactif',
+      description:
+        'Les candidats STUN/ICE exécutés dans les pages web peuvent sonder et fuiter vos adresses IPv4/IPv6 réelles.',
+      impact:
+        "Exposition directe de l'adresse IP de votre fournisseur d'accès à Internet (FAI).",
+      patchLabel: 'Activer le bouclier anti-fuite WebRTC',
+      patch: { webrtcLeakShield: true },
+    });
+  }
+
+  // 5. DNS Custom Invalide / Vide
+  if (
+    settings.dns === 'custom' &&
+    (!settings.customDnsServer || !settings.customDnsServer.trim())
+  ) {
+    issues.push({
+      id: 'conf_dns_custom_invalid',
+      severity: 'critical',
+      category: 'dns',
+      title: 'Résolveur DNS personnalisé non configuré',
+      description:
+        'Le protocole DNS est réglé sur "custom" mais le champ de serveur est vide.',
+      impact:
+        'Échec total de résolution des noms de domaine lors de la navigation.',
+      patchLabel: 'Bascule automatique sur Quad9 (DNSSEC / No-Log)',
+      patch: { dns: 'quad9', customDnsServer: '' },
+    });
+  }
+
+  // 6. Tor Onion Vortex sans Exclusion des Juridictions 14-Eyes
+  if (
+    settings.vortexBridge !== 'none' &&
+    settings.excludeEyesJurisdictions === 'none'
+  ) {
+    issues.push({
+      id: 'conf_vortex_14eyes_surveillance',
+      severity: 'warning',
+      category: 'tor_privacy',
+      title: 'Onion Vortex actif sans sanctuarisation juridictionnelle',
+      description:
+        "Le pontage Vortex est actif sans filtre sur les 14-Eyes, exposant l'entrée ou la sortie à la surveillance étatique.",
+      impact:
+        'Risque de corrélation temporelle du trafic par des agences de renseignement.',
+      patchLabel: "Exclure les 14 pays de l'alliance 14-Eyes",
+      patch: { excludeEyesJurisdictions: '14-eyes' },
+    });
+  }
+
+  // 7. Gouverneur Performance avec Jitter Chaff excessif (>35ms)
+  if (
+    settings.powerProfile === 'performance' &&
+    settings.trafficPaddingJitterMs >= 35
+  ) {
+    issues.push({
+      id: 'conf_perf_power_chaff_jitter',
+      severity: 'info',
+      category: 'performance_jitter',
+      title:
+        'Bourrage temporel Chaff contradictoire avec le Profil Performance',
+      description: `Le gouverneur processeur est réglé en mode Performance, mais un délai artificiel de ${settings.trafficPaddingJitterMs}ms est injecté.`,
+      impact:
+        'Latence accrue injustifiée pour le streaming temps réel et les tunnels basse latence.',
+      patchLabel: 'Désactiver le bourrage Chaff (latence minimale 0 ms)',
+      patch: { trafficPaddingJitterMs: 0 },
+    });
+  }
+
+  // 8. Rétention des journaux prolongée en mode Furtivité Extrême
+  if (settings.anonymityLevel === 'extreme' && settings.logRetentionHours > 24) {
+    issues.push({
+      id: 'conf_extreme_anonymity_log_retention',
+      severity: 'info',
+      category: 'security',
+      title: 'Rétention locale des journaux prolongée en Furtivité Extrême',
+      description: `La posture d'anonymat est sur Extrême alors que les journaux sont conservés pendant ${settings.logRetentionHours}h.`,
+      impact:
+        "Possibilité d'analyse forensique locale en cas de saisie matérielle.",
+      patchLabel: 'Ajuster la rétention des journaux à 4 heures',
+      patch: { logRetentionHours: 4 },
+    });
+  }
+
+  // 9. SOCKS5 Activé sans Hôte valide
+  if (
+    settings.socks5Enabled &&
+    (!settings.socks5Host || !settings.socks5Host.trim())
+  ) {
+    issues.push({
+      id: 'conf_socks5_missing_host',
+      severity: 'warning',
+      category: 'mtu_transport',
+      title: "Proxy SOCKS5 local actif sans hôte d'écoute",
+      description:
+        'Le démon proxy SOCKS5 est activé mais le champ hôte d\'écoute est indéterminé.',
+      impact: "Le port d'écoute SOCKS5 ne peut pas être initialisé.",
+      patchLabel: "Assigner l'écoute locale 127.0.0.1:1080",
+      patch: { socks5Host: '127.0.0.1', socks5Port: 1080 },
+    });
+  }
+
+  // 10. Bloqueur de menaces actif sans aucun filtre sélectionné
+  if (
+    settings.adBlocker &&
+    !settings.threatFilters.ads &&
+    !settings.threatFilters.trackers &&
+    !settings.threatFilters.malware &&
+    !settings.threatFilters.cryptominers
+  ) {
+    issues.push({
+      id: 'conf_adblock_no_filters_active',
+      severity: 'info',
+      category: 'dns',
+      title: 'Bloqueur actif sans filtre de menaces coché',
+      description:
+        "Le module Sinkhole anti-menaces est activé mais aucune liste noire (pub, malwares, mineurs) n'est cochée.",
+      impact: 'Aucune trame DNS n\'est filtrée par le sinkhole.',
+      patchLabel: "Activer l'ensemble des 4 filtres de menaces",
+      patch: {
+        threatFilters: {
+          ads: true,
+          trackers: true,
+          malware: true,
+          cryptominers: true,
+        },
+      },
+    });
+  }
+
+  return issues;
+}
+

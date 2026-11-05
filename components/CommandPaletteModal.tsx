@@ -500,6 +500,19 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         onExecute: onOpenSettings,
       },
       {
+        id: 'open-config-audit',
+        category: 'vault_logs',
+        categoryLabel: 'Coffre & Journaux',
+        title: 'Audit de cohérence & détection de conflits de configuration',
+        subtitle:
+          'Analyser les directives MTU, Kill Switch, PQC et règles pare-feu',
+        keywords:
+          'audit conflit coherence configuration reglages mtu fuite invariants',
+        icon: ShieldAlert,
+        tone: 'amber',
+        onExecute: onOpenSettings,
+      },
+      {
         id: 'toggle-theme',
         category: 'vault_logs',
         categoryLabel: 'Coffre & Journaux',

@@ -140,6 +140,24 @@ export interface SignedSystemBundle {
   manifests: Record<string, string>;
 }
 
+export interface ConfigurationAuditIssue {
+  id: string;
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  description: string;
+  impact: string;
+  category:
+    | 'mtu_transport'
+    | 'leak_killswitch'
+    | 'pqc_kex'
+    | 'tor_privacy'
+    | 'performance_jitter'
+    | 'dns'
+    | 'security';
+  patchLabel: string;
+  patch: Partial<AppSettings>;
+}
+
 export interface AppSettings {
   protocol: 'wireguard' | 'openvpn' | 'ikev2';
   tunnelPort: 51820 | 443 | 1194 | 500 | 8443;

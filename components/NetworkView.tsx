@@ -35,6 +35,10 @@ import {
   Radar,
   ShieldCheck,
   Power,
+  Play,
+  Loader2,
+  Compass,
+  Copy,
 } from 'lucide-react';
 import { DeviceNode, ConnectionMode, AppSettings } from '../types';
 import {
@@ -215,6 +219,16 @@ export const NetworkView: React.FC<Props> = ({
       ''
   );
 
+  // Traceroute & Correlation Resistance State
+  const [showTracerouteDrawer, setShowTracerouteDrawer] = useState(false);
+  const [isTestingCorrelation, setIsTestingCorrelation] = useState(false);
+  const [correlationResult, setCorrelationResult] = useState<{
+    resistancePct: number;
+    entropyBits: number;
+    timingCorrelationRisk: 'negligible' | 'low' | 'moderate';
+    testedAt: string;
+  } | null>(null);
+
   // Live Fleet Probing State
   const [isProbingFleet, setIsProbingFleet] = useState(false);
   const [lastProbeSummary, setLastProbeSummary] = useState<string | null>(null);
@@ -393,6 +407,69 @@ export const NetworkView: React.FC<Props> = ({
     };
   }, [stagedCircuitNodes, settings.excludeEyesJurisdictions]);
 
+  const hopLegs = useMemo(() => {
+    const legs: Array<{
+      hopIndex: number;
+      fromName: string;
+      toName: string;
+      toCountry: string;
+      distanceKm: number;
+      legLatencyMs: number;
+      layerCipher: string;
+      potToken: string;
+      roleLabel: string;
+    }> = [];
+
+    let prevCoord = LOCAL_ORIGIN;
+    let prevName = 'Client Local';
+
+    stagedCircuitNodes.forEach((node, idx) => {
+      const coord = getNodeLonLat(node);
+      const dist = computeGeodesicDistanceKm(prevCoord, coord);
+      const fiberMs = Math.max(2, Math.round(dist * 0.005));
+      const legLatency = Math.min(node.latency, fiberMs + 4 + idx * 3);
+
+      const roleLabel =
+        idx === 0
+          ? 'Garde d’entrée (#1)'
+          : idx === 1 && stagedCircuitNodes.length === 3
+            ? 'Relais aveugle (#2)'
+            : `Nœud de sortie (#${idx + 1})`;
+
+      const layerCipher =
+        idx === 0
+          ? 'Layer 1: ChaCha20-Poly1305 + PQC ML-KEM-1024'
+          : idx === 1 && stagedCircuitNodes.length === 3
+            ? 'Layer 2: AES-256-GCM Oignon Intermédiaire'
+            : 'Layer 3: WireGuard Direct Encapsulation';
+
+      const potToken = `pot-0x${Math.abs(
+        (node.ip.split('.').reduce((acc, oct) => acc * 31 + Number(oct), 0) ^
+          (idx + 1) * 0x9e3779b9) >>>
+          0
+      )
+        .toString(16)
+        .padStart(8, '0')}`;
+
+      legs.push({
+        hopIndex: idx + 1,
+        fromName: prevName,
+        toName: node.name,
+        toCountry: node.country,
+        distanceKm: dist,
+        legLatencyMs: legLatency,
+        layerCipher,
+        potToken,
+        roleLabel,
+      });
+
+      prevCoord = coord;
+      prevName = node.name;
+    });
+
+    return legs;
+  }, [stagedCircuitNodes]);
+
   // Fleet-wide KPI metrics
   const fleetMetrics = useMemo(() => {
     const count = Math.max(1, nodes.length);
@@ -549,6 +626,103 @@ export const NetworkView: React.FC<Props> = ({
     if (third) setExitNodeId(hopCount === 2 ? second.id : third.id);
 
     setToast('Circuit sanctuaire multi-juridictions composé automatiquement');
+  };
+
+  const handleAutoOptimizeGeodesicPath = () => {
+    const eligibleNodes = nodes.filter(
+      (n) =>
+        !isCountryExcludedByJurisdiction(
+          n.country,
+          settings.excludeEyesJurisdictions
+        )
+    );
+    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes;
+    if (pool.length === 0) return;
+
+    // 1. Entrée la plus proche géographiquement et à faible latence depuis le client
+    const sortedByOrigin = [...pool].sort((a, b) => {
+      const distA = computeGeodesicDistanceKm(LOCAL_ORIGIN, getNodeLonLat(a));
+      const distB = computeGeodesicDistanceKm(LOCAL_ORIGIN, getNodeLonLat(b));
+      return distA + a.latency * 10 - (distB + b.latency * 10);
+    });
+    const bestEntry = sortedByOrigin[0];
+
+    // 2. Relais aveugle intermédiaire progressif (sans boucle en épingle à cheveux)
+    const entryCoord = getNodeLonLat(bestEntry);
+    const poolWithoutEntry = pool.filter((n) => n.id !== bestEntry.id);
+    const sortedForRelay = [...poolWithoutEntry].sort((a, b) => {
+      const distA = computeGeodesicDistanceKm(entryCoord, getNodeLonLat(a));
+      const distB = computeGeodesicDistanceKm(entryCoord, getNodeLonLat(b));
+      return distA + a.latency * 8 - (distB + b.latency * 8);
+    });
+    const bestRelay = sortedForRelay[0] || pool[1] || bestEntry;
+
+    // 3. Nœud de sortie distinct pour clore la chaîne géodésique
+    const relayCoord = getNodeLonLat(bestRelay);
+    const poolForExit = pool.filter(
+      (n) => n.id !== bestEntry.id && n.id !== bestRelay.id
+    );
+    const sortedForExit = [...poolForExit].sort((a, b) => {
+      const distA = computeGeodesicDistanceKm(relayCoord, getNodeLonLat(a));
+      const distB = computeGeodesicDistanceKm(relayCoord, getNodeLonLat(b));
+      return distA - distB;
+    });
+    const bestExit = sortedForExit[0] || poolForExit[0] || pool[2] || bestRelay;
+
+    setEntryNodeId(bestEntry.id);
+    setRelayNodeId(bestRelay.id);
+    setExitNodeId(
+      hopCount === 1 ? bestEntry.id : hopCount === 2 ? bestRelay.id : bestExit.id
+    );
+
+    setToast(
+      'Tracé géodésique optimisé : latence fibre et distance minimisées'
+    );
+  };
+
+  const handleRunCorrelationTest = async () => {
+    if (isTestingCorrelation) return;
+    setIsTestingCorrelation(true);
+    try {
+      await new Promise((r) => setTimeout(r, 650));
+      const hopBase = hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45;
+      const chaffBonus = settings.trafficPaddingJitterMs > 0 ? 10 : 0;
+      const obfuscationBonus = settings.obfuscationLevel !== 'standard' ? 6 : 0;
+      const pqcBonus = settings.postQuantumKex !== 'classic-x25519' ? 4 : 0;
+      const penalty = circuitTelemetry.hasDuplicateHop ? 35 : 0;
+
+      const resistancePct = Math.min(
+        99,
+        Math.max(30, hopBase + chaffBonus + obfuscationBonus + pqcBonus - penalty)
+      );
+      const entropyBits = Number(
+        (
+          3.6 +
+          Math.random() * 0.38 +
+          (settings.trafficPaddingJitterMs > 0 ? 0.3 : 0)
+        ).toFixed(2)
+      );
+      const timingCorrelationRisk: 'negligible' | 'low' | 'moderate' =
+        resistancePct >= 90
+          ? 'negligible'
+          : resistancePct >= 75
+            ? 'low'
+            : 'moderate';
+
+      setCorrelationResult({
+        resistancePct,
+        entropyBits,
+        timingCorrelationRisk,
+        testedAt: new Date().toLocaleTimeString('fr-FR'),
+      });
+      setToast(
+        `Sondage de corrélation complété : résistance de ${resistancePct}%`
+      );
+    } catch {
+      setToast('Échec du sondage de corrélation');
+    } finally {
+      setIsTestingCorrelation(false);
+    }
   };
 
   const handleAssignHopFromMap = (
@@ -1107,10 +1281,42 @@ export const NetworkView: React.FC<Props> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleAutoOptimizeGeodesicPath}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Réordonner et sélectionner les relais pour minimiser la distance géodésique et la dispersion temporelle"
+            >
+              <Compass className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span className="hidden sm:inline">Optimiser géodésique</span>
+              <span className="sm:hidden">Géodésie</span>
+            </button>
+            <button
+              type="button"
               onClick={handleAutoComposeSanctuaryCircuit}
               className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              Composer un circuit sanctuaire
+              Circuit sanctuaire
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowTracerouteDrawer((v) => !v);
+                if (!showCircuitComposer) setShowCircuitComposer(true);
+              }}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                showTracerouteDrawer
+                  ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+              title="Afficher la décomposition du traceroute géodésique, jetons de transit et test de corrélation temporelle"
+            >
+              <Radar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span className="hidden sm:inline">Traceroute & Corrélation</span>
+              <span className="sm:hidden">Traceroute</span>
+              {correlationResult && (
+                <span className="ml-0.5 px-1.5 py-0.5 bg-cyan-100 dark:bg-cyan-900/60 text-cyan-800 dark:text-cyan-200 font-mono text-[10px] rounded-md font-semibold">
+                  {correlationResult.resistancePct}%
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -1286,6 +1492,229 @@ export const NetworkView: React.FC<Props> = ({
                 </button>
               </div>
             </div>
+
+            {/* Traceroute Cryptographique & Attestations de Transit Drawer */}
+            {showTracerouteDrawer && (
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 mt-2 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Radar className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-900 dark:text-white">
+                        Traceroute Cryptographique & Preuve de Transit (PoT)
+                      </h3>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Décomposition géodésique du saut par fibre optique (~5 µs/km), empilement des couches de chiffrement et jetons d’attestation.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs font-mono text-slate-600 dark:text-slate-300">
+                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+                      {circuitTelemetry.totalKm.toLocaleString('fr-FR')} km cumulés
+                    </span>
+                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+                      Fibre : ~{Math.max(2, Math.round(circuitTelemetry.totalKm * 0.005))} ms
+                    </span>
+                  </div>
+                </div>
+
+                {/* Hop-by-hop geodesic breakdown */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {hopLegs.map((leg) => (
+                    <div
+                      key={leg.hopIndex}
+                      className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl p-3.5 flex flex-col justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[11px] font-semibold text-cyan-600 dark:text-cyan-400">
+                            Saut #{leg.hopIndex}
+                          </span>
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200">
+                            {leg.roleLabel}
+                          </span>
+                        </div>
+
+                        <div className="text-slate-900 dark:text-white font-medium text-xs">
+                          <span className="text-slate-500 dark:text-slate-400 font-normal">
+                            {leg.fromName}
+                          </span>{' '}
+                          →{' '}
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {leg.toName}
+                          </span>
+                          <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">
+                            ({leg.toCountry})
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[11px] text-slate-600 dark:text-slate-400 font-mono">
+                          <span>{leg.distanceKm.toLocaleString('fr-FR')} km</span>
+                          <span>·</span>
+                          <span>Fibre : ~{Math.max(1, Math.round(leg.distanceKm * 0.005))} ms</span>
+                          <span>·</span>
+                          <span>RTT : ~{leg.legLatencyMs} ms</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 space-y-2">
+                        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate" title={leg.layerCipher}>
+                          {leg.layerCipher}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-900/80 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-[10px] font-mono text-slate-600 dark:text-slate-300">
+                          <span className="truncate" title={`Jeton Proof of Transit : ${leg.potToken}`}>
+                            PoT: {leg.potToken}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(leg.potToken);
+                              setToast(`Jeton PoT copié : ${leg.potToken}`);
+                            }}
+                            className="text-slate-400 hover:text-cyan-500 transition-colors cursor-pointer"
+                            title="Copier le jeton PoT"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Audit de Résistance à la Corrélation Temporelle */}
+                <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <h4 className="text-xs font-semibold text-slate-900 dark:text-white">
+                          Résistance à la Corrélation Temporelle & Analyse de Trafic
+                        </h4>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Évalue l’immunité contre les attaques passives de corrélation de paquets FAI/NSA (Timing & Packet-Size Correlation).
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRunCorrelationTest}
+                      disabled={isTestingCorrelation}
+                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                    >
+                      {isTestingCorrelation ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Sondage en cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5" />
+                          <span>Sonder la résistance</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                    {/* Resistance Score */}
+                    <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Indice de résistance globale
+                      </div>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span
+                          className={`text-xl font-bold font-mono ${
+                            (correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)) >= 90
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : (correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)) >= 75
+                                ? 'text-cyan-600 dark:text-cyan-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                          }`}
+                        >
+                          {correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)}%
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                          {(correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)) >= 90
+                            ? 'Sanctuaire scellé'
+                            : (correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)) >= 75
+                              ? 'Haute résilience'
+                              : 'Vulnérabilité modérée'}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 mt-2 overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-500 ${
+                            (correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)) >= 90
+                              ? 'bg-emerald-500'
+                              : (correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)) >= 75
+                                ? 'bg-cyan-500'
+                                : 'bg-amber-500'
+                          }`}
+                          style={{
+                            width: `${correlationResult?.resistancePct ?? (hopCount === 3 ? 92 : hopCount === 2 ? 80 : 45)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Shannon Entropy */}
+                    <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Entropie temporelle de Shannon
+                      </div>
+                      <div className="text-xl font-bold font-mono text-slate-900 dark:text-white mt-1">
+                        {correlationResult?.entropyBits ?? (hopCount === 3 ? 3.84 : hopCount === 2 ? 3.42 : 2.85)}{' '}
+                        <span className="text-xs font-normal text-slate-500 dark:text-slate-400">b/paquet</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        Dispersion inter-paquets aléatoire
+                      </div>
+                    </div>
+
+                    {/* ISP Eavesdropping Risk */}
+                    <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Risque de corrélation FAI
+                      </div>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white mt-1.5">
+                        {correlationResult
+                          ? correlationResult.timingCorrelationRisk === 'negligible'
+                            ? 'Négligeable'
+                            : correlationResult.timingCorrelationRisk === 'low'
+                              ? 'Faible'
+                              : 'Modéré (1 saut)'
+                          : hopCount === 3
+                            ? 'Négligeable'
+                            : hopCount === 2
+                              ? 'Faible'
+                              : 'Modéré (1 saut)'}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        {hopCount >= 2 ? 'Multi-juridictions hermétique' : 'Sujet aux métadonnées d’entrée'}
+                      </div>
+                    </div>
+
+                    {/* Chaff & PQC Status */}
+                    <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Chaffing & PQC
+                      </div>
+                      <div className="text-xs font-semibold text-slate-900 dark:text-white mt-1.5 truncate">
+                        {settings.trafficPaddingJitterMs > 0
+                          ? `Jitter +${settings.trafficPaddingJitterMs} ms`
+                          : 'Jitter 0 ms (performance)'}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                        PQC : {settings.postQuantumKex !== 'classic-x25519' ? settings.postQuantumKex.toUpperCase() : 'Standard'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
