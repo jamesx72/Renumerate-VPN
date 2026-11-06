@@ -18,6 +18,7 @@ import {
   QuarantinedHost,
   IntrusionVector,
   IntrusionSeverity,
+  IdsFilterRule,
 } from './types';
 
 export const REALISTIC_USER_AGENTS = [
@@ -3105,6 +3106,158 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
           'Le résolveur local applique la validation stricte DoH/DNSSEC et a rejeté la réponse malveillante.',
       };
   }
+}
+
+export const DEFAULT_IDS_CUSTOM_RULES: IdsFilterRule[] = [
+  {
+    id: 'rule-custom-001',
+    name: 'Blocage Telnet & RDP Inbound (TCP 23, 3389)',
+    enabled: true,
+    protocol: 'TCP',
+    ports: '23, 3389',
+    direction: 'inbound',
+    action: 'drop',
+    severity: 'high',
+    description:
+      'Rejet eBPF immédiat des sondes d’accès distant et tentatives d’exploitation BlueKeep / RDP / Telnet non chiffrées.',
+    hitsCount: 42,
+    lastHitAt: 'Il y a 6 min',
+    createdAt: '2026-05-12T08:30:00.000Z',
+    isSystemPreset: true,
+  },
+  {
+    id: 'rule-custom-002',
+    name: 'Fuite SMB & NetBIOS Egress Guard (UDP 137-139, TCP 445)',
+    enabled: true,
+    protocol: 'ALL',
+    ports: '137-139, 445',
+    direction: 'outbound',
+    action: 'reject',
+    severity: 'critical',
+    description:
+      'Empêche toute fuite de hash NTLM et requêtes de voisinage réseau SMB hors de l’interface de tunnel WireGuard.',
+    hitsCount: 19,
+    lastHitAt: 'Il y a 22 min',
+    createdAt: '2026-05-12T09:15:00.000Z',
+    isSystemPreset: true,
+  },
+  {
+    id: 'rule-custom-003',
+    name: 'Blocage Scanner Masscan & Shodan (198.51.100.0/24)',
+    enabled: true,
+    protocol: 'ALL',
+    ipRange: '198.51.100.0/24',
+    direction: 'inbound',
+    action: 'quarantine',
+    severity: 'high',
+    description:
+      'Isole et neutralise automatiquement toute sonde de reconnaissance active issue de cette plage d’observation réseau.',
+    hitsCount: 67,
+    lastHitAt: 'Il y a 3 min',
+    createdAt: '2026-05-12T10:00:00.000Z',
+    isSystemPreset: true,
+  },
+  {
+    id: 'rule-custom-004',
+    name: 'Filtrage Inbound ICMP Ping Flood & Tunneling',
+    enabled: true,
+    protocol: 'ICMP',
+    direction: 'inbound',
+    action: 'drop',
+    severity: 'medium',
+    description:
+      'Bloque les requêtes echo ICMP (Type 8) pour empêcher la détection de présence topologique et l’exfiltration cachée.',
+    hitsCount: 88,
+    lastHitAt: 'Il y a 41 min',
+    createdAt: '2026-05-12T11:20:00.000Z',
+    isSystemPreset: true,
+  },
+  {
+    id: 'rule-custom-005',
+    name: 'Isolement Relais Hostiles Connus (185.220.101.0/24)',
+    enabled: false,
+    protocol: 'ALL',
+    ipRange: '185.220.101.0/24',
+    direction: 'both',
+    action: 'drop',
+    severity: 'high',
+    description:
+      'Blocage bidirectionnel d’un sous-réseau listé dans le flux de réputation Renumerate AbuseIPDB pour cyberattaques.',
+    hitsCount: 31,
+    lastHitAt: 'Il y a 1 h',
+    createdAt: '2026-05-12T12:00:00.000Z',
+    isSystemPreset: true,
+  },
+];
+
+export function generateNftablesRuleSyntax(rule: IdsFilterRule): {
+  nftables: string;
+  iptables: string;
+  ebpfHook: string;
+} {
+  const chain =
+    rule.direction === 'outbound'
+      ? 'output'
+      : rule.direction === 'inbound'
+      ? 'input'
+      : 'forward';
+
+  const protoMatch =
+    rule.protocol === 'ALL'
+      ? ''
+      : rule.protocol === 'ICMP'
+      ? 'ip protocol icmp'
+      : `${rule.protocol.toLowerCase()}`;
+
+  const portMatch = rule.ports
+    ? `${rule.protocol === 'UDP' ? 'udp' : 'tcp'} dport { ${rule.ports.replace(
+        /\s+/g,
+        ' '
+      )} }`
+    : '';
+
+  const ipMatch = rule.ipRange
+    ? rule.direction === 'outbound'
+      ? `ip daddr ${rule.ipRange}`
+      : `ip saddr ${rule.ipRange}`
+    : '';
+
+  let actionNft = 'counter drop';
+  let actionIptables = '-j DROP';
+  let actionEbpf = 'XDP_DROP';
+
+  if (rule.action === 'reject') {
+    actionNft = 'counter reject with icmpx type admin-prohibited';
+    actionIptables = '-j REJECT --reject-with icmp-admin-prohibited';
+    actionEbpf = 'XDP_TX /* reject packet with RST/ICMP */';
+  } else if (rule.action === 'quarantine') {
+    actionNft = 'counter jump quarantine_table';
+    actionIptables = '-j SET --add-set ids_quarantine_hosts src';
+    actionEbpf = 'bpf_map_update_elem(&quarantine_lpm_trie, &src_ip) && XDP_DROP';
+  } else if (rule.action === 'alert_only') {
+    actionNft = `log prefix "[IDS-ALERT-${rule.name.slice(0, 16)}] " counter accept`;
+    actionIptables = `-j LOG --log-prefix "[IDS-ALERT] "`;
+    actionEbpf = 'bpf_ringbuf_output(&events_rb, &alert_meta) && XDP_PASS';
+  }
+
+  const elements = [protoMatch, portMatch, ipMatch]
+    .filter(Boolean)
+    .join(' ');
+
+  const nftables = `nft add rule inet filter ${chain} ${elements ? elements + ' ' : ''}${actionNft}`;
+  const iptables = `iptables -A ${chain.toUpperCase()} ${
+    rule.protocol !== 'ALL' ? `-p ${rule.protocol.toLowerCase()} ` : ''
+  }${rule.ports ? `--dport ${rule.ports.replace(/\s+/g, '')} ` : ''}${
+    rule.ipRange
+      ? rule.direction === 'outbound'
+        ? `-d ${rule.ipRange} `
+        : `-s ${rule.ipRange} `
+      : ''
+  }${actionIptables}`;
+
+  const ebpfHook = `SEC("xdp") int ids_filter_${rule.id.replace(/-/g, '_')}(struct xdp_md *ctx) {\n    void *data = (void *)(long)ctx->data;\n    void *data_end = (void *)(long)ctx->data_end;\n    /* Evaluation: ${rule.name} */\n    if (match_filter(data, data_end, PROTO_${rule.protocol})) {\n        return ${actionEbpf};\n    }\n    return XDP_PASS;\n}`;
+
+  return { nftables, iptables, ebpfHook };
 }
 
 

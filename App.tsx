@@ -42,10 +42,12 @@ import { SecureFileTransfer } from './components/SecureFileTransfer';
 import { WithdrawalModal } from './components/WithdrawalModal';
 import { TransactionHistoryModal } from './components/TransactionHistoryModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { IntrusionToastNotification } from './components/IntrusionToastNotification';
 import {
   MOCK_IDENTITIES,
   INITIAL_LOGS,
   generateRandomMac,
+  generateSimulatedIntrusion,
   MOCK_NODES,
   DEFAULT_APP_SETTINGS,
   sanitizeAppSettings,
@@ -73,6 +75,7 @@ import {
   DeviceNode,
   ConnectionSession,
   Transaction,
+  IntrusionAttempt,
 } from './types';
 import { analyzeSecurity } from './services/geminiService';
 import {
@@ -91,11 +94,25 @@ function App() {
   const [systemInitialTab, setSystemInitialTab] = useState<
     'audit' | 'lab' | 'compiler' | 'snapshots' | 'inspector' | 'ids'
   >('audit');
+  const [activeIntrusionToast, setActiveIntrusionToast] =
+    useState<IntrusionAttempt | null>(null);
+  const [selectedAttemptIdToInspect, setSelectedAttemptIdToInspect] =
+    useState<string | null>(null);
 
   const handleOpenIdsCenter = useCallback(() => {
     setSystemInitialTab('ids');
     setActiveSection('system');
   }, []);
+
+  const handleInspectIntrusionToast = useCallback(
+    (attempt: IntrusionAttempt) => {
+      setActiveIntrusionToast(null);
+      setSelectedAttemptIdToInspect(attempt.id);
+      setSystemInitialTab('ids');
+      setActiveSection('system');
+    },
+    []
+  );
   const [isWindowBlurred, setIsWindowBlurred] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -663,6 +680,72 @@ function App() {
     handleExecutePanic,
     addLog,
   ]);
+
+  // Listen for intrusion attempts blocked across the entire application
+  useEffect(() => {
+    const handleIntrusionBlocked = (e: Event) => {
+      const custom = e as CustomEvent<IntrusionAttempt>;
+      if (custom.detail) {
+        setActiveIntrusionToast(custom.detail);
+        if (appSettings.idsSoundAlert) {
+          try {
+            const ctx = new (window.AudioContext ||
+              (
+                window as unknown as {
+                  webkitAudioContext: typeof AudioContext;
+                }
+              ).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(
+              440,
+              ctx.currentTime + 0.18
+            );
+            gain.gain.setValueAtTime(0.08, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(
+              0.001,
+              ctx.currentTime + 0.18
+            );
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.19);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    };
+    window.addEventListener(
+      'renumerate_intrusion_blocked',
+      handleIntrusionBlocked
+    );
+    return () => {
+      window.removeEventListener(
+        'renumerate_intrusion_blocked',
+        handleIntrusionBlocked
+      );
+    };
+  }, [appSettings.idsSoundAlert]);
+
+  // Occasional intrusion neutralization watcher during active VPN connection
+  useEffect(() => {
+    if (!isConnected || isEmergency || !appSettings.idsEnabled) return;
+
+    const timer = setTimeout(() => {
+      const probe = generateSimulatedIntrusion('port_scan');
+      setActiveIntrusionToast(probe);
+      addLog(
+        `[IDS Netfilter] Sonde furtive ${probe.sourceIp} neutralisée sur ${probe.targetInterface} (eBPF/XDP drop)`,
+        'warning',
+        probe.sourceIp
+      );
+    }, 45000);
+
+    return () => clearTimeout(timer);
+  }, [isConnected, isEmergency, appSettings.idsEnabled, addLog]);
 
   useEffect(() => {
     if (isConnected && !isEmergency) {
@@ -2104,6 +2187,8 @@ function App() {
             onOpenSettingsModal={() => setShowSettings(true)}
             onExecutePanic={handleExecutePanic}
             initialTab={systemInitialTab}
+            initialSelectedAttemptId={selectedAttemptIdToInspect}
+            onClearInitialSelectedAttemptId={() => setSelectedAttemptIdToInspect(null)}
             onTriggerRenumberHop={handleForceRotateIdentity}
             onGlobalScramble={handleGlobalScramble}
             addLog={addLog}
@@ -2341,6 +2426,13 @@ function App() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenHistory={() => setShowConnectionHistory(true)}
         onOpenIds={handleOpenIdsCenter}
+      />
+
+      {/* Alerte Toast d'intrusion bloquée avec inspection directe */}
+      <IntrusionToastNotification
+        attempt={activeIntrusionToast}
+        onInspect={handleInspectIntrusionToast}
+        onDismiss={() => setActiveIntrusionToast(null)}
       />
     </div>
   );

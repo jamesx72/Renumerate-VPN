@@ -80,6 +80,8 @@ interface SystemCenterProps {
   onOpenSettingsModal: () => void;
   onExecutePanic: () => void;
   initialTab?: SystemWorkspaceTab;
+  initialSelectedAttemptId?: string | null;
+  onClearInitialSelectedAttemptId?: () => void;
   onTriggerRenumberHop?: () => void;
   onGlobalScramble?: () => void;
   addLog: (
@@ -467,6 +469,8 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
   onOpenSettingsModal,
   onExecutePanic,
   initialTab,
+  initialSelectedAttemptId,
+  onClearInitialSelectedAttemptId,
   onTriggerRenumberHop,
   onGlobalScramble,
   addLog,
@@ -3986,6 +3990,8 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
           patchSettings={patchSettings}
           onTriggerRenumberHop={onTriggerRenumberHop}
           onGlobalScramble={onGlobalScramble}
+          initialSelectedAttemptId={initialSelectedAttemptId}
+          onClearInitialSelectedAttemptId={onClearInitialSelectedAttemptId}
           addLog={addLog}
         />
       )}

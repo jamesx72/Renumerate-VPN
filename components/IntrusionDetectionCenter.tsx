@@ -28,6 +28,7 @@ import {
   Loader2,
   X,
   Eye,
+  SlidersVertical,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -36,12 +37,15 @@ import {
   IntrusionVector,
   IntrusionSeverity,
   IdsTelemetryStats,
+  IdsFilterRule,
 } from '../types';
 import {
   INITIAL_INTRUSION_ATTEMPTS,
   INITIAL_QUARANTINE_LIST,
   generateSimulatedIntrusion,
+  DEFAULT_IDS_CUSTOM_RULES,
 } from '../constants';
+import { IdsRulesPanel } from './IdsRulesPanel';
 
 interface IntrusionDetectionCenterProps {
   settings: AppSettings;
@@ -52,6 +56,8 @@ interface IntrusionDetectionCenterProps {
   patchSettings: (patch: Partial<AppSettings>, reason?: string) => void;
   onTriggerRenumberHop?: () => void;
   onGlobalScramble?: () => void;
+  initialSelectedAttemptId?: string | null;
+  onClearInitialSelectedAttemptId?: () => void;
   addLog: (
     event: string,
     type?: 'info' | 'warning' | 'success' | 'error',
@@ -67,6 +73,8 @@ export const IntrusionDetectionCenter: React.FC<
   patchSettings,
   onTriggerRenumberHop,
   onGlobalScramble,
+  initialSelectedAttemptId,
+  onClearInitialSelectedAttemptId,
   addLog,
 }) => {
   const [attempts, setAttempts] = useState<IntrusionAttempt[]>(() => {
@@ -94,15 +102,33 @@ export const IntrusionDetectionCenter: React.FC<
   const [filterVector, setFilterVector] = useState<string>('all');
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'stream' | 'quarantine' | 'lab'>(
-    'stream'
-  );
+  const [activeTab, setActiveTab] = useState<
+    'stream' | 'quarantine' | 'rules' | 'lab'
+  >('stream');
+  const [customRules, setCustomRules] = useState<IdsFilterRule[]>(() => {
+    try {
+      const saved = localStorage.getItem('renumerate_ids_custom_rules');
+      return saved ? JSON.parse(saved) : DEFAULT_IDS_CUSTOM_RULES;
+    } catch {
+      return DEFAULT_IDS_CUSTOM_RULES;
+    }
+  });
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationVector, setSimulationVector] =
     useState<IntrusionVector>('port_scan');
   const [toast, setToast] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (initialSelectedAttemptId) {
+      const match = attempts.find((a) => a.id === initialSelectedAttemptId);
+      if (match) {
+        setSelectedAttempt(match);
+        setActiveTab('stream');
+      }
+    }
+  }, [initialSelectedAttemptId, attempts]);
 
   // Synchronize state to localStorage
   useEffect(() => {
@@ -118,6 +144,42 @@ export const IntrusionDetectionCenter: React.FC<
       JSON.stringify(quarantinedHosts)
     );
   }, [quarantinedHosts]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      'renumerate_ids_custom_rules',
+      JSON.stringify(customRules)
+    );
+  }, [customRules]);
+
+  // Fetch rules from server on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRules = async () => {
+      try {
+        const res = await fetch('/api/security/ids-rules');
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          ok: boolean;
+          rules?: IdsFilterRule[];
+        };
+        if (
+          isMounted &&
+          data.ok &&
+          Array.isArray(data.rules) &&
+          data.rules.length > 0
+        ) {
+          setCustomRules(data.rules);
+        }
+      } catch {
+        // Fallback to local
+      }
+    };
+    fetchRules();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (toast) {
@@ -188,12 +250,13 @@ export const IntrusionDetectionCenter: React.FC<
   // Compute live IDS telemetry statistics
   const telemetryStats: IdsTelemetryStats = useMemo(() => {
     const totalBlocked = attempts.length + 38;
-    const activeRules =
+    const baseActiveRules =
       settings.idsSensitivity === 'paranoid'
         ? 2180
         : settings.idsSensitivity === 'high'
           ? 1420
           : 850;
+    const enabledCustomCount = customRules.filter((r) => r.enabled).length;
     const entropy = Number(
       (
         4.65 +
@@ -213,7 +276,8 @@ export const IntrusionDetectionCenter: React.FC<
       activeQuarantinesCount: quarantinedHosts.length,
       lastIntrusionTime: attempts[0]?.timestamp || null,
       shannonEntropyRate: entropy,
-      activeRulesCount: activeRules,
+      activeRulesCount: baseActiveRules + enabledCustomCount,
+      customRulesCount: enabledCustomCount,
     };
   }, [
     attempts,
@@ -221,6 +285,7 @@ export const IntrusionDetectionCenter: React.FC<
     settings.idsEnabled,
     settings.ebpfXdpAcceleration,
     settings.idsSensitivity,
+    customRules,
   ]);
 
   // Filtered attempts
@@ -271,6 +336,16 @@ export const IntrusionDetectionCenter: React.FC<
       }
 
       setAttempts((prev) => [simulatedAttempt, ...prev]);
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent('renumerate_intrusion_blocked', {
+            detail: simulatedAttempt,
+          })
+        );
+      } catch {
+        // ignore
+      }
 
       if (simulatedAttempt.quarantined) {
         setQuarantinedHosts((prev) => {
@@ -392,6 +467,220 @@ export const IntrusionDetectionCenter: React.FC<
     navigator.clipboard?.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleAddRule = async (
+    ruleData: Omit<IdsFilterRule, 'id' | 'hitsCount' | 'lastHitAt' | 'createdAt'>
+  ) => {
+    try {
+      const res = await fetch('/api/security/ids-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ruleData),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.rule) {
+          setCustomRules((prev) => [data.rule, ...prev]);
+          setToast(
+            `Règle « ${data.rule.name} » compilée et injectée dans le noyau`
+          );
+          addLog(
+            `Nouvelle règle IDS « ${data.rule.name} » appliquée`,
+            'success'
+          );
+          return;
+        }
+      }
+    } catch {
+      // offline fallback
+    }
+
+    const localNewRule: IdsFilterRule = {
+      ...ruleData,
+      id: `rule-custom-${Date.now().toString(36)}-${Math.floor(
+        Math.random() * 899 + 100
+      )}`,
+      hitsCount: 0,
+      lastHitAt: null,
+      createdAt: new Date().toISOString(),
+      isSystemPreset: false,
+    };
+    setCustomRules((prev) => [localNewRule, ...prev]);
+    setToast(`Règle « ${localNewRule.name} » enregistrée`);
+    addLog(`Règle IDS « ${localNewRule.name} » enregistrée localement`, 'info');
+  };
+
+  const handleUpdateRule = async (
+    id: string,
+    patch: Partial<IdsFilterRule>
+  ) => {
+    try {
+      await fetch('/api/security/ids-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...patch }),
+      });
+    } catch {
+      // ignore
+    }
+    setCustomRules((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
+    );
+    setToast('Règle de filtrage mise à jour');
+    addLog(`Règle de filtrage IDS ${id} modifiée`, 'info');
+  };
+
+  const handleToggleRule = async (id: string) => {
+    try {
+      await fetch(`/api/security/ids-rules/${id}/toggle`, { method: 'POST' });
+    } catch {
+      // ignore
+    }
+    setCustomRules((prev) =>
+      prev.map((r) => {
+        if (r.id === id) {
+          const nextState = !r.enabled;
+          setToast(
+            nextState
+              ? `Règle « ${r.name} » activée dans eBPF`
+              : `Règle « ${r.name} » désactivée`
+          );
+          addLog(
+            `Règle IDS « ${r.name} » ${nextState ? 'activée' : 'désactivée'}`,
+            'info'
+          );
+          return { ...r, enabled: nextState };
+        }
+        return r;
+      })
+    );
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    try {
+      await fetch(`/api/security/ids-rules/${id}`, { method: 'DELETE' });
+    } catch {
+      // ignore
+    }
+    const target = customRules.find((r) => r.id === id);
+    setCustomRules((prev) => prev.filter((r) => r.id !== id));
+    setToast(`Règle « ${target?.name || id} » supprimée`);
+    addLog('Règle IDS supprimée du jeu de règles', 'warning');
+  };
+
+  const handleTestRule = async (rule: IdsFilterRule) => {
+    setToast(`Simulation d’un paquet test sur la règle « ${rule.name} »...`);
+    try {
+      const res = await fetch(`/api/security/ids-rules/${rule.id}/test`, {
+        method: 'POST',
+      });
+      let testEvent: IntrusionAttempt;
+      if (res.ok) {
+        const data = await res.json();
+        testEvent = data.event;
+        if (data.rule) {
+          setCustomRules((prev) =>
+            prev.map((r) => (r.id === rule.id ? data.rule : r))
+          );
+        }
+      } else {
+        const randPort = rule.ports
+          ? parseInt(rule.ports.split(/[,-\s]/)[0], 10) || 443
+          : 8080;
+        testEvent = {
+          id: `ids-test-${Date.now().toString(36)}`,
+          timestamp: new Date().toISOString(),
+          severity: rule.severity,
+          vector: 'port_scan',
+          title: `Règle déclenchée : ${rule.name}`,
+          description: `Test d'évaluation : le paquet a activé la règle personnalisée « ${rule.name} ». Action : ${rule.action.toUpperCase()}.`,
+          sourceIp: rule.ipRange
+            ? rule.ipRange.replace(/\/\d+$/, '')
+            : '198.51.100.88',
+          sourceCountry: 'Simulation Règle Utilisateur',
+          targetPort: randPort,
+          targetInterface: rule.direction === 'outbound' ? 'wg0' : 'eth0',
+          protocol: (rule.protocol === 'ALL' ? 'TCP' : rule.protocol) as any,
+          signatureRule: `CUSTOM-RULE-${rule.id.toUpperCase()}`,
+          actionTaken:
+            rule.action === 'quarantine' ? 'nft_quarantine' : 'drop_xdp',
+          quarantined: rule.action === 'quarantine',
+          rawPayloadSnippet: `45 00 00 28 d4 11 00 00 40 06 ... Matching custom rule ${rule.name}`,
+          remediationAdvice:
+            'Règle personnalisée exécutée avec succès par le moteur de filtrage.',
+        };
+        setCustomRules((prev) =>
+          prev.map((r) =>
+            r.id === rule.id
+              ? { ...r, hitsCount: r.hitsCount + 1, lastHitAt: 'À l’instant' }
+              : r
+          )
+        );
+      }
+
+      setAttempts((prev) => [testEvent, ...prev]);
+
+      if (testEvent.quarantined) {
+        setQuarantinedHosts((prev) => [
+          {
+            ip: testEvent.sourceIp,
+            bannedAt: testEvent.timestamp,
+            reason: `Mise en quarantaine par la règle « ${rule.name} »`,
+            attemptsCount: 1,
+            vector: testEvent.vector,
+            expiresInMinutes: 1440,
+          },
+          ...prev,
+        ]);
+      }
+
+      triggerAudioAlert();
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent('renumerate_intrusion_blocked', {
+            detail: testEvent,
+          })
+        );
+      } catch {
+        // ignore
+      }
+
+      setToast(`Test réussi : Règle « ${rule.name} » a intercepté le paquet`);
+      addLog(
+        `Règle personnalisée IDS « ${rule.name} » testée et validée`,
+        'success',
+        testEvent.sourceIp
+      );
+    } catch {
+      setToast('Échec de la simulation de test');
+    }
+  };
+
+  const handleResetDefaultRules = () => {
+    setCustomRules(DEFAULT_IDS_CUSTOM_RULES);
+    setToast('Règles de filtrage réinitialisées aux valeurs par défaut');
+    addLog('Règles de filtrage IDS réinitialisées', 'info');
+  };
+
+  const handleExportRules = () => {
+    const data = {
+      exportTimestamp: new Date().toISOString(),
+      generator: 'Renumerate VPN Custom Filter Engine',
+      rulesCount: customRules.length,
+      rules: customRules,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `renumerate-ids-custom-rules-${Date.now().toString(36)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setToast('Jeu de règles de filtrage exporté (JSON)');
   };
 
   return (
@@ -669,6 +958,19 @@ export const IntrusionDetectionCenter: React.FC<
 
           <button
             type="button"
+            onClick={() => setActiveTab('rules')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'rules'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <SlidersVertical className="w-3.5 h-3.5 text-cyan-500" />
+            <span>Règles de Filtrage ({customRules.filter((r) => r.enabled).length}/{customRules.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('lab')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'lab'
@@ -901,7 +1203,21 @@ export const IntrusionDetectionCenter: React.FC<
         </div>
       )}
 
-      {/* 3. Interactive Intrusion Simulation Lab Tab */}
+      {/* 3. Custom Filtering Rules Tab */}
+      {activeTab === 'rules' && (
+        <IdsRulesPanel
+          rules={customRules}
+          onAddRule={handleAddRule}
+          onUpdateRule={handleUpdateRule}
+          onToggleRule={handleToggleRule}
+          onDeleteRule={handleDeleteRule}
+          onTestRule={handleTestRule}
+          onResetDefaults={handleResetDefaultRules}
+          onExportRules={handleExportRules}
+        />
+      )}
+
+      {/* 4. Interactive Intrusion Simulation Lab Tab */}
       {activeTab === 'lab' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-5">
           <div>

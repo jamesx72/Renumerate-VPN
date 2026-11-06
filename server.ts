@@ -2130,6 +2130,257 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
     }
   );
 
+  interface ServerIdsRule {
+    id: string;
+    name: string;
+    enabled: boolean;
+    protocol: string;
+    ports?: string;
+    ipRange?: string;
+    direction: string;
+    action: string;
+    severity: string;
+    description?: string;
+    hitsCount: number;
+    lastHitAt: string | null;
+    createdAt: string;
+    isSystemPreset?: boolean;
+  }
+
+  let serverIdsCustomRules: ServerIdsRule[] = [
+    {
+      id: 'rule-custom-001',
+      name: 'Blocage Telnet & RDP Inbound (TCP 23, 3389)',
+      enabled: true,
+      protocol: 'TCP',
+      ports: '23, 3389',
+      direction: 'inbound',
+      action: 'drop',
+      severity: 'high',
+      description:
+        'Rejet eBPF immédiat des sondes d’accès distant et tentatives d’exploitation BlueKeep / RDP / Telnet non chiffrées.',
+      hitsCount: 42,
+      lastHitAt: 'Il y a 6 min',
+      createdAt: '2026-05-12T08:30:00.000Z',
+      isSystemPreset: true,
+    },
+    {
+      id: 'rule-custom-002',
+      name: 'Fuite SMB & NetBIOS Egress Guard (UDP 137-139, TCP 445)',
+      enabled: true,
+      protocol: 'ALL',
+      ports: '137-139, 445',
+      direction: 'outbound',
+      action: 'reject',
+      severity: 'critical',
+      description:
+        'Empêche toute fuite de hash NTLM et requêtes de voisinage réseau SMB hors de l’interface de tunnel WireGuard.',
+      hitsCount: 19,
+      lastHitAt: 'Il y a 22 min',
+      createdAt: '2026-05-12T09:15:00.000Z',
+      isSystemPreset: true,
+    },
+    {
+      id: 'rule-custom-003',
+      name: 'Blocage Scanner Masscan & Shodan (198.51.100.0/24)',
+      enabled: true,
+      protocol: 'ALL',
+      ipRange: '198.51.100.0/24',
+      direction: 'inbound',
+      action: 'quarantine',
+      severity: 'high',
+      description:
+        'Isole et neutralise automatiquement toute sonde de reconnaissance active issue de cette plage d’observation réseau.',
+      hitsCount: 67,
+      lastHitAt: 'Il y a 3 min',
+      createdAt: '2026-05-12T10:00:00.000Z',
+      isSystemPreset: true,
+    },
+    {
+      id: 'rule-custom-004',
+      name: 'Filtrage Inbound ICMP Ping Flood & Tunneling',
+      enabled: true,
+      protocol: 'ICMP',
+      direction: 'inbound',
+      action: 'drop',
+      severity: 'medium',
+      description:
+        'Bloque les requêtes echo ICMP (Type 8) pour empêcher la détection de présence topologique et l’exfiltration cachée.',
+      hitsCount: 88,
+      lastHitAt: 'Il y a 41 min',
+      createdAt: '2026-05-12T11:20:00.000Z',
+      isSystemPreset: true,
+    },
+    {
+      id: 'rule-custom-005',
+      name: 'Isolement Relais Hostiles Connus (185.220.101.0/24)',
+      enabled: false,
+      protocol: 'ALL',
+      ipRange: '185.220.101.0/24',
+      direction: 'both',
+      action: 'drop',
+      severity: 'high',
+      description:
+        'Blocage bidirectionnel d’un sous-réseau listé dans le flux de réputation Renumerate AbuseIPDB pour cyberattaques.',
+      hitsCount: 31,
+      lastHitAt: 'Il y a 1 h',
+      createdAt: '2026-05-12T12:00:00.000Z',
+      isSystemPreset: true,
+    },
+  ];
+
+  app.get('/api/security/ids-rules', (_req: Request, res: Response) => {
+    res.json({
+      ok: true,
+      rules: serverIdsCustomRules,
+    });
+  });
+
+  app.post('/api/security/ids-rules', (req: Request, res: Response) => {
+    const body = (req.body || {}) as {
+      id?: string;
+      name?: string;
+      enabled?: boolean;
+      protocol?: string;
+      ports?: string;
+      ipRange?: string;
+      direction?: string;
+      action?: string;
+      severity?: string;
+      description?: string;
+    };
+
+    if (!body.name || !body.protocol) {
+      res.status(400).json({ ok: false, error: 'Nom et protocole obligatoires.' });
+      return;
+    }
+
+    if (body.id) {
+      const idx = serverIdsCustomRules.findIndex((r) => r.id === body.id);
+      if (idx !== -1) {
+        serverIdsCustomRules[idx] = {
+          ...serverIdsCustomRules[idx],
+          name: String(body.name).trim(),
+          enabled: body.enabled !== false,
+          protocol: (body.protocol as any) || 'ALL',
+          ports: body.ports ? String(body.ports).trim() : undefined,
+          ipRange: body.ipRange ? String(body.ipRange).trim() : undefined,
+          direction: (body.direction as any) || 'inbound',
+          action: (body.action as any) || 'drop',
+          severity: (body.severity as any) || 'high',
+          description: body.description ? String(body.description).trim() : undefined,
+        };
+        res.json({ ok: true, rule: serverIdsCustomRules[idx], rules: serverIdsCustomRules });
+        return;
+      }
+    }
+
+    const newRule = {
+      id: `rule-custom-${Date.now().toString(36)}-${Math.floor(Math.random() * 899 + 100)}`,
+      name: String(body.name).trim(),
+      enabled: body.enabled !== false,
+      protocol: (body.protocol as any) || 'ALL',
+      ports: body.ports ? String(body.ports).trim() : undefined,
+      ipRange: body.ipRange ? String(body.ipRange).trim() : undefined,
+      direction: (body.direction as any) || 'inbound',
+      action: (body.action as any) || 'drop',
+      severity: (body.severity as any) || 'high',
+      description: body.description ? String(body.description).trim() : undefined,
+      hitsCount: 0,
+      lastHitAt: null,
+      createdAt: new Date().toISOString(),
+      isSystemPreset: false,
+    };
+
+    serverIdsCustomRules.unshift(newRule);
+    res.json({ ok: true, rule: newRule, rules: serverIdsCustomRules });
+  });
+
+  app.post('/api/security/ids-rules/:id/toggle', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const rule = serverIdsCustomRules.find((r) => r.id === id);
+    if (!rule) {
+      res.status(404).json({ ok: false, error: 'Règle introuvable.' });
+      return;
+    }
+    rule.enabled = !rule.enabled;
+    res.json({ ok: true, rule, rules: serverIdsCustomRules });
+  });
+
+  app.delete('/api/security/ids-rules/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    serverIdsCustomRules = serverIdsCustomRules.filter((r) => r.id !== id);
+    res.json({ ok: true, rules: serverIdsCustomRules });
+  });
+
+  app.post('/api/security/ids-rules/:id/test', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const rule = serverIdsCustomRules.find((r) => r.id === id);
+    if (!rule) {
+      res.status(404).json({ ok: false, error: 'Règle introuvable.' });
+      return;
+    }
+
+    rule.hitsCount += 1;
+    rule.lastHitAt = 'À l’instant';
+
+    const randPort = rule.ports
+      ? parseInt(rule.ports.split(/[,-\s]/)[0], 10) || 443
+      : 8080;
+    const testIp = rule.ipRange
+      ? rule.ipRange.replace(/\/\d+$/, '')
+      : `198.51.100.${Math.floor(Math.random() * 200 + 10)}`;
+
+    const defenseAction =
+      rule.action === 'quarantine'
+        ? 'nft_quarantine'
+        : rule.action === 'reject'
+        ? 'sinkhole'
+        : 'drop_xdp';
+
+    const testEvent = {
+      id: `ids-test-${Date.now().toString(36)}-${Math.floor(Math.random() * 899 + 100)}`,
+      timestamp: new Date().toISOString(),
+      severity: rule.severity,
+      vector: 'port_scan' as const,
+      title: `Règle déclenchée : ${rule.name}`,
+      description: `Un paquet de test a déclenché la règle de filtrage personnalisée '${rule.name}'. Action exécutée : ${rule.action.toUpperCase()}.`,
+      sourceIp: testIp,
+      sourceCountry: 'Simulation Règle Utilisateur',
+      targetPort: randPort,
+      targetInterface: rule.direction === 'outbound' ? 'wg0' : 'eth0',
+      protocol: (rule.protocol === 'ALL' ? 'TCP' : rule.protocol) as any,
+      signatureRule: `CUSTOM-RULE-${rule.id.toUpperCase()}`,
+      actionTaken: defenseAction,
+      quarantined: rule.action === 'quarantine',
+      rawPayloadSnippet: `45 00 00 3c 1a 2b 40 00 40 06 ... Matching custom filter criteria (proto=${rule.protocol}, port=${rule.ports || '*'}, range=${rule.ipRange || '*'})`,
+      remediationAdvice: `Règle de filtrage utilisateur appliquée par le moteur de sécurité. Statut : ${rule.action.toUpperCase()}.`,
+    };
+
+    serverIntrusionJournal.unshift(testEvent);
+    if (serverIntrusionJournal.length > 50) {
+      serverIntrusionJournal = serverIntrusionJournal.slice(0, 50);
+    }
+
+    if (rule.action === 'quarantine') {
+      serverQuarantineList.unshift({
+        ip: testIp,
+        bannedAt: new Date().toISOString(),
+        reason: `Mise en quarantaine par la règle personnalisée '${rule.name}'`,
+        attemptsCount: 1,
+        vector: 'port_scan',
+        expiresInMinutes: 1440,
+      });
+    }
+
+    res.json({
+      ok: true,
+      event: testEvent,
+      rule,
+      activeQuarantinesCount: serverQuarantineList.length,
+    });
+  });
+
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });
 

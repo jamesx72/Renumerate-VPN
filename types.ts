@@ -393,5 +393,28 @@ export interface IdsTelemetryStats {
   lastIntrusionTime: string | null;
   shannonEntropyRate: number;
   activeRulesCount: number;
+  customRulesCount?: number;
 }
+
+export type IdsRuleProtocol = 'ALL' | 'TCP' | 'UDP' | 'ICMP';
+export type IdsRuleDirection = 'inbound' | 'outbound' | 'both';
+export type IdsRuleAction = 'drop' | 'reject' | 'quarantine' | 'alert_only';
+
+export interface IdsFilterRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  protocol: IdsRuleProtocol;
+  ports?: string; // e.g. "23", "22, 3389", "8000-8080"
+  ipRange?: string; // e.g. "198.51.100.0/24" or "45.142.214.12"
+  direction: IdsRuleDirection;
+  action: IdsRuleAction;
+  severity: IntrusionSeverity;
+  description?: string;
+  hitsCount: number;
+  lastHitAt?: string | null;
+  createdAt: string;
+  isSystemPreset?: boolean;
+}
+
 
