@@ -25,6 +25,7 @@ interface Props {
   settings?: AppSettings;
   onOpenSystemCenter?: () => void;
   onAutoRemediate?: () => void;
+  onOpenIds?: () => void;
 }
 
 interface ComplianceVector {
@@ -40,6 +41,7 @@ export const SecurityAudit: React.FC<Props> = ({
   settings,
   onOpenSystemCenter,
   onAutoRemediate,
+  onOpenIds,
 }) => {
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState<DeepAuditResult | null>(null);
@@ -120,6 +122,14 @@ export const SecurityAudit: React.FC<Props> = ({
         label: 'Anti-pistage navigateur',
         detail: `${fpCount}/4 actifs`,
         passed: fpCount === 4,
+      },
+      {
+        id: 'ids_sentinel',
+        label: 'Sentinelle IDS (eBPF/XDP)',
+        detail: settings.idsEnabled
+          ? `${settings.idsSensitivity === 'paranoid' ? 'Paranoïaque' : settings.idsSensitivity === 'high' ? 'Élevée' : 'Standard'} (${settings.idsAutoQuarantine ? 'Auto-Drop' : 'Alerte'})`
+          : 'Désactivé',
+        passed: settings.idsEnabled && settings.idsAutoQuarantine,
       },
     ];
   }, [settings]);

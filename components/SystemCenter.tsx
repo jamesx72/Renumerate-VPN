@@ -59,6 +59,7 @@ import {
   computeModifiedSettingsDiff,
   EphemeralKeyMetadata,
 } from '../constants';
+import { IntrusionDetectionCenter } from './IntrusionDetectionCenter';
 
 interface SystemCenterProps {
   settings: AppSettings;
@@ -79,6 +80,8 @@ interface SystemCenterProps {
   onOpenSettingsModal: () => void;
   onExecutePanic: () => void;
   initialTab?: SystemWorkspaceTab;
+  onTriggerRenumberHop?: () => void;
+  onGlobalScramble?: () => void;
   addLog: (
     event: string,
     type?: 'info' | 'warning' | 'success' | 'error',
@@ -91,7 +94,8 @@ type SystemWorkspaceTab =
   | 'lab'
   | 'compiler'
   | 'snapshots'
-  | 'inspector';
+  | 'inspector'
+  | 'ids';
 
 type CompilerTab =
   | 'tunnel'
@@ -463,6 +467,8 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
   onOpenSettingsModal,
   onExecutePanic,
   initialTab,
+  onTriggerRenumberHop,
+  onGlobalScramble,
   addLog,
 }) => {
   const [workspaceTab, setWorkspaceTab] = useState<SystemWorkspaceTab>(() => {
@@ -474,7 +480,8 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
         saved === 'lab' ||
         saved === 'compiler' ||
         saved === 'snapshots' ||
-        saved === 'inspector'
+        saved === 'inspector' ||
+        saved === 'ids'
       ) {
         return saved;
       }
@@ -503,7 +510,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       const custom = e as CustomEvent<SystemWorkspaceTab>;
       if (
         custom.detail &&
-        ['audit', 'lab', 'compiler', 'snapshots', 'inspector'].includes(
+        ['audit', 'lab', 'compiler', 'snapshots', 'inspector', 'ids'].includes(
           custom.detail
         )
       ) {
@@ -2428,6 +2435,12 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 icon: Network,
                 badge: `${packets.length}`,
               },
+              {
+                id: 'ids',
+                label: 'Sentinelle IDS',
+                icon: ShieldAlert,
+                badge: settings.idsEnabled ? 'Actif' : 'Veille',
+              },
             ] as Array<{
               id: SystemWorkspaceTab;
               label: string;
@@ -3964,6 +3977,17 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {workspaceTab === 'ids' && (
+        <IntrusionDetectionCenter
+          settings={settings}
+          updateSettings={updateSettings}
+          patchSettings={patchSettings}
+          onTriggerRenumberHop={onTriggerRenumberHop}
+          onGlobalScramble={onGlobalScramble}
+          addLog={addLog}
+        />
       )}
     </div>
   );

@@ -3290,6 +3290,125 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                       )}
                     </section>
+
+                    {/* Sentinelle IDS & Détection d'Intrusions */}
+                    <section className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                            <ShieldAlert className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                              Sentinelle IDS · Détection &amp; Neutralisation des Intrusions
+                            </h4>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              Analyse eBPF/XDP en continu contre les scans de ports (SYN/Xmas), usurpations ARP et attaques par rejeu.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => updateSettings('idsEnabled', !settings.idsEnabled)}
+                          className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                            settings.idsEnabled
+                              ? 'bg-rose-600'
+                              : 'bg-slate-300 dark:bg-slate-700'
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                              settings.idsEnabled ? 'translate-x-6' : ''
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {settings.idsEnabled && (
+                        <div className="pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                          {/* Sensitivity */}
+                          <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700/70 space-y-1.5">
+                            <div className="font-semibold text-slate-900 dark:text-white">
+                              Sensibilité heuristique
+                            </div>
+                            <select
+                              value={settings.idsSensitivity}
+                              onChange={(e) =>
+                                updateSettings(
+                                  'idsSensitivity',
+                                  e.target.value as AppSettings['idsSensitivity']
+                                )
+                              }
+                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white outline-none cursor-pointer"
+                            >
+                              <option value="standard">Standard (850 règles)</option>
+                              <option value="high">Élevée (1 420 règles)</option>
+                              <option value="paranoid">Paranoïaque (2 180 règles)</option>
+                            </select>
+                            <p className="text-[10px] text-slate-400">
+                              Ajuste le seuil de déclenchement des sondes eBPF.
+                            </p>
+                          </div>
+
+                          {/* Auto Quarantine */}
+                          <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700/70 flex flex-col justify-between gap-2">
+                            <div>
+                              <div className="font-semibold text-slate-900 dark:text-white">
+                                Quarantaine nftables auto
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                Rejette immédiatement les paquets des attaquants détectés.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSettings(
+                                  'idsAutoQuarantine',
+                                  !settings.idsAutoQuarantine
+                                )
+                              }
+                              className={`self-start px-2.5 py-1 rounded-lg text-[11px] font-semibold border cursor-pointer ${
+                                settings.idsAutoQuarantine
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              {settings.idsAutoQuarantine ? 'Actif (Drop immédiat)' : 'Désactivé (Alerte seule)'}
+                            </button>
+                          </div>
+
+                          {/* Auto Renumber on Critical */}
+                          <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700/70 flex flex-col justify-between gap-2">
+                            <div>
+                              <div className="font-semibold text-slate-900 dark:text-white">
+                                Scramble sur alerte critique
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                Déclenche une rotation immédiate d'identité et de relais.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSettings(
+                                  'idsAutoRenumberOnCritical',
+                                  !settings.idsAutoRenumberOnCritical
+                                )
+                              }
+                              className={`self-start px-2.5 py-1 rounded-lg text-[11px] font-semibold border cursor-pointer ${
+                                settings.idsAutoRenumberOnCritical
+                                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              {settings.idsAutoRenumberOnCritical ? 'Scramble actif' : 'Ignorer rotation'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </section>
                   </div>
                 )}
 

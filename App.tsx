@@ -88,6 +88,14 @@ function App() {
   const [isDark, setIsDark] = useState(true);
   const [activeSection, setActiveSection] =
     useState<WorkspaceSection>('cockpit');
+  const [systemInitialTab, setSystemInitialTab] = useState<
+    'audit' | 'lab' | 'compiler' | 'snapshots' | 'inspector' | 'ids'
+  >('audit');
+
+  const handleOpenIdsCenter = useCallback(() => {
+    setSystemInitialTab('ids');
+    setActiveSection('system');
+  }, []);
   const [isWindowBlurred, setIsWindowBlurred] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -1966,6 +1974,7 @@ function App() {
                 location={currentIdentity.country}
                 settings={appSettings}
                 onOpenSystemCenter={() => setActiveSection('system')}
+                onOpenIds={handleOpenIdsCenter}
                 onAutoRemediate={() =>
                   patchAppSettings(
                     {
@@ -1982,6 +1991,9 @@ function App() {
                       arpSpoofGuard: true,
                       strictReversePathFilter: true,
                       strictMemoryLock: true,
+                      idsEnabled: true,
+                      idsSensitivity: 'high',
+                      idsAutoQuarantine: true,
                       fingerprintProtection: {
                         canvasNoise: true,
                         webglMask: true,
@@ -1989,7 +2001,7 @@ function App() {
                         timezoneSync: true,
                       },
                     },
-                    'Remédiation automatique de la matrice sortie & noyau (8/8 conformes)'
+                    'Remédiation automatique de la matrice sortie, IDS & noyau (9/9 conformes)'
                   )
                 }
               />
@@ -2091,6 +2103,9 @@ function App() {
             sessionsCount={connectionHistory.length}
             onOpenSettingsModal={() => setShowSettings(true)}
             onExecutePanic={handleExecutePanic}
+            initialTab={systemInitialTab}
+            onTriggerRenumberHop={handleForceRotateIdentity}
+            onGlobalScramble={handleGlobalScramble}
             addLog={addLog}
           />
         )}
@@ -2325,6 +2340,7 @@ function App() {
         onOpenLogs={() => setShowLogs(true)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenHistory={() => setShowConnectionHistory(true)}
+        onOpenIds={handleOpenIdsCenter}
       />
     </div>
   );

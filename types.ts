@@ -238,6 +238,12 @@ export interface AppSettings {
   ephemeralRekeyMinutes: number;
   strictMemoryLock: boolean;
   ntpDriftProtection: boolean;
+  // Intrusion Attempt Detection System (IDS / Sentinelle HIDS/NIDS)
+  idsEnabled: boolean;
+  idsSensitivity: 'standard' | 'high' | 'paranoid';
+  idsAutoQuarantine: boolean;
+  idsAutoRenumberOnCritical: boolean;
+  idsSoundAlert: boolean;
 }
 
 export interface DeviceNode {
@@ -332,3 +338,60 @@ export interface ConnectionSession {
   mode: string;
   durationString: string;
 }
+
+export type IntrusionSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export type IntrusionVector =
+  | 'port_scan'
+  | 'arp_poisoning'
+  | 'dns_hijack'
+  | 'webrtc_leak'
+  | 'replay_attack'
+  | 'brute_force'
+  | 'c2_beacon';
+
+export type IntrusionDefenseAction =
+  | 'drop_xdp'
+  | 'nft_quarantine'
+  | 'identity_scramble'
+  | 'tunnel_rekey'
+  | 'sinkhole';
+
+export interface IntrusionAttempt {
+  id: string;
+  timestamp: string;
+  severity: IntrusionSeverity;
+  vector: IntrusionVector;
+  title: string;
+  description: string;
+  sourceIp: string;
+  sourceCountry?: string;
+  targetPort: number;
+  targetInterface: string;
+  protocol: 'TCP' | 'UDP' | 'ICMP' | 'ARP' | 'DNS';
+  signatureRule: string;
+  actionTaken: IntrusionDefenseAction;
+  quarantined: boolean;
+  rawPayloadSnippet?: string;
+  remediationAdvice: string;
+}
+
+export interface QuarantinedHost {
+  ip: string;
+  bannedAt: string;
+  reason: string;
+  attemptsCount: number;
+  vector: IntrusionVector;
+  expiresInMinutes?: number | 'permanent';
+}
+
+export interface IdsTelemetryStats {
+  engineStatus: 'active_xdp' | 'degraded_nft' | 'standby';
+  sensitivity: 'standard' | 'high' | 'paranoid';
+  totalBlockedAttempts: number;
+  activeQuarantinesCount: number;
+  lastIntrusionTime: string | null;
+  shannonEntropyRate: number;
+  activeRulesCount: number;
+}
+

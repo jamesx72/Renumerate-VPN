@@ -14,6 +14,10 @@ import {
   PanicActionMode,
   TrafficPaddingJitterMs,
   ConfigurationAuditIssue,
+  IntrusionAttempt,
+  QuarantinedHost,
+  IntrusionVector,
+  IntrusionSeverity,
 } from './types';
 
 export const REALISTIC_USER_AGENTS = [
@@ -261,6 +265,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   ephemeralRekeyMinutes: 10,
   strictMemoryLock: true,
   ntpDriftProtection: true,
+  idsEnabled: true,
+  idsSensitivity: 'high',
+  idsAutoQuarantine: true,
+  idsAutoRenumberOnCritical: true,
+  idsSoundAlert: false,
 };
 
 function clampInt(val: unknown, min: number, max: number, fallback: number): number {
@@ -341,6 +350,11 @@ export function sanitizeAppSettings(
     'lock_vault_and_scramble',
   ];
   const validPaddingJitter: TrafficPaddingJitterMs[] = [0, 15, 40, 85];
+  const validIdsSensitivity: AppSettings['idsSensitivity'][] = [
+    'standard',
+    'high',
+    'paranoid',
+  ];
 
   const rules = Array.isArray(src.splitTunnelRules)
     ? src.splitTunnelRules
@@ -708,6 +722,27 @@ export function sanitizeAppSettings(
       typeof src.ntpDriftProtection === 'boolean'
         ? src.ntpDriftProtection
         : DEFAULT_APP_SETTINGS.ntpDriftProtection,
+    idsEnabled:
+      typeof src.idsEnabled === 'boolean'
+        ? src.idsEnabled
+        : DEFAULT_APP_SETTINGS.idsEnabled,
+    idsSensitivity: validIdsSensitivity.includes(
+      src.idsSensitivity as AppSettings['idsSensitivity']
+    )
+      ? (src.idsSensitivity as AppSettings['idsSensitivity'])
+      : DEFAULT_APP_SETTINGS.idsSensitivity,
+    idsAutoQuarantine:
+      typeof src.idsAutoQuarantine === 'boolean'
+        ? src.idsAutoQuarantine
+        : DEFAULT_APP_SETTINGS.idsAutoQuarantine,
+    idsAutoRenumberOnCritical:
+      typeof src.idsAutoRenumberOnCritical === 'boolean'
+        ? src.idsAutoRenumberOnCritical
+        : DEFAULT_APP_SETTINGS.idsAutoRenumberOnCritical,
+    idsSoundAlert:
+      typeof src.idsSoundAlert === 'boolean'
+        ? src.idsSoundAlert
+        : DEFAULT_APP_SETTINGS.idsSoundAlert,
   };
 }
 
@@ -720,6 +755,11 @@ export function computeSettingsHardeningScore(settings: AppSettings): number {
   if (settings.postQuantumKex === 'ml-kem-1024') score += 8;
   else if (settings.postQuantumKex === 'sntrup761') score += 6;
   else score += 2;
+  if (settings.idsEnabled) {
+    score += settings.idsSensitivity === 'paranoid' ? 5 : 4;
+    if (settings.idsAutoQuarantine) score += 2;
+    if (settings.idsAutoRenumberOnCritical) score += 2;
+  }
   if (settings.blockQuicUdp443) score += 4;
   if (settings.arpSpoofGuard) score += 4;
   if (settings.strictReversePathFilter) score += 3;
@@ -2780,4 +2820,291 @@ export function auditConfigurationIntegrity(
 
   return issues;
 }
+
+export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
+  {
+    id: 'ids-att-001',
+    timestamp: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    severity: 'high',
+    vector: 'port_scan',
+    title: 'Balayage furtif de ports TCP SYN (Nmap Sweep)',
+    description:
+      'Séquence rapide de paquets TCP SYN ciblant les ports 22, 80, 443, 51820 et 8080 depuis un nœud de sortie Tor non authentifié.',
+    sourceIp: '185.220.101.45',
+    sourceCountry: 'Allemagne',
+    targetPort: 51820,
+    targetInterface: 'eth0',
+    protocol: 'TCP',
+    signatureRule: 'SURICATA-ET-SCAN-SYN-SWEEP-v2',
+    actionTaken: 'drop_xdp',
+    quarantined: true,
+    rawPayloadSnippet:
+      '45 00 00 2c 91 32 00 00 34 06 a1 d9 b9 dc 65 2d ... SYN seq=0x3f910a2b win=1024',
+    remediationAdvice:
+      'Rejet au niveau eBPF/XDP immédiat sans allocation sk_buff. IP placée sur liste de quarantaine nftables.',
+  },
+  {
+    id: 'ids-att-002',
+    timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
+    severity: 'critical',
+    vector: 'arp_poisoning',
+    title: 'Attaque MITM par empoisonnement de cache ARP',
+    description:
+      'Trame Gratuitous ARP annonçant l’adresse MAC 52:54:00:fa:8c:12 pour l’adresse IP de passerelle 192.168.1.1 en divergence avec la table statique locale.',
+    sourceIp: '192.168.1.134',
+    sourceCountry: 'LAN Local',
+    targetPort: 0,
+    targetInterface: 'eth0',
+    protocol: 'ARP',
+    signatureRule: 'EBPF-ARP-INCONSISTENCY-GATEWAY-POISON',
+    actionTaken: 'nft_quarantine',
+    quarantined: true,
+    rawPayloadSnippet:
+      'ff ff ff ff ff ff 52 54 00 fa 8c 12 08 06 00 01 ... ARP reply 192.168.1.1 is-at 52:54:00:fa:8c:12',
+    remediationAdvice:
+      'ARP Spoof Guard a ignoré l’annonce empoisonnée et scellé la table ARP statique.',
+  },
+  {
+    id: 'ids-att-003',
+    timestamp: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+    severity: 'medium',
+    vector: 'webrtc_leak',
+    title: 'Sonde de fuite STUN / WebRTC non sollicitée',
+    description:
+      'Requête STUN Binding Request non encapsulée ciblant UDP/3478 tentant de forcer la résolution de l’adresse IP publique réelle hors du tunnel.',
+    sourceIp: '45.33.32.156',
+    sourceCountry: 'États-Unis',
+    targetPort: 3478,
+    targetInterface: 'eth0',
+    protocol: 'UDP',
+    signatureRule: 'NETFILTER-WEBRTC-UNSOLICITED-STUN-LEAK',
+    actionTaken: 'sinkhole',
+    quarantined: false,
+    rawPayloadSnippet:
+      '00 01 00 00 21 12 a4 42 7a 88 12 49 53 10 cc 99 ... STUN binding-request probe',
+    remediationAdvice:
+      'WebRTC Leak Shield a dérouté le paquet vers l’interface sinkhole0.',
+  },
+  {
+    id: 'ids-att-004',
+    timestamp: new Date(Date.now() - 75 * 60 * 1000).toISOString(),
+    severity: 'critical',
+    vector: 'replay_attack',
+    title: 'Violation de fenêtre anti-rejeu WireGuard / PQC',
+    description:
+      'Paquet de données chiffré injecté présentant un compteur de séquence déjà acquitté (différence -487), caractéristique d’une attaque par rejeu passif.',
+    sourceIp: '91.240.118.82',
+    sourceCountry: 'Russie',
+    targetPort: 51820,
+    targetInterface: 'wg0',
+    protocol: 'UDP',
+    signatureRule: 'WG-REPLAY-SLIDING-WINDOW-VIOLATION',
+    actionTaken: 'tunnel_rekey',
+    quarantined: true,
+    rawPayloadSnippet:
+      '04 00 00 00 81 22 90 a1 00 00 01 eb 44 a8 7c 99 ... WG data pkt replay counter mismatch',
+    remediationAdvice:
+      'Rejet immédiat par la fenêtre glissante de WireGuard et renouvellement éphémère de session initié.',
+  },
+  {
+    id: 'ids-att-005',
+    timestamp: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
+    severity: 'high',
+    vector: 'brute_force',
+    title: 'Attaque par force brute sur mandataire SOCKS5 & Auth',
+    description:
+      'Rafale d’échecs d’authentification consécutifs (18 tentatives en 3 secondes) sur l’interface mandataire locale.',
+    sourceIp: '194.26.29.112',
+    sourceCountry: 'Pays-Bas',
+    targetPort: 1080,
+    targetInterface: 'eth0',
+    protocol: 'TCP',
+    signatureRule: 'HIDS-BRUTEFORCE-RATE-LIMIT-EXCEEDED',
+    actionTaken: 'nft_quarantine',
+    quarantined: true,
+    rawPayloadSnippet:
+      '05 02 00 02 01 05 61 64 6d 69 6e ... SOCKS5 auth-req fail count=18',
+    remediationAdvice:
+      'Hôte placé en liste noire nftables (drop direct pendant 24 heures).',
+  },
+];
+
+export const INITIAL_QUARANTINE_LIST: QuarantinedHost[] = [
+  {
+    ip: '185.220.101.45',
+    bannedAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    reason: 'Scan furtif SYN multi-ports détecté par filtre eBPF/XDP',
+    attemptsCount: 24,
+    vector: 'port_scan',
+    expiresInMinutes: 1440,
+  },
+  {
+    ip: '192.168.1.134',
+    bannedAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
+    reason: 'Usurpation ARP de la passerelle LAN (MITM local intercepté)',
+    attemptsCount: 3,
+    vector: 'arp_poisoning',
+    expiresInMinutes: 'permanent',
+  },
+  {
+    ip: '91.240.118.82',
+    bannedAt: new Date(Date.now() - 75 * 60 * 1000).toISOString(),
+    reason: 'Tentative d’injection par rejeu de paquets WireGuard/PQC',
+    attemptsCount: 7,
+    vector: 'replay_attack',
+    expiresInMinutes: 720,
+  },
+  {
+    ip: '194.26.29.112',
+    bannedAt: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
+    reason: 'Saturation de requêtes d’authentification SOCKS5 (>15 req/sec)',
+    attemptsCount: 42,
+    vector: 'brute_force',
+    expiresInMinutes: 1440,
+  },
+];
+
+export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAttempt {
+  const now = new Date().toISOString();
+  const randId = `ids-sim-${Date.now().toString(36)}-${Math.floor(
+    Math.random() * 899 + 100
+  )}`;
+
+  switch (vector) {
+    case 'port_scan':
+      return {
+        id: randId,
+        timestamp: now,
+        severity: 'high',
+        vector: 'port_scan',
+        title: 'Simulation : Balayage agressif SYN/Xmas (Nmap)',
+        description:
+          'Séquence simulée de paquets avec drapeaux FIN, PSH, URG anormaux (Xmas scan) détectée par eBPF/XDP sur l’interface externe.',
+        sourceIp: `198.51.100.${Math.floor(Math.random() * 200 + 10)}`,
+        sourceCountry: 'Sonde de test (Sandbox)',
+        targetPort: 443,
+        targetInterface: 'eth0',
+        protocol: 'TCP',
+        signatureRule: 'SURICATA-ET-SCAN-XMAS-FLAGS-ANOMALY',
+        actionTaken: 'drop_xdp',
+        quarantined: true,
+        rawPayloadSnippet:
+          '45 00 00 28 d4 11 00 00 40 06 ... TCP flags=FIN|PSH|URG seq=0x01 win=0',
+        remediationAdvice:
+          'Règle eBPF drop_xdp exécutée. L’attaquant ne reçoit aucune réponse RST.',
+      };
+    case 'arp_poisoning':
+      return {
+        id: randId,
+        timestamp: now,
+        severity: 'critical',
+        vector: 'arp_poisoning',
+        title: 'Simulation : Usurpation d’identité ARP de passerelle',
+        description:
+          'Simulation d’annonce ARP parasite prétendant associer l’adresse IP de passerelle à une fausse adresse MAC physique.',
+        sourceIp: `192.168.1.${Math.floor(Math.random() * 100 + 150)}`,
+        sourceCountry: 'Réseau local (Simulé)',
+        targetPort: 0,
+        targetInterface: 'eth0',
+        protocol: 'ARP',
+        signatureRule: 'EBPF-ARP-SPOOF-GUARD-ACTIVE-DEFENSE',
+        actionTaken: 'nft_quarantine',
+        quarantined: true,
+        rawPayloadSnippet:
+          'ff ff ff ff ff ff 02 42 ac 11 00 02 08 06 ... ARP reply mismatch on local gateway',
+        remediationAdvice:
+          'La table ARP locale a été verrouillée en mode immuable et la MAC parasite est mise en quarantaine.',
+      };
+    case 'webrtc_leak':
+      return {
+        id: randId,
+        timestamp: now,
+        severity: 'medium',
+        vector: 'webrtc_leak',
+        title: 'Simulation : Tentative d’exfiltration STUN / WebRTC',
+        description:
+          'Simulation d’un script tiers injecté tentant de générer une requête ICE/STUN hors de la table de routage du VPN.',
+        sourceIp: '203.0.113.88',
+        sourceCountry: 'Sonde WebRTC simulée',
+        targetPort: 3478,
+        targetInterface: 'eth0',
+        protocol: 'UDP',
+        signatureRule: 'NETFILTER-WEBRTC-LEAK-DEFENSE-SINKHOLE',
+        actionTaken: 'sinkhole',
+        quarantined: false,
+        rawPayloadSnippet:
+          '00 01 00 08 21 12 a4 42 1f c4 55 90 ... STUN binding candidate leak attempt',
+        remediationAdvice:
+          'Le pare-feu a immédiatement redirigé la tentative vers le sinkhole local.',
+      };
+    case 'replay_attack':
+      return {
+        id: randId,
+        timestamp: now,
+        severity: 'critical',
+        vector: 'replay_attack',
+        title: 'Simulation : Attaque par rejeu cryptographique WireGuard/PQC',
+        description:
+          'Simulation de capture et réinjection d’un bloc de données chiffrées avec compteur dépassé.',
+        sourceIp: `185.196.220.${Math.floor(Math.random() * 200 + 10)}`,
+        sourceCountry: 'Relais hostile simulé',
+        targetPort: 51820,
+        targetInterface: 'wg0',
+        protocol: 'UDP',
+        signatureRule: 'WG-REPLAY-ANTI-TAMPER-ASSERTION-FAILED',
+        actionTaken: 'tunnel_rekey',
+        quarantined: true,
+        rawPayloadSnippet:
+          '04 00 00 00 c8 14 00 a2 ... Replay counter 0x0000000a < window base 0x00000420',
+        remediationAdvice:
+          'Rejet automatique par la couche cryptographique et renouvellement de clé éphémère déclenché.',
+      };
+    case 'brute_force':
+      return {
+        id: randId,
+        timestamp: now,
+        severity: 'high',
+        vector: 'brute_force',
+        title: 'Simulation : Bourrage d’identifiants Vault & SOCKS5',
+        description:
+          'Simulation d’une attaque automatisée par dictionnaire sur l’interface d’authentification locale.',
+        sourceIp: `198.18.0.${Math.floor(Math.random() * 200 + 10)}`,
+        sourceCountry: 'Botnet simulé',
+        targetPort: 1080,
+        targetInterface: 'eth0',
+        protocol: 'TCP',
+        signatureRule: 'HIDS-BRUTEFORCE-RATE-LIMIT-TRIGGERED',
+        actionTaken: 'nft_quarantine',
+        quarantined: true,
+        rawPayloadSnippet:
+          'POST /api/vault/unlock HTTP/1.1 ... 12 attempts in 400ms',
+        remediationAdvice:
+          'Verrouillage automatique avec délai exponentiel et IP source mise en quarantaine nftables.',
+      };
+    case 'dns_hijack':
+    default:
+      return {
+        id: randId,
+        timestamp: now,
+        severity: 'high',
+        vector: 'dns_hijack',
+        title: 'Simulation : Tentative d’empoisonnement de cache DNS (Kaminsky)',
+        description:
+          'Simulation d’injection massive de réponses DNS avec ID de transaction aléatoires ciblant le résolveur local.',
+        sourceIp: `198.51.100.${Math.floor(Math.random() * 200 + 50)}`,
+        sourceCountry: 'Faux résolveur FAI',
+        targetPort: 53,
+        targetInterface: 'eth0',
+        protocol: 'DNS',
+        signatureRule: 'DNS-POISONING-TRANSACTION-ID-MISMATCH',
+        actionTaken: 'sinkhole',
+        quarantined: true,
+        rawPayloadSnippet:
+          '1a 2b 81 80 00 01 00 01 ... DNS reply rogue authority NS injection',
+        remediationAdvice:
+          'Le résolveur local applique la validation stricte DoH/DNSSEC et a rejeté la réponse malveillante.',
+      };
+  }
+}
+
 

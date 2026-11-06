@@ -20,6 +20,7 @@ import {
   X,
   Fingerprint,
   Network,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -83,6 +84,7 @@ export interface CommandPaletteModalProps {
   onOpenLogs: () => void;
   onOpenSettings: () => void;
   onOpenHistory: () => void;
+  onOpenIds?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -114,6 +116,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenLogs,
   onOpenSettings,
   onOpenHistory,
+  onOpenIds,
 }) => {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CommandCategory>('all');
@@ -317,6 +320,57 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             })
           );
           onNavigateSection('system');
+        },
+      },
+      {
+        id: 'nav-ids',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir la Sentinelle IDS · Détection d’intrusions',
+        subtitle:
+          'Surveillance NIDS/HIDS temps réel, quarantaine nftables et laboratoire de simulation d’attaques',
+        keywords:
+          'ids intrusion detection alerte attaque scan nmap hacker quarantaine sentinelle ebpf xdp ban',
+        icon: ShieldAlert,
+        tone: 'danger',
+        onExecute: () => {
+          try {
+            localStorage.setItem('renumerate_system_workspace_tab', 'ids');
+          } catch {
+            // ignore
+          }
+          window.dispatchEvent(
+            new CustomEvent('renumerate_switch_system_tab', {
+              detail: 'ids',
+            })
+          );
+          if (onOpenIds) {
+            onOpenIds();
+          } else {
+            onNavigateSection('system');
+          }
+        },
+      },
+      {
+        id: 'ids-toggle-protection',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title: `${
+          settings.idsEnabled
+            ? 'Mettre en veille la Sentinelle IDS'
+            : 'Activer la Sentinelle IDS (eBPF/XDP)'
+        }`,
+        subtitle: settings.idsEnabled
+          ? 'Suspendre la détection des balayages et quarantaine automatique'
+          : 'Démarrer la capture et la détection d’intrusions multi-vecteurs',
+        keywords: 'ids sentinelle intrusion activer desactiver securite parefeu',
+        icon: ShieldCheck,
+        tone: 'cyan',
+        onExecute: () => {
+          onPatchSettings(
+            { idsEnabled: !settings.idsEnabled },
+            `Sentinelle IDS ${!settings.idsEnabled ? 'activée' : 'désactivée'}`
+          );
         },
       },
 
