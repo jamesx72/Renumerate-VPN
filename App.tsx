@@ -92,7 +92,7 @@ function App() {
   const [activeSection, setActiveSection] =
     useState<WorkspaceSection>('cockpit');
   const [systemInitialTab, setSystemInitialTab] = useState<
-    'audit' | 'lab' | 'compiler' | 'snapshots' | 'inspector' | 'ids'
+    'audit' | 'lab' | 'compiler' | 'snapshots' | 'inspector' | 'ids' | 'ecc'
   >('audit');
   const [activeIntrusionToast, setActiveIntrusionToast] =
     useState<IntrusionAttempt | null>(null);
@@ -101,6 +101,11 @@ function App() {
 
   const handleOpenIdsCenter = useCallback(() => {
     setSystemInitialTab('ids');
+    setActiveSection('system');
+  }, []);
+
+  const handleOpenEccCenter = useCallback(() => {
+    setSystemInitialTab('ecc');
     setActiveSection('system');
   }, []);
 
@@ -2058,6 +2063,7 @@ function App() {
                 settings={appSettings}
                 onOpenSystemCenter={() => setActiveSection('system')}
                 onOpenIds={handleOpenIdsCenter}
+                onOpenEcc={handleOpenEccCenter}
                 onAutoRemediate={() =>
                   patchAppSettings(
                     {
@@ -2426,6 +2432,7 @@ function App() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenHistory={() => setShowConnectionHistory(true)}
         onOpenIds={handleOpenIdsCenter}
+        onOpenEcc={handleOpenEccCenter}
       />
 
       {/* Alerte Toast d'intrusion bloquée avec inspection directe */}

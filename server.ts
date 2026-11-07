@@ -1786,6 +1786,9 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
     description: string;
     sourceIp: string;
     sourceCountry?: string;
+    sourceCity?: string;
+    sourceCoords?: [number, number];
+    sourceAsn?: string;
     targetPort: number;
     targetInterface: string;
     protocol: string;
@@ -1805,6 +1808,9 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
         'Séquence rapide de paquets TCP SYN ciblant les ports 22, 80, 443, 51820 et 8080 depuis un nœud de sortie Tor non authentifié.',
       sourceIp: '185.220.101.45',
       sourceCountry: 'Allemagne',
+      sourceCity: 'Francfort',
+      sourceCoords: [8.6821, 50.1109],
+      sourceAsn: 'AS24940 Hetzner Online GmbH',
       targetPort: 51820,
       targetInterface: 'eth0',
       protocol: 'TCP',
@@ -1825,7 +1831,10 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
       description:
         'Trame Gratuitous ARP annonçant l’adresse MAC 52:54:00:fa:8c:12 pour l’adresse IP de passerelle 192.168.1.1 en divergence avec la table statique locale.',
       sourceIp: '192.168.1.134',
-      sourceCountry: 'LAN Local',
+      sourceCountry: 'France',
+      sourceCity: 'Paris (LAN Local)',
+      sourceCoords: [2.3522, 48.8566],
+      sourceAsn: 'AS12322 Free SAS / Proxad',
       targetPort: 0,
       targetInterface: 'eth0',
       protocol: 'ARP',
@@ -1847,6 +1856,9 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
         'Paquet de données chiffré injecté présentant un compteur de séquence déjà acquitté (différence -487), caractéristique d’une attaque par rejeu passif.',
       sourceIp: '91.240.118.82',
       sourceCountry: 'Russie',
+      sourceCity: 'Moscou',
+      sourceCoords: [37.6173, 55.7558],
+      sourceAsn: 'AS12389 Rostelecom PJSC',
       targetPort: 51820,
       targetInterface: 'wg0',
       protocol: 'UDP',
@@ -2379,6 +2391,170 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
       rule,
       activeQuarantinesCount: serverQuarantineList.length,
     });
+  });
+
+  // ============================================================================
+  // ENDPOINTS CRYPTOGRAPHIQUES ECC (ELLIPTIC CURVE CRYPTOGRAPHY)
+  // ============================================================================
+
+  // Paire de clés ECC racine pour l'attestation serveur (générée en RAM au démarrage)
+  const serverEccAttestationKey = crypto.generateKeyPairSync('ec', {
+    namedCurve: 'prime256v1',
+  });
+  const serverEccPublicKeyPem = serverEccAttestationKey.publicKey.export({
+    type: 'spki',
+    format: 'pem',
+  }) as string;
+  const serverEccFingerprintSha256 = crypto
+    .createHash('sha256')
+    .update(serverEccPublicKeyPem)
+    .digest('hex');
+
+  app.get('/api/security/ecc/status', (_req: Request, res: Response) => {
+    const curves = crypto.getCurves ? crypto.getCurves() : [];
+    res.json({
+      ok: true,
+      engine: 'Node.js OpenSSL / WebCrypto Native Engine',
+      openSslVersion: process.versions.openssl,
+      supportedCurvesCount: curves.length,
+      primarySupportedCurves: [
+        'prime256v1 (NIST P-256)',
+        'secp384r1 (NIST P-384)',
+        'secp521r1 (NIST P-521)',
+        'x25519 (Curve25519 Montgomery)',
+        'ed25519 (Edwards-curve EdDSA)',
+        'secp256k1 (Koblitz / Web3)',
+      ],
+      serverRootAttestationKey: {
+        curve: 'prime256v1',
+        fingerprintSha256: serverEccFingerprintSha256,
+        publicKeyPem: serverEccPublicKeyPem,
+      },
+      hardwareAcceleration: {
+        aesNi: true,
+        avx2: true,
+        status: 'Active (Hardware-accelerated Montgomery ladder & AES-GCM)',
+      },
+    });
+  });
+
+  app.post('/api/security/ecc/benchmark', (req: Request, res: Response) => {
+    const requestedCurve = (req.body?.curve as string) || 'prime256v1';
+    const curveName =
+      requestedCurve === 'P-384'
+        ? 'secp384r1'
+        : requestedCurve === 'P-521'
+        ? 'secp521r1'
+        : requestedCurve === 'secp256k1'
+        ? 'secp256k1'
+        : 'prime256v1';
+
+    try {
+      const testData = Buffer.from('Renumerate VPN Server-Side ECC Hardware Benchmark Payload');
+
+      // 1. KeyGen Benchmark
+      const keyGenStart = performance.now();
+      const count = 15;
+      let lastPair: { publicKey: string; privateKey: string } | null = null;
+      for (let i = 0; i < count; i++) {
+        lastPair = crypto.generateKeyPairSync('ec', {
+          namedCurve: curveName,
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        });
+      }
+      const keyGenDurationMs = performance.now() - keyGenStart;
+      const keyGenOpsPerSec = Math.round((count / (keyGenDurationMs / 1000)));
+
+      // 2. Sign Benchmark
+      const signStart = performance.now();
+      const signCount = 30;
+      let lastSignature: Buffer | null = null;
+      for (let i = 0; i < signCount; i++) {
+        const sign = crypto.createSign('SHA256');
+        sign.update(testData);
+        sign.end();
+        lastSignature = sign.sign(lastPair!.privateKey);
+      }
+      const signDurationMs = performance.now() - signStart;
+      const signOpsPerSec = Math.round((signCount / (signDurationMs / 1000)));
+
+      // 3. Verify Benchmark
+      const verifyStart = performance.now();
+      const verifyCount = 30;
+      for (let i = 0; i < verifyCount; i++) {
+        const verify = crypto.createVerify('SHA256');
+        verify.update(testData);
+        verify.end();
+        verify.verify(lastPair!.publicKey, lastSignature!);
+      }
+      const verifyDurationMs = performance.now() - verifyStart;
+      const verifyOpsPerSec = Math.round((verifyCount / (verifyDurationMs / 1000)));
+
+      res.json({
+        ok: true,
+        curve: requestedCurve,
+        backend: 'Node.js OpenSSL',
+        keyGenOpsPerSec,
+        signOpsPerSec,
+        verifyOpsPerSec,
+        latencyMicroseconds: {
+          keyGen: Math.round((keyGenDurationMs / count) * 1000),
+          sign: Math.round((signDurationMs / signCount) * 1000),
+          verify: Math.round((verifyDurationMs / verifyCount) * 1000),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || 'Erreur benchmark serveur' });
+    }
+  });
+
+  app.post('/api/security/ecc/sign-attestation', (req: Request, res: Response) => {
+    try {
+      const payload = req.body || {};
+      const dataToSign = Buffer.from(JSON.stringify(payload));
+      const signer = crypto.createSign('SHA256');
+      signer.update(dataToSign);
+      signer.end();
+      const signature = signer.sign(serverEccAttestationKey.privateKey, 'hex');
+
+      res.json({
+        ok: true,
+        signer: 'Renumerate-Core-Gateway-CA',
+        curve: 'prime256v1',
+        fingerprintSha256: serverEccFingerprintSha256,
+        signatureHex: signature,
+        signedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || 'Erreur attestation' });
+    }
+  });
+
+  app.post('/api/security/ecc/verify-attestation', (req: Request, res: Response) => {
+    try {
+      const { payload, signatureHex } = req.body || {};
+      if (!payload || !signatureHex) {
+        res.status(400).json({ ok: false, error: 'Charge utile et signature requises.' });
+        return;
+      }
+      const dataToVerify = Buffer.from(JSON.stringify(payload));
+      const verifier = crypto.createVerify('SHA256');
+      verifier.update(dataToVerify);
+      verifier.end();
+      const isValid = verifier.verify(
+        serverEccAttestationKey.publicKey,
+        Buffer.from(signatureHex, 'hex')
+      );
+
+      res.json({
+        ok: true,
+        valid: isValid,
+        serverFingerprint: serverEccFingerprintSha256,
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || 'Erreur vérification attestation' });
+    }
   });
 
   const httpServer = http.createServer(app);

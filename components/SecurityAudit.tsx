@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Check,
   X,
+  KeyRound,
 } from 'lucide-react';
 import { performDeepAudit, DeepAuditResult } from '../services/geminiService';
 import { AppSettings } from '../types';
@@ -26,6 +27,7 @@ interface Props {
   onOpenSystemCenter?: () => void;
   onAutoRemediate?: () => void;
   onOpenIds?: () => void;
+  onOpenEcc?: () => void;
 }
 
 interface ComplianceVector {
@@ -42,6 +44,7 @@ export const SecurityAudit: React.FC<Props> = ({
   onOpenSystemCenter,
   onAutoRemediate,
   onOpenIds,
+  onOpenEcc,
 }) => {
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState<DeepAuditResult | null>(null);
@@ -130,6 +133,12 @@ export const SecurityAudit: React.FC<Props> = ({
           ? `${settings.idsSensitivity === 'paranoid' ? 'Paranoïaque' : settings.idsSensitivity === 'high' ? 'Élevée' : 'Standard'} (${settings.idsAutoQuarantine ? 'Auto-Drop' : 'Alerte'})`
           : 'Désactivé',
         passed: settings.idsEnabled && settings.idsAutoQuarantine,
+      },
+      {
+        id: 'ecc_suite',
+        label: 'Cryptographie Asymétrique ECC',
+        detail: `${settings.eccDefaultCurve || 'P-256'} (Natif CSPRNG / ECDH / ECDSA)`,
+        passed: Boolean(settings.eccStrictPointValidation !== false),
       },
     ];
   }, [settings]);
@@ -251,6 +260,23 @@ export const SecurityAudit: React.FC<Props> = ({
               </span>
               <span className="flex items-center gap-1 font-mono tabular-nums text-cyan-600 dark:text-cyan-400">
                 {hardeningScore !== null && <span>{hardeningScore}%</span>}
+                <ChevronRight className="w-3.5 h-3.5" />
+              </span>
+            </button>
+          )}
+
+          {onOpenEcc && (
+            <button
+              type="button"
+              onClick={onOpenEcc}
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/70 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <KeyRound className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                <span>Centre Cryptographique ECC</span>
+              </span>
+              <span className="flex items-center gap-1 font-mono text-[10px] text-cyan-600 dark:text-cyan-400">
+                <span>{settings?.eccDefaultCurve || 'P-256'}</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </span>
             </button>

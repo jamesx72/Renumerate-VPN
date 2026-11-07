@@ -29,6 +29,7 @@ import {
   X,
   Eye,
   SlidersVertical,
+  Globe2,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -44,8 +45,10 @@ import {
   INITIAL_QUARANTINE_LIST,
   generateSimulatedIntrusion,
   DEFAULT_IDS_CUSTOM_RULES,
+  resolveThreatGeoposition,
 } from '../constants';
 import { IdsRulesPanel } from './IdsRulesPanel';
+import { IdsThreatMap } from './IdsThreatMap';
 
 interface IntrusionDetectionCenterProps {
   settings: AppSettings;
@@ -103,7 +106,7 @@ export const IntrusionDetectionCenter: React.FC<
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<
-    'stream' | 'quarantine' | 'rules' | 'lab'
+    'stream' | 'map' | 'quarantine' | 'rules' | 'lab'
   >('stream');
   const [customRules, setCustomRules] = useState<IdsFilterRule[]>(() => {
     try {
@@ -945,6 +948,19 @@ export const IntrusionDetectionCenter: React.FC<
 
           <button
             type="button"
+            onClick={() => setActiveTab('map')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'map'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Globe2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Carte Mondiale des Menaces</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('quarantine')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'quarantine'
@@ -1123,7 +1139,31 @@ export const IntrusionDetectionCenter: React.FC<
         </div>
       )}
 
-      {/* 2. Active Quarantine Manager Tab */}
+      {/* 2. Cyber Threat World Map Tab */}
+      {activeTab === 'map' && (
+        <IdsThreatMap
+          attempts={attempts}
+          onInspectAttempt={(att) => {
+            setSelectedAttempt(att);
+          }}
+          onAddRuleFromCountry={(country) => {
+            const profile = resolveThreatGeoposition(country);
+            handleAddRule({
+              name: `Bannissement CIDR ${profile.country}`,
+              enabled: true,
+              protocol: 'ALL',
+              direction: 'inbound',
+              action: 'quarantine',
+              severity: 'high',
+              description: `Règle automatique d’isolement régional contre les vagues d’attaques émanant de ${profile.country} (${profile.defaultAsn}).`,
+            });
+            setActiveTab('rules');
+          }}
+          onSimulateVector={handleLaunchSimulation}
+        />
+      )}
+
+      {/* 3. Active Quarantine Manager Tab */}
       {activeTab === 'quarantine' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

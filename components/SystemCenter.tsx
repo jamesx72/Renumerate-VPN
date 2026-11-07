@@ -60,6 +60,7 @@ import {
   EphemeralKeyMetadata,
 } from '../constants';
 import { IntrusionDetectionCenter } from './IntrusionDetectionCenter';
+import { EccSecurityCenter } from './EccSecurityCenter';
 
 interface SystemCenterProps {
   settings: AppSettings;
@@ -97,7 +98,8 @@ type SystemWorkspaceTab =
   | 'compiler'
   | 'snapshots'
   | 'inspector'
-  | 'ids';
+  | 'ids'
+  | 'ecc';
 
 type CompilerTab =
   | 'tunnel'
@@ -485,7 +487,8 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
         saved === 'compiler' ||
         saved === 'snapshots' ||
         saved === 'inspector' ||
-        saved === 'ids'
+        saved === 'ids' ||
+        saved === 'ecc'
       ) {
         return saved;
       }
@@ -514,7 +517,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       const custom = e as CustomEvent<SystemWorkspaceTab>;
       if (
         custom.detail &&
-        ['audit', 'lab', 'compiler', 'snapshots', 'inspector', 'ids'].includes(
+        ['audit', 'lab', 'compiler', 'snapshots', 'inspector', 'ids', 'ecc'].includes(
           custom.detail
         )
       ) {
@@ -2445,6 +2448,12 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 icon: ShieldAlert,
                 badge: settings.idsEnabled ? 'Actif' : 'Veille',
               },
+              {
+                id: 'ecc',
+                label: 'Cryptographie ECC',
+                icon: KeyRound,
+                badge: settings.eccDefaultCurve || 'P-256',
+              },
             ] as Array<{
               id: SystemWorkspaceTab;
               label: string;
@@ -3992,6 +4001,15 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
           onGlobalScramble={onGlobalScramble}
           initialSelectedAttemptId={initialSelectedAttemptId}
           onClearInitialSelectedAttemptId={onClearInitialSelectedAttemptId}
+          addLog={addLog}
+        />
+      )}
+
+      {workspaceTab === 'ecc' && (
+        <EccSecurityCenter
+          settings={settings}
+          updateSettings={updateSettings}
+          patchSettings={patchSettings}
           addLog={addLog}
         />
       )}

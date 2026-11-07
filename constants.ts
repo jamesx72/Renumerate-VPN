@@ -271,6 +271,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   idsAutoQuarantine: true,
   idsAutoRenumberOnCritical: true,
   idsSoundAlert: false,
+  eccDefaultCurve: 'P-256',
+  eccSignatureHash: 'SHA-256',
+  eccStrictPointValidation: true,
 };
 
 function clampInt(val: unknown, min: number, max: number, fallback: number): number {
@@ -744,6 +747,20 @@ export function sanitizeAppSettings(
       typeof src.idsSoundAlert === 'boolean'
         ? src.idsSoundAlert
         : DEFAULT_APP_SETTINGS.idsSoundAlert,
+    eccDefaultCurve: (['P-256', 'P-384', 'P-521', 'X25519', 'Ed25519', 'secp256k1'] as const).includes(
+      src.eccDefaultCurve as any
+    )
+      ? (src.eccDefaultCurve as any)
+      : DEFAULT_APP_SETTINGS.eccDefaultCurve,
+    eccSignatureHash: (['SHA-256', 'SHA-384', 'SHA-512'] as const).includes(
+      src.eccSignatureHash as any
+    )
+      ? (src.eccSignatureHash as any)
+      : DEFAULT_APP_SETTINGS.eccSignatureHash,
+    eccStrictPointValidation:
+      typeof src.eccStrictPointValidation === 'boolean'
+        ? src.eccStrictPointValidation
+        : DEFAULT_APP_SETTINGS.eccStrictPointValidation,
   };
 }
 
@@ -2822,6 +2839,164 @@ export function auditConfigurationIntegrity(
   return issues;
 }
 
+export interface ThreatRegionProfile {
+  country: string;
+  iso: string;
+  flag: string;
+  city: string;
+  coords: [number, number]; // [lon, lat]
+  region: string;
+  defaultAsn: string;
+  riskIndex: number; // 0 - 100
+}
+
+export const CYBER_THREAT_REGION_PROFILES: Record<string, ThreatRegionProfile> = {
+  Russie: {
+    country: 'Russie',
+    iso: 'RU',
+    flag: '🇷🇺',
+    city: 'Moscou',
+    coords: [37.6173, 55.7558],
+    region: 'Europe de l’Est / Eurasie',
+    defaultAsn: 'AS12389 Rostelecom PJSC',
+    riskIndex: 96,
+  },
+  Chine: {
+    country: 'Chine',
+    iso: 'CN',
+    flag: '🇨🇳',
+    city: 'Shenzhen',
+    coords: [114.0579, 22.5431],
+    region: 'Asie-Pacifique',
+    defaultAsn: 'AS4134 Chinanet Backbone',
+    riskIndex: 91,
+  },
+  'États-Unis': {
+    country: 'États-Unis',
+    iso: 'US',
+    flag: '🇺🇸',
+    city: 'Ashburn, VA',
+    coords: [-77.4875, 39.0437],
+    region: 'Amérique du Nord',
+    defaultAsn: 'AS16509 Amazon Data Services',
+    riskIndex: 82,
+  },
+  'Pays-Bas': {
+    country: 'Pays-Bas',
+    iso: 'NL',
+    flag: '🇳🇱',
+    city: 'Amsterdam',
+    coords: [4.9041, 52.3676],
+    region: 'Europe de l’Ouest',
+    defaultAsn: 'AS49981 WorldStream B.V.',
+    riskIndex: 78,
+  },
+  Allemagne: {
+    country: 'Allemagne',
+    iso: 'DE',
+    flag: '🇩🇪',
+    city: 'Francfort',
+    coords: [8.6821, 50.1109],
+    region: 'Europe Centrale',
+    defaultAsn: 'AS24940 Hetzner Online GmbH',
+    riskIndex: 65,
+  },
+  Brésil: {
+    country: 'Brésil',
+    iso: 'BR',
+    flag: '🇧🇷',
+    city: 'São Paulo',
+    coords: [-46.6333, -23.5505],
+    region: 'Amérique Latine',
+    defaultAsn: 'AS28573 Claro S.A.',
+    riskIndex: 73,
+  },
+  Iran: {
+    country: 'Iran',
+    iso: 'IR',
+    flag: '🇮🇷',
+    city: 'Téhéran',
+    coords: [51.389, 35.6892],
+    region: 'Moyen-Orient',
+    defaultAsn: 'AS58224 Telecommunication Co of Iran',
+    riskIndex: 88,
+  },
+  Roumanie: {
+    country: 'Roumanie',
+    iso: 'RO',
+    flag: '🇷🇴',
+    city: 'Bucarest',
+    coords: [26.1025, 44.4268],
+    region: 'Europe de l’Est',
+    defaultAsn: 'AS8708 RCS & RDS SA',
+    riskIndex: 69,
+  },
+  'Corée du Nord': {
+    country: 'Corée du Nord',
+    iso: 'KP',
+    flag: '🇰🇵',
+    city: 'Pyongyang',
+    coords: [125.7625, 39.0392],
+    region: 'Asie de l’Est',
+    defaultAsn: 'AS131279 Star JV Network',
+    riskIndex: 94,
+  },
+  'Royaume-Uni': {
+    country: 'Royaume-Uni',
+    iso: 'GB',
+    flag: '🇬🇧',
+    city: 'Londres',
+    coords: [-0.1278, 51.5074],
+    region: 'Europe de l’Ouest',
+    defaultAsn: 'AS2856 British Telecom',
+    riskIndex: 58,
+  },
+  Singapour: {
+    country: 'Singapour',
+    iso: 'SG',
+    flag: '🇸🇬',
+    city: 'Singapour',
+    coords: [103.8198, 1.3521],
+    region: 'Asie du Sud-Est',
+    defaultAsn: 'AS4657 StarHub Ltd',
+    riskIndex: 54,
+  },
+  France: {
+    country: 'France',
+    iso: 'FR',
+    flag: '🇫🇷',
+    city: 'Paris',
+    coords: [2.3522, 48.8566],
+    region: 'Europe de l’Ouest',
+    defaultAsn: 'AS12322 Free SAS / Proxad',
+    riskIndex: 45,
+  },
+};
+
+export function resolveThreatGeoposition(
+  countryName?: string,
+  ip?: string
+): ThreatRegionProfile {
+  if (countryName && CYBER_THREAT_REGION_PROFILES[countryName]) {
+    return CYBER_THREAT_REGION_PROFILES[countryName];
+  }
+  if (countryName) {
+    const foundKey = Object.keys(CYBER_THREAT_REGION_PROFILES).find((k) =>
+      countryName.toLowerCase().includes(k.toLowerCase())
+    );
+    if (foundKey) return CYBER_THREAT_REGION_PROFILES[foundKey];
+  }
+
+  // Fallback hash-based spread if arbitrary IP or unlisted country
+  const profiles = Object.values(CYBER_THREAT_REGION_PROFILES);
+  if (ip) {
+    const hash = ip.split('.').reduce((acc, part) => acc + parseInt(part, 10) || 0, 0);
+    return profiles[hash % profiles.length];
+  }
+
+  return CYBER_THREAT_REGION_PROFILES['Russie'];
+}
+
 export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
   {
     id: 'ids-att-001',
@@ -2833,6 +3008,9 @@ export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
       'Séquence rapide de paquets TCP SYN ciblant les ports 22, 80, 443, 51820 et 8080 depuis un nœud de sortie Tor non authentifié.',
     sourceIp: '185.220.101.45',
     sourceCountry: 'Allemagne',
+    sourceCity: 'Francfort',
+    sourceCoords: [8.6821, 50.1109],
+    sourceAsn: 'AS24940 Hetzner Online GmbH',
     targetPort: 51820,
     targetInterface: 'eth0',
     protocol: 'TCP',
@@ -2846,49 +3024,7 @@ export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
   },
   {
     id: 'ids-att-002',
-    timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-    severity: 'critical',
-    vector: 'arp_poisoning',
-    title: 'Attaque MITM par empoisonnement de cache ARP',
-    description:
-      'Trame Gratuitous ARP annonçant l’adresse MAC 52:54:00:fa:8c:12 pour l’adresse IP de passerelle 192.168.1.1 en divergence avec la table statique locale.',
-    sourceIp: '192.168.1.134',
-    sourceCountry: 'LAN Local',
-    targetPort: 0,
-    targetInterface: 'eth0',
-    protocol: 'ARP',
-    signatureRule: 'EBPF-ARP-INCONSISTENCY-GATEWAY-POISON',
-    actionTaken: 'nft_quarantine',
-    quarantined: true,
-    rawPayloadSnippet:
-      'ff ff ff ff ff ff 52 54 00 fa 8c 12 08 06 00 01 ... ARP reply 192.168.1.1 is-at 52:54:00:fa:8c:12',
-    remediationAdvice:
-      'ARP Spoof Guard a ignoré l’annonce empoisonnée et scellé la table ARP statique.',
-  },
-  {
-    id: 'ids-att-003',
-    timestamp: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
-    severity: 'medium',
-    vector: 'webrtc_leak',
-    title: 'Sonde de fuite STUN / WebRTC non sollicitée',
-    description:
-      'Requête STUN Binding Request non encapsulée ciblant UDP/3478 tentant de forcer la résolution de l’adresse IP publique réelle hors du tunnel.',
-    sourceIp: '45.33.32.156',
-    sourceCountry: 'États-Unis',
-    targetPort: 3478,
-    targetInterface: 'eth0',
-    protocol: 'UDP',
-    signatureRule: 'NETFILTER-WEBRTC-UNSOLICITED-STUN-LEAK',
-    actionTaken: 'sinkhole',
-    quarantined: false,
-    rawPayloadSnippet:
-      '00 01 00 00 21 12 a4 42 7a 88 12 49 53 10 cc 99 ... STUN binding-request probe',
-    remediationAdvice:
-      'WebRTC Leak Shield a dérouté le paquet vers l’interface sinkhole0.',
-  },
-  {
-    id: 'ids-att-004',
-    timestamp: new Date(Date.now() - 75 * 60 * 1000).toISOString(),
+    timestamp: new Date(Date.now() - 14 * 60 * 1000).toISOString(),
     severity: 'critical',
     vector: 'replay_attack',
     title: 'Violation de fenêtre anti-rejeu WireGuard / PQC',
@@ -2896,6 +3032,9 @@ export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
       'Paquet de données chiffré injecté présentant un compteur de séquence déjà acquitté (différence -487), caractéristique d’une attaque par rejeu passif.',
     sourceIp: '91.240.118.82',
     sourceCountry: 'Russie',
+    sourceCity: 'Moscou',
+    sourceCoords: [37.6173, 55.7558],
+    sourceAsn: 'AS12389 Rostelecom PJSC',
     targetPort: 51820,
     targetInterface: 'wg0',
     protocol: 'UDP',
@@ -2908,8 +3047,56 @@ export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
       'Rejet immédiat par la fenêtre glissante de WireGuard et renouvellement éphémère de session initié.',
   },
   {
+    id: 'ids-att-003',
+    timestamp: new Date(Date.now() - 28 * 60 * 1000).toISOString(),
+    severity: 'high',
+    vector: 'port_scan',
+    title: 'Sonde de cartographie réseau automatisée (Censys)',
+    description:
+      'Séquence coordonnée de sondes d’énumération SSL/TLS et détection de bannières sur la passerelle d’entrée.',
+    sourceIp: '162.142.125.44',
+    sourceCountry: 'Chine',
+    sourceCity: 'Shenzhen',
+    sourceCoords: [114.0579, 22.5431],
+    sourceAsn: 'AS4134 Chinanet Backbone',
+    targetPort: 443,
+    targetInterface: 'eth0',
+    protocol: 'TCP',
+    signatureRule: 'SURICATA-ET-SCAN-CENSYS-SWEEP',
+    actionTaken: 'drop_xdp',
+    quarantined: true,
+    rawPayloadSnippet:
+      '45 00 00 3c 1a 2b 40 00 38 06 ... TLS Client Hello probe for public banner grab',
+    remediationAdvice:
+      'Filtre eBPF a abandonné la trame sans accusé RST pour empêcher la cartographie de présence.',
+  },
+  {
+    id: 'ids-att-004',
+    timestamp: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+    severity: 'medium',
+    vector: 'webrtc_leak',
+    title: 'Sonde de fuite STUN / WebRTC non sollicitée',
+    description:
+      'Requête STUN Binding Request non encapsulée ciblant UDP/3478 tentant de forcer la résolution de l’adresse IP publique réelle hors du tunnel.',
+    sourceIp: '45.33.32.156',
+    sourceCountry: 'États-Unis',
+    sourceCity: 'Ashburn, VA',
+    sourceCoords: [-77.4875, 39.0437],
+    sourceAsn: 'AS16509 Amazon Data Services',
+    targetPort: 3478,
+    targetInterface: 'eth0',
+    protocol: 'UDP',
+    signatureRule: 'NETFILTER-WEBRTC-UNSOLICITED-STUN-LEAK',
+    actionTaken: 'sinkhole',
+    quarantined: false,
+    rawPayloadSnippet:
+      '00 01 00 00 21 12 a4 42 7a 88 12 49 53 10 cc 99 ... STUN binding-request probe',
+    remediationAdvice:
+      'WebRTC Leak Shield a dérouté le paquet vers l’interface sinkhole0.',
+  },
+  {
     id: 'ids-att-005',
-    timestamp: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
+    timestamp: new Date(Date.now() - 65 * 60 * 1000).toISOString(),
     severity: 'high',
     vector: 'brute_force',
     title: 'Attaque par force brute sur mandataire SOCKS5 & Auth',
@@ -2917,6 +3104,9 @@ export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
       'Rafale d’échecs d’authentification consécutifs (18 tentatives en 3 secondes) sur l’interface mandataire locale.',
     sourceIp: '194.26.29.112',
     sourceCountry: 'Pays-Bas',
+    sourceCity: 'Amsterdam',
+    sourceCoords: [4.9041, 52.3676],
+    sourceAsn: 'AS49981 WorldStream B.V.',
     targetPort: 1080,
     targetInterface: 'eth0',
     protocol: 'TCP',
@@ -2927,6 +3117,78 @@ export const INITIAL_INTRUSION_ATTEMPTS: IntrusionAttempt[] = [
       '05 02 00 02 01 05 61 64 6d 69 6e ... SOCKS5 auth-req fail count=18',
     remediationAdvice:
       'Hôte placé en liste noire nftables (drop direct pendant 24 heures).',
+  },
+  {
+    id: 'ids-att-006',
+    timestamp: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+    severity: 'high',
+    vector: 'dns_hijack',
+    title: 'Tentative d’injection de faux enregistrements DNS (Kaminsky)',
+    description:
+      'Flux massif de réponses DNS UDP forgées ciblant le résolveur local avec ID de transaction manipulés.',
+    sourceIp: '177.12.89.4',
+    sourceCountry: 'Brésil',
+    sourceCity: 'São Paulo',
+    sourceCoords: [-46.6333, -23.5505],
+    sourceAsn: 'AS28573 Claro S.A.',
+    targetPort: 53,
+    targetInterface: 'eth0',
+    protocol: 'DNS',
+    signatureRule: 'DNS-POISONING-TRANSACTION-ID-MISMATCH',
+    actionTaken: 'sinkhole',
+    quarantined: true,
+    rawPayloadSnippet:
+      '1a 2b 81 80 00 01 00 01 ... Rogue DNS authority injection',
+    remediationAdvice:
+      'Rejeté immédiatement par la validation DoH/DNSSEC stricte de Renumerate.',
+  },
+  {
+    id: 'ids-att-007',
+    timestamp: new Date(Date.now() - 125 * 60 * 1000).toISOString(),
+    severity: 'critical',
+    vector: 'brute_force',
+    title: 'Tentative d’intrusion SSH & Dictionnaire d’identifiants',
+    description:
+      'Attaque par force brute distribuée ciblant le port d’administration 22 avec signatures d’outils automatisés.',
+    sourceIp: '5.160.23.109',
+    sourceCountry: 'Iran',
+    sourceCity: 'Téhéran',
+    sourceCoords: [51.389, 35.6892],
+    sourceAsn: 'AS58224 Telecommunication Co of Iran',
+    targetPort: 22,
+    targetInterface: 'eth0',
+    protocol: 'TCP',
+    signatureRule: 'SURICATA-ET-SCAN-SSH-BRUTEFORCE',
+    actionTaken: 'nft_quarantine',
+    quarantined: true,
+    rawPayloadSnippet:
+      '53 53 48 2d 32 2e 30 2d 4f 70 65 6e ... SSH-2.0-libssh_0.9.4 dict probe',
+    remediationAdvice:
+      'IP bloquée au niveau nftables avec compteur de récidive incrémenté.',
+  },
+  {
+    id: 'ids-att-008',
+    timestamp: new Date(Date.now() - 160 * 60 * 1000).toISOString(),
+    severity: 'high',
+    vector: 'port_scan',
+    title: 'Scan agressif de vulnérabilités Masscan / Shodan',
+    description:
+      'Balayage à haut débit testant les protocoles d’administration vulnérables (RDP 3389, Telnet 23, VNC 5900).',
+    sourceIp: '89.40.181.12',
+    sourceCountry: 'Roumanie',
+    sourceCity: 'Bucarest',
+    sourceCoords: [26.1025, 44.4268],
+    sourceAsn: 'AS8708 RCS & RDS SA',
+    targetPort: 3389,
+    targetInterface: 'eth0',
+    protocol: 'TCP',
+    signatureRule: 'EBPF-MASSCAN-RATE-DEFENSE',
+    actionTaken: 'drop_xdp',
+    quarantined: true,
+    rawPayloadSnippet:
+      '45 00 00 28 e1 00 00 00 37 06 ... Masscan custom TCP window signature',
+    remediationAdvice:
+      'XDP drop déclenché à zéro overhead CPU, préservant la bande passante du VPN.',
   },
 ];
 
@@ -2972,7 +3234,8 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
   )}`;
 
   switch (vector) {
-    case 'port_scan':
+    case 'port_scan': {
+      const geo = resolveThreatGeoposition('Chine');
       return {
         id: randId,
         timestamp: now,
@@ -2982,7 +3245,10 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         description:
           'Séquence simulée de paquets avec drapeaux FIN, PSH, URG anormaux (Xmas scan) détectée par eBPF/XDP sur l’interface externe.',
         sourceIp: `198.51.100.${Math.floor(Math.random() * 200 + 10)}`,
-        sourceCountry: 'Sonde de test (Sandbox)',
+        sourceCountry: geo.country,
+        sourceCity: geo.city,
+        sourceCoords: geo.coords,
+        sourceAsn: geo.defaultAsn,
         targetPort: 443,
         targetInterface: 'eth0',
         protocol: 'TCP',
@@ -2994,7 +3260,9 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         remediationAdvice:
           'Règle eBPF drop_xdp exécutée. L’attaquant ne reçoit aucune réponse RST.',
       };
-    case 'arp_poisoning':
+    }
+    case 'arp_poisoning': {
+      const geo = resolveThreatGeoposition('France');
       return {
         id: randId,
         timestamp: now,
@@ -3004,7 +3272,10 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         description:
           'Simulation d’annonce ARP parasite prétendant associer l’adresse IP de passerelle à une fausse adresse MAC physique.',
         sourceIp: `192.168.1.${Math.floor(Math.random() * 100 + 150)}`,
-        sourceCountry: 'Réseau local (Simulé)',
+        sourceCountry: 'France',
+        sourceCity: 'Réseau local (Paris)',
+        sourceCoords: geo.coords,
+        sourceAsn: geo.defaultAsn,
         targetPort: 0,
         targetInterface: 'eth0',
         protocol: 'ARP',
@@ -3016,7 +3287,9 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         remediationAdvice:
           'La table ARP locale a été verrouillée en mode immuable et la MAC parasite est mise en quarantaine.',
       };
-    case 'webrtc_leak':
+    }
+    case 'webrtc_leak': {
+      const geo = resolveThreatGeoposition('États-Unis');
       return {
         id: randId,
         timestamp: now,
@@ -3026,7 +3299,10 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         description:
           'Simulation d’un script tiers injecté tentant de générer une requête ICE/STUN hors de la table de routage du VPN.',
         sourceIp: '203.0.113.88',
-        sourceCountry: 'Sonde WebRTC simulée',
+        sourceCountry: geo.country,
+        sourceCity: geo.city,
+        sourceCoords: geo.coords,
+        sourceAsn: geo.defaultAsn,
         targetPort: 3478,
         targetInterface: 'eth0',
         protocol: 'UDP',
@@ -3038,7 +3314,9 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         remediationAdvice:
           'Le pare-feu a immédiatement redirigé la tentative vers le sinkhole local.',
       };
-    case 'replay_attack':
+    }
+    case 'replay_attack': {
+      const geo = resolveThreatGeoposition('Russie');
       return {
         id: randId,
         timestamp: now,
@@ -3048,7 +3326,10 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         description:
           'Simulation de capture et réinjection d’un bloc de données chiffrées avec compteur dépassé.',
         sourceIp: `185.196.220.${Math.floor(Math.random() * 200 + 10)}`,
-        sourceCountry: 'Relais hostile simulé',
+        sourceCountry: geo.country,
+        sourceCity: geo.city,
+        sourceCoords: geo.coords,
+        sourceAsn: geo.defaultAsn,
         targetPort: 51820,
         targetInterface: 'wg0',
         protocol: 'UDP',
@@ -3060,7 +3341,9 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         remediationAdvice:
           'Rejet automatique par la couche cryptographique et renouvellement de clé éphémère déclenché.',
       };
-    case 'brute_force':
+    }
+    case 'brute_force': {
+      const geo = resolveThreatGeoposition('Iran');
       return {
         id: randId,
         timestamp: now,
@@ -3070,7 +3353,10 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         description:
           'Simulation d’une attaque automatisée par dictionnaire sur l’interface d’authentification locale.',
         sourceIp: `198.18.0.${Math.floor(Math.random() * 200 + 10)}`,
-        sourceCountry: 'Botnet simulé',
+        sourceCountry: geo.country,
+        sourceCity: geo.city,
+        sourceCoords: geo.coords,
+        sourceAsn: geo.defaultAsn,
         targetPort: 1080,
         targetInterface: 'eth0',
         protocol: 'TCP',
@@ -3082,8 +3368,10 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         remediationAdvice:
           'Verrouillage automatique avec délai exponentiel et IP source mise en quarantaine nftables.',
       };
+    }
     case 'dns_hijack':
-    default:
+    default: {
+      const geo = resolveThreatGeoposition('Brésil');
       return {
         id: randId,
         timestamp: now,
@@ -3093,7 +3381,10 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         description:
           'Simulation d’injection massive de réponses DNS avec ID de transaction aléatoires ciblant le résolveur local.',
         sourceIp: `198.51.100.${Math.floor(Math.random() * 200 + 50)}`,
-        sourceCountry: 'Faux résolveur FAI',
+        sourceCountry: geo.country,
+        sourceCity: geo.city,
+        sourceCoords: geo.coords,
+        sourceAsn: geo.defaultAsn,
         targetPort: 53,
         targetInterface: 'eth0',
         protocol: 'DNS',
@@ -3105,6 +3396,7 @@ export function generateSimulatedIntrusion(vector: IntrusionVector): IntrusionAt
         remediationAdvice:
           'Le résolveur local applique la validation stricte DoH/DNSSEC et a rejeté la réponse malveillante.',
       };
+    }
   }
 }
 

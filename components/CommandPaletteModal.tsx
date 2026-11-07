@@ -21,6 +21,7 @@ import {
   Fingerprint,
   Network,
   ShieldCheck,
+  KeyRound,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -85,6 +86,7 @@ export interface CommandPaletteModalProps {
   onOpenSettings: () => void;
   onOpenHistory: () => void;
   onOpenIds?: () => void;
+  onOpenEcc?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -117,6 +119,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenSettings,
   onOpenHistory,
   onOpenIds,
+  onOpenEcc,
 }) => {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CommandCategory>('all');
@@ -346,6 +349,35 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           );
           if (onOpenIds) {
             onOpenIds();
+          } else {
+            onNavigateSection('system');
+          }
+        },
+      },
+      {
+        id: 'nav-ecc',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Centre de Sécurité Cryptographique ECC',
+        subtitle:
+          'Génération asymétrique NIST P-256/384/521, Curve25519, signatures ECDSA, ECIES et banc d’essai',
+        keywords:
+          'ecc crypto cryptographie elliptique courbe curve25519 x25519 ed25519 p256 p384 p521 ecdh ecdsa ecies clef signature pem',
+        icon: KeyRound,
+        tone: 'cyan',
+        onExecute: () => {
+          try {
+            localStorage.setItem('renumerate_system_workspace_tab', 'ecc');
+          } catch {
+            // ignore
+          }
+          window.dispatchEvent(
+            new CustomEvent('renumerate_switch_system_tab', {
+              detail: 'ecc',
+            })
+          );
+          if (onOpenEcc) {
+            onOpenEcc();
           } else {
             onNavigateSection('system');
           }

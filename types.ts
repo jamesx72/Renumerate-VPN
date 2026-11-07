@@ -244,6 +244,10 @@ export interface AppSettings {
   idsAutoQuarantine: boolean;
   idsAutoRenumberOnCritical: boolean;
   idsSoundAlert: boolean;
+  // Elliptic Curve Cryptography (ECC) Core Configuration
+  eccDefaultCurve?: EccCurve;
+  eccSignatureHash?: EccHashAlgorithm;
+  eccStrictPointValidation?: boolean;
 }
 
 export interface DeviceNode {
@@ -366,6 +370,9 @@ export interface IntrusionAttempt {
   description: string;
   sourceIp: string;
   sourceCountry?: string;
+  sourceCity?: string;
+  sourceCoords?: [number, number]; // [lon, lat]
+  sourceAsn?: string;
   targetPort: number;
   targetInterface: string;
   protocol: 'TCP' | 'UDP' | 'ICMP' | 'ARP' | 'DNS';
@@ -416,5 +423,111 @@ export interface IdsFilterRule {
   createdAt: string;
   isSystemPreset?: boolean;
 }
+
+// ============================================================================
+// ELLIPTIC CURVE CRYPTOGRAPHY (ECC) TYPES
+// ============================================================================
+
+export type EccCurve =
+  | 'P-256'
+  | 'P-384'
+  | 'P-521'
+  | 'X25519'
+  | 'Ed25519'
+  | 'secp256k1';
+
+export type EccKeyUsage = 'ecdh' | 'ecdsa' | 'ecies';
+
+export type EccHashAlgorithm = 'SHA-256' | 'SHA-384' | 'SHA-512';
+
+export interface EccKeyPairInfo {
+  id: string;
+  curve: EccCurve;
+  usage: EccKeyUsage;
+  createdAt: string;
+  label: string;
+  publicKeyHex: string;
+  publicKeyBase64: string;
+  publicKeyJwk?: any;
+  publicKeyPem: string;
+  privateKeyPem?: string;
+  privateKeyHexMasked: string;
+  pointCoordinates: {
+    xHex: string;
+    yHex: string;
+    compressedHex: string;
+    uncompressedHex: string;
+    isOnCurve: boolean;
+  };
+  fingerprintSha256: string;
+  keyId: string;
+  bitSecurity: number;
+}
+
+export interface EcdhExchangeResult {
+  curve: EccCurve;
+  aliceKeyId: string;
+  bobKeyId: string;
+  rawSharedPointHex: string;
+  derivedAesKeyHex: string;
+  kdfSaltHex: string;
+  kdfInfo: string;
+  bitsDerived: number;
+  completedAt: string;
+}
+
+export interface EcdsaSignatureResult {
+  curve: EccCurve;
+  hashAlg: EccHashAlgorithm;
+  messageHashHex: string;
+  signatureHex: string;
+  rHex: string;
+  sHex: string;
+  derHex: string;
+  signerFingerprint: string;
+  timestamp: string;
+  verified: boolean;
+}
+
+export interface EciesCipherEnvelope {
+  schema: 'ecies-v1';
+  curve: EccCurve;
+  ephemeralPublicKeyHex: string;
+  ivHex: string;
+  authTagHex: string;
+  ciphertextHex: string;
+  kdf: 'HKDF-SHA256';
+  cipherAlg: 'AES-256-GCM';
+  originalLengthBytes: number;
+  timestamp: string;
+}
+
+export interface EccCurveSecurityProfile {
+  curve: EccCurve;
+  name: string;
+  standard: string;
+  fieldSizeBits: number;
+  securityBitsClassical: number;
+  quantumSecurityHorizon: string;
+  sideChannelResistance: 'constant-time' | 'ladder-protected' | 'mitigated';
+  twistSecurity: boolean;
+  equation: string;
+  fipsApproved: boolean;
+  recommendedUse: string;
+}
+
+export interface EccBenchmarkResult {
+  curve: EccCurve;
+  keyGenOpsPerSec: number;
+  keyGenLatencyUs: number;
+  ecdhOpsPerSec: number;
+  ecdhLatencyUs: number;
+  signOpsPerSec: number;
+  signLatencyUs: number;
+  verifyOpsPerSec: number;
+  verifyLatencyUs: number;
+  hardwareAccelerated: boolean;
+}
+
 
 
