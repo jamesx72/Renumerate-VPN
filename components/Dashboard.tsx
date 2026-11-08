@@ -1643,6 +1643,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
             mode={mode}
             protocol={protocol}
             mtuSize={settings.mtuSize}
+            nodes={nodes}
+            currentNodeName={nodes.find((n) => n.ip === currentIp)?.name || 'Passerelle Active'}
+            onConnectNode={onConnectNode}
             onLog={addLog}
           />
         </div>

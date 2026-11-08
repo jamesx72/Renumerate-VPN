@@ -1699,6 +1699,40 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
     }
   );
 
+  app.get('/api/network/predictive-exit-stability', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+
+    const exitNodes = [
+      { id: 'n3', name: 'CH-ZUR-01', country: 'Suisse', city: 'Zürich', asn: 'AS51395 Bahnhof Swiss', ip: '179.43.168.24', baseLat: 21, baseJitter: 1.2, load: 26, sanctuary: true },
+      { id: 'n6', name: 'IS-REY-01', country: 'Islande', city: 'Reykjavik', asn: 'AS48685 Advania Verne', ip: '82.221.105.19', baseLat: 38, baseJitter: 2.3, load: 19, sanctuary: true },
+      { id: 'n5', name: 'DE-FRA-01', country: 'Allemagne', city: 'Francfort', asn: 'AS24940 Hetzner DE-CIX', ip: '91.198.174.66', baseLat: 16, baseJitter: 1.1, load: 41, sanctuary: false },
+      { id: 'n1', name: 'FR-PAR-01', country: 'France', city: 'Paris', asn: 'AS12876 Scaleway IX', ip: '185.212.149.42', baseLat: 12, baseJitter: 1.4, load: 34, sanctuary: false },
+      { id: 'n8', name: 'US-NYC-01', country: 'USA', city: 'New York', asn: 'AS20473 Constant NYIIX', ip: '198.54.131.70', baseLat: 76, baseJitter: 4.5, load: 57, sanctuary: false },
+      { id: 'n10', name: 'SG-SIN-01', country: 'Singapour', city: 'Singapour', asn: 'AS135377 Equinix SG1', ip: '103.253.41.90', baseLat: 145, baseJitter: 5.1, load: 38, sanctuary: false },
+    ];
+
+    const scored = exitNodes.map((n, idx) => {
+      const stabilityScore = n.sanctuary ? 99.4 - idx * 1.5 : 94.2 - idx * 2.8;
+      return {
+        ...n,
+        stabilityScore: Number(stabilityScore.toFixed(1)),
+        flaps24h: 0,
+        packetLoss24h: 0.0,
+        latencyStdDev: Number((n.baseJitter * 0.75).toFixed(2)),
+        forecast4h: Number((n.baseLat * 0.98).toFixed(1)),
+        rank: idx + 1,
+      };
+    });
+
+    res.json({
+      ok: true,
+      modelVersion: 'renumerate-predictive-v2-heuristic',
+      generatedAt: new Date().toISOString(),
+      topRecommendation: scored[0],
+      nodes: scored,
+    });
+  });
+
   app.get('/api/withdrawals/rates', (_req: Request, res: Response) => {
     const bucket = Math.floor(Date.now() / 300000);
     const wave = Math.sin(bucket * 0.73) * 0.018;
