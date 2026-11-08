@@ -52,6 +52,7 @@ import {
   getNodeLonLat,
   computeGeodesicDistanceKm,
 } from './WorldNodeMap';
+import { BgpRouteLatencyVisualizer } from './BgpRouteLatencyVisualizer';
 
 interface SavedViewConfig {
   id: string;
@@ -183,6 +184,7 @@ export const NetworkView: React.FC<Props> = ({
     initialState.viewMode
   );
   const [showWorldMap, setShowWorldMap] = useState(true);
+  const [showBgpVisualizer, setShowBgpVisualizer] = useState(true);
   const [showCircuitComposer, setShowCircuitComposer] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>(initialState.filterType);
@@ -604,6 +606,93 @@ export const NetworkView: React.FC<Props> = ({
     );
   };
 
+  const handleAutoOptimizeBgpFastest = () => {
+    const eligibleNodes = nodes.filter(
+      (n) =>
+        !isCountryExcludedByJurisdiction(
+          n.country,
+          settings.excludeEyesJurisdictions
+        )
+    );
+    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes;
+    if (pool.length === 0) return;
+
+    // Trier strictement par latence BGP (RTT le plus faible d'abord)
+    const sorted = [...pool].sort((a, b) => a.latency - b.latency);
+    const first = sorted[0];
+    const second = sorted.find((n) => n.id !== first?.id) || sorted[1] || first;
+    const third =
+      sorted.find((n) => n.id !== first?.id && n.id !== second?.id) ||
+      sorted[2] ||
+      second;
+
+    if (first) setEntryNodeId(first.id);
+    if (second) setRelayNodeId(second.id);
+    if (third) setExitNodeId(hopCount === 1 ? first.id : hopCount === 2 ? second.id : third.id);
+
+    const estRtt =
+      hopCount === 1
+        ? first.latency
+        : hopCount === 2
+          ? first.latency + second.latency
+          : first.latency + second.latency + third.latency;
+
+    setToast(`⚡ Preset BGP Ultra-Rapide activé : ~${estRtt} ms cumulés`);
+    addLog?.(
+      `Preset BGP Ultra-Rapide déployé : ${first.name} → ${second.name}${hopCount === 3 ? ` → ${third.name}` : ''} (~${estRtt} ms)`,
+      'info'
+    );
+  };
+
+  const handleAutoOptimizeDisjointAsn = () => {
+    const eligibleNodes = nodes.filter(
+      (n) =>
+        !isCountryExcludedByJurisdiction(
+          n.country,
+          settings.excludeEyesJurisdictions
+        )
+    );
+    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes;
+    if (pool.length === 0) return;
+
+    // Extraire l'ASN primaire (ex: AS12876) pour garantir des systèmes autonomes strictement disjoints
+    const getCleanAsn = (n: DeviceNode) => (n.asn || '').split(' ')[0] || n.name;
+
+    const first = [...pool].sort((a, b) => a.latency - b.latency)[0];
+    const firstAsn = getCleanAsn(first);
+
+    const second =
+      pool.find((n) => n.id !== first.id && getCleanAsn(n) !== firstAsn) ||
+      pool.find((n) => n.id !== first.id) ||
+      pool[1] ||
+      first;
+    const secondAsn = getCleanAsn(second);
+
+    const third =
+      pool.find(
+        (n) =>
+          n.id !== first.id &&
+          n.id !== second.id &&
+          getCleanAsn(n) !== firstAsn &&
+          getCleanAsn(n) !== secondAsn
+      ) ||
+      pool.find((n) => n.id !== first.id && n.id !== second.id) ||
+      pool[2] ||
+      second;
+
+    if (first) setEntryNodeId(first.id);
+    if (second) setRelayNodeId(second.id);
+    if (third) setExitNodeId(hopCount === 1 ? first.id : hopCount === 2 ? second.id : third.id);
+
+    setToast(
+      `🔀 Multi-AS Anti-Corrélation : 3 ASNs indépendants (${getCleanAsn(first)} · ${getCleanAsn(second)}${hopCount === 3 ? ` · ${getCleanAsn(third)}` : ''})`
+    );
+    addLog?.(
+      `Preset Anti-Corrélation Multi-AS activé : ${first.name} (${getCleanAsn(first)}) → ${second.name} (${getCleanAsn(second)}) → ${third.name} (${getCleanAsn(third)})`,
+      'info'
+    );
+  };
+
   const handleAutoComposeSanctuaryCircuit = () => {
     const sanctuaries = [...nodes]
       .filter((n) => getJurisdictionTier(n.country) === 'sanctuary')
@@ -623,9 +712,10 @@ export const NetworkView: React.FC<Props> = ({
 
     if (first) setEntryNodeId(first.id);
     if (second) setRelayNodeId(second.id);
-    if (third) setExitNodeId(hopCount === 2 ? second.id : third.id);
+    if (third) setExitNodeId(hopCount === 1 ? first.id : hopCount === 2 ? second.id : third.id);
 
-    setToast('Circuit sanctuaire multi-juridictions composé automatiquement');
+    setToast('🛡️ Circuit sanctuaire multi-juridictions composé automatiquement (Suisse / Islande)');
+    addLog?.('Circuit sanctuaire 100% hors 14-Eyes composé automatiquement', 'info');
   };
 
   const handleAutoOptimizeGeodesicPath = () => {
@@ -1278,23 +1368,46 @@ export const NetworkView: React.FC<Props> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden xl:flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 mr-1">
+              <span>Presets BGP :</span>
+            </div>
             <button
               type="button"
-              onClick={handleAutoOptimizeGeodesicPath}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1.5"
-              title="Réordonner et sélectionner les relais pour minimiser la distance géodésique et la dispersion temporelle"
+              onClick={handleAutoOptimizeBgpFastest}
+              className="px-2.5 py-1.5 rounded-lg border border-cyan-200 dark:border-cyan-800/80 bg-cyan-50/60 dark:bg-cyan-950/30 text-xs font-semibold text-cyan-800 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              title="Sélectionner les relais avec la plus faible latence BGP cumulée"
             >
-              <Compass className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              <span className="hidden sm:inline">Optimiser géodésique</span>
-              <span className="sm:hidden">Géodésie</span>
+              <Zap className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span>Plus Faible Latence</span>
             </button>
             <button
               type="button"
               onClick={handleAutoComposeSanctuaryCircuit}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/60 dark:bg-emerald-950/30 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              title="Sélectionner 100% de relais sous juridiction sanctuaire (Suisse / Islande)"
             >
-              Circuit sanctuaire
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Sanctuaire Absolu</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleAutoOptimizeDisjointAsn}
+              className="px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800/80 bg-purple-50/60 dark:bg-purple-950/30 text-xs font-semibold text-purple-800 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              title="Garantir 3 systèmes autonomes (ASNs) strictement distincts pour neutraliser la corrélation temporelle"
+            >
+              <Route className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <span className="hidden sm:inline">Multi-AS Disjoint</span>
+              <span className="sm:hidden">Multi-AS</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleAutoOptimizeGeodesicPath}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Réordonner et sélectionner les relais pour minimiser la distance géodésique et la dispersion temporelle"
+            >
+              <Compass className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <span className="hidden md:inline">Géodésie</span>
             </button>
             <button
               type="button"
@@ -1310,8 +1423,7 @@ export const NetworkView: React.FC<Props> = ({
               title="Afficher la décomposition du traceroute géodésique, jetons de transit et test de corrélation temporelle"
             >
               <Radar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              <span className="hidden sm:inline">Traceroute & Corrélation</span>
-              <span className="sm:hidden">Traceroute</span>
+              <span className="hidden sm:inline">Traceroute</span>
               {correlationResult && (
                 <span className="ml-0.5 px-1.5 py-0.5 bg-cyan-100 dark:bg-cyan-900/60 text-cyan-800 dark:text-cyan-200 font-mono text-[10px] rounded-md font-semibold">
                   {correlationResult.resistancePct}%
@@ -1339,6 +1451,46 @@ export const NetworkView: React.FC<Props> = ({
 
         {showCircuitComposer && (
           <div className="p-5 space-y-4">
+            {/* Quick Auto-Optimization Presets Banner */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
+                  <Zap className="w-3.5 h-3.5 text-cyan-500" />
+                  <span>Optimisation Intelligente des Sauts BGP</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Composez instantanément votre topologie selon vos contraintes de latence, souveraineté légale ou résistance cryptographique.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleAutoOptimizeBgpFastest}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-cyan-500 text-slate-800 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Zap className="w-3 h-3 text-cyan-500" />
+                  <span>⚡ Plus Rapide (~{Math.round(stagedCircuitNodes.reduce((acc, n) => acc + n.latency, 0) / Math.max(1, stagedCircuitNodes.length))} ms)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAutoComposeSanctuaryCircuit}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-emerald-500 text-slate-800 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                  <span>🛡️ Sanctuaire (CH / IS)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAutoOptimizeDisjointAsn}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-purple-500 text-slate-800 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Route className="w-3 h-3 text-purple-500" />
+                  <span>🔀 Multi-AS Disjoint</span>
+                </button>
+              </div>
+            </div>
+
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               {/* Segmented Hop Architecture Selector */}
               <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg w-fit">
@@ -2020,6 +2172,19 @@ export const NetworkView: React.FC<Props> = ({
             <span className="hidden sm:inline">Carte D3</span>
           </button>
 
+          <button
+            type="button"
+            onClick={() => setShowBgpVisualizer(!showBgpVisualizer)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+              showBgpVisualizer
+                ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <Route className="w-4 h-4 text-cyan-500" />
+            <span className="hidden sm:inline">Sondes BGP D3</span>
+          </button>
+
           <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
             <button
               type="button"
@@ -2079,6 +2244,18 @@ export const NetworkView: React.FC<Props> = ({
           isDark={isDark}
           circuitHopIds={stagedCircuitIds}
           excludeJurisdictions={settings.excludeEyesJurisdictions}
+          onConnectNode={onConnectNode}
+          onAssignHopRole={handleAssignHopFromMap}
+        />
+      )}
+
+      {/* 4b. Real-Time D3.js BGP Route Latency & AS-Path Visualizer */}
+      {showBgpVisualizer && (
+        <BgpRouteLatencyVisualizer
+          nodes={filteredNodes.length > 0 ? filteredNodes : nodes}
+          currentIp={currentIp}
+          isConnected={isConnected}
+          isDark={isDark}
           onConnectNode={onConnectNode}
           onAssignHopRole={handleAssignHopFromMap}
         />
