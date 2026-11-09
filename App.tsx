@@ -33,6 +33,11 @@ import {
 import { SettingsPanel } from './components/SettingsPanel';
 import { EarningsCard } from './components/EarningsCard';
 import { SystemLogs } from './components/SystemLogs';
+import {
+  signLogEntryHmac,
+  isHmacLoggingEnabled,
+  signLogsBatch,
+} from './services/logHmacService';
 import { SecurityAudit } from './components/SecurityAudit';
 import { AuthScreen } from './components/AuthScreen';
 import { VerificationModal } from './components/VerificationModal';
@@ -196,22 +201,40 @@ function App() {
       type: 'info' | 'warning' | 'success' | 'error' = 'info',
       ip?: string
     ) => {
-      setLogs((prev) =>
-        [
-          ...prev,
-          {
-            id: Math.random().toString(36).slice(2, 11),
-            timestamp: new Date().toLocaleTimeString('fr-FR'),
-            timestampRaw: Date.now(),
-            event,
-            type,
-            ip,
-          },
-        ].slice(-500)
-      );
+      const rawEntry: LogEntry = {
+        id: Math.random().toString(36).slice(2, 11),
+        timestamp: new Date().toLocaleTimeString('fr-FR'),
+        timestampRaw: Date.now(),
+        event,
+        type,
+        ip,
+      };
+
+      if (isHmacLoggingEnabled()) {
+        signLogEntryHmac(rawEntry)
+          .then((signedEntry) => {
+            setLogs((prev) => [...prev, signedEntry].slice(-500));
+          })
+          .catch(() => {
+            setLogs((prev) => [...prev, rawEntry].slice(-500));
+          });
+      } else {
+        setLogs((prev) => [...prev, rawEntry].slice(-500));
+      }
     },
     []
   );
+
+  // Pre-scellement cryptographique des logs d'initialisation sous clé HMAC de session
+  useEffect(() => {
+    if (isHmacLoggingEnabled()) {
+      signLogsBatch(INITIAL_LOGS)
+        .then((signed) => {
+          setLogs((prev) => (prev.length === INITIAL_LOGS.length ? signed : prev));
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   const vaultOwnerKey = user?.email ? user.email.toLowerCase() : 'anonymous';
 
@@ -2101,6 +2124,7 @@ function App() {
                 onRetentionChange={(hours) =>
                   updateAppSettings('logRetentionHours', hours)
                 }
+                onUpdateLogs={setLogs}
               />
             </div>
           </div>
@@ -2382,6 +2406,7 @@ function App() {
                 onRetentionChange={(hours) =>
                   updateAppSettings('logRetentionHours', hours)
                 }
+                onUpdateLogs={setLogs}
               />
             </div>
           </div>

@@ -33,6 +33,9 @@ export interface LogEntry {
   event: string;
   type: 'info' | 'warning' | 'success' | 'error';
   ip?: string;
+  hmacSignature?: string;
+  hmacVerified?: boolean;
+  sessionKeyFingerprint?: string;
 }
 
 export type PlanTier = 'free' | 'pro' | 'elite';

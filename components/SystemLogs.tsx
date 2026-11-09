@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import {
   Terminal,
   XCircle,
@@ -14,14 +14,33 @@ import {
   FileDown,
   Pause,
   Play,
+  ShieldCheck,
+  ShieldAlert,
+  KeyRound,
+  Lock,
+  Copy,
+  RefreshCw,
+  Sparkles,
+  Flame,
+  CheckCircle2,
+  ExternalLink,
 } from 'lucide-react';
 import { LogEntry } from '../types';
+import {
+  isHmacLoggingEnabled,
+  setHmacLoggingEnabled,
+  signLogsBatch,
+  verifyLogEntryHmac,
+  getSessionHmacKey,
+  getCachedHmacInfo,
+} from '../services/logHmacService';
 
 interface Props {
   logs: LogEntry[];
   onClear?: () => void;
   retentionHours?: number;
   onRetentionChange?: (hours: number) => void;
+  onUpdateLogs?: (newLogs: LogEntry[]) => void;
 }
 
 export const SystemLogs: React.FC<Props> = ({
@@ -29,9 +48,11 @@ export const SystemLogs: React.FC<Props> = ({
   onClear,
   retentionHours = 168,
   onRetentionChange,
+  onUpdateLogs,
 }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const downloadFeedbackTimeoutRef = useRef<number | null>(null);
+
   const [filter, setFilter] = useState<
     'all' | 'error' | 'warning' | 'success' | 'info'
   >('all');
@@ -40,6 +61,38 @@ export const SystemLogs: React.FC<Props> = ({
   const [showSearch, setShowSearch] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [logDownloaded, setLogDownloaded] = useState(false);
+
+  // HMAC Cryptographic Timestamping State
+  const [isHmacActive, setIsHmacActive] = useState<boolean>(() => isHmacLoggingEnabled());
+  const [sessionKeyFp, setSessionKeyFp] = useState<string>('HMAC:CHARGEMENT...');
+  const [isSealingBatch, setIsSealingBatch] = useState(false);
+  const [isAuditingBatch, setIsAuditingBatch] = useState(false);
+  const [auditSummaryToast, setAuditSummaryToast] = useState<{
+    total: number;
+    valid: number;
+    timestamp: string;
+  } | null>(null);
+
+  // Log Inspection Modal State
+  const [inspectedLog, setInspectedLog] = useState<LogEntry | null>(null);
+  const [inspectedTamperedText, setInspectedTamperedText] = useState<string | null>(null);
+  const [inspectedVerificationResult, setInspectedVerificationResult] = useState<{
+    valid: boolean;
+    isTampered: boolean;
+    errorDetail?: string;
+  } | null>(null);
+  const [copiedSig, setCopiedSig] = useState(false);
+
+  // Initialize and retrieve session HMAC key fingerprint
+  useEffect(() => {
+    getSessionHmacKey()
+      .then((info) => {
+        setSessionKeyFp(info.fingerprint);
+      })
+      .catch(() => {
+        setSessionKeyFp('HMAC:ACTIF');
+      });
+  }, []);
 
   const filteredLogs = logs.filter((log) => {
     const matchesType = filter === 'all' || log.type === filter;
@@ -50,6 +103,11 @@ export const SystemLogs: React.FC<Props> = ({
       log.event.toLowerCase().includes(q);
     return matchesType && matchesIp;
   });
+
+  const signedCount = useMemo(
+    () => logs.filter((l) => Boolean(l.hmacSignature)).length,
+    [logs]
+  );
 
   useEffect(() => {
     if (!autoScroll || !logsContainerRef.current) return;
@@ -70,6 +128,93 @@ export const SystemLogs: React.FC<Props> = ({
     { label: '7 jours', value: 168 },
     { label: '30 jours', value: 720 },
   ];
+
+  // Toggle HMAC Signing Option
+  const handleToggleHmacSigning = async () => {
+    const nextVal = !isHmacActive;
+    setIsHmacActive(nextVal);
+    setHmacLoggingEnabled(nextVal);
+
+    if (nextVal && onUpdateLogs) {
+      // Seal any currently unsigned logs in batch
+      setIsSealingBatch(true);
+      try {
+        const signed = await signLogsBatch(logs);
+        onUpdateLogs(signed);
+      } finally {
+        setIsSealingBatch(false);
+      }
+    }
+  };
+
+  // Run full integrity audit over all signed logs
+  const handleAuditAllLogs = async () => {
+    setIsAuditingBatch(true);
+    let validCount = 0;
+    const targetLogs = logs.filter((l) => Boolean(l.hmacSignature));
+
+    try {
+      for (const log of targetLogs) {
+        const res = await verifyLogEntryHmac(log);
+        if (res.valid) validCount++;
+      }
+
+      setAuditSummaryToast({
+        total: targetLogs.length,
+        valid: validCount,
+        timestamp: new Date().toLocaleTimeString('fr-FR'),
+      });
+
+      setTimeout(() => setAuditSummaryToast(null), 5000);
+    } finally {
+      setIsAuditingBatch(false);
+    }
+  };
+
+  // Open Log HMAC Inspector
+  const handleInspectLogHmac = async (log: LogEntry) => {
+    setInspectedLog(log);
+    setInspectedTamperedText(null);
+    setCopiedSig(false);
+
+    const res = await verifyLogEntryHmac(log);
+    setInspectedVerificationResult({
+      valid: res.valid,
+      isTampered: false,
+      errorDetail: res.errorDetail,
+    });
+  };
+
+  // Simulate Tamper on inspected log
+  const handleTestTamperInspected = async () => {
+    if (!inspectedLog) return;
+    const alteredEvent = inspectedLog.event + ' [ALTÉRÉ_SANS_AUTORISATION]';
+    setInspectedTamperedText(alteredEvent);
+
+    const tamperedEntry: LogEntry = {
+      ...inspectedLog,
+      event: alteredEvent,
+    };
+
+    const res = await verifyLogEntryHmac(tamperedEntry);
+    setInspectedVerificationResult({
+      valid: res.valid,
+      isTampered: true,
+      errorDetail: 'Signature HMAC invalide : le contenu a été altéré depuis son scellement !',
+    });
+  };
+
+  // Restore original log in inspector
+  const handleRestoreOriginalInspected = async () => {
+    if (!inspectedLog) return;
+    setInspectedTamperedText(null);
+    const res = await verifyLogEntryHmac(inspectedLog);
+    setInspectedVerificationResult({
+      valid: res.valid,
+      isTampered: false,
+      errorDetail: res.errorDetail,
+    });
+  };
 
   const handleDownloadLogFile = () => {
     if (filteredLogs.length === 0) return;
@@ -103,11 +248,12 @@ export const SystemLogs: React.FC<Props> = ({
     const headerLines = [
       '# ============================================================================',
       '# ReNumerate VPN — Journal système local (.log)',
-      `# Généré le      : ${now.toLocaleString('fr-FR')} (${now.toISOString()})`,
-      `# Filtre niveau  : ${filterLabels[filter]}`,
-      `# Recherche      : ${ipSearch.trim() || 'Aucune'}`,
-      `# Rétention      : ${retentionLabel}`,
-      `# Entrées        : ${filteredLogs.length} affichée(s) sur ${logs.length} au total`,
+      `# Généré le         : ${now.toLocaleString('fr-FR')} (${now.toISOString()})`,
+      `# Horodatage HMAC   : ${isHmacActive ? `ACTIF (${sessionKeyFp})` : 'DÉSACTIVÉ'}`,
+      `# Filtre niveau     : ${filterLabels[filter]}`,
+      `# Recherche         : ${ipSearch.trim() || 'Aucune'}`,
+      `# Rétention         : ${retentionLabel}`,
+      `# Entrées           : ${filteredLogs.length} affichée(s) sur ${logs.length} au total`,
       '# ============================================================================',
       '',
     ];
@@ -121,7 +267,10 @@ export const SystemLogs: React.FC<Props> = ({
         )} ${entry.timestamp}`;
       }
       const ipColumn = `[${(entry.ip || 'local').padEnd(15, ' ')}]`;
-      return `[${fullTimestamp}] [${levelLabels[entry.type]}] ${ipColumn} ${entry.event}`;
+      const hmacPart = entry.hmacSignature
+        ? ` [HMAC:${entry.hmacSignature.slice(0, 12)}...]`
+        : '';
+      return `[${fullTimestamp}] [${levelLabels[entry.type]}] ${ipColumn}${hmacPart} ${entry.event}`;
     });
 
     const logContent = [...headerLines, ...bodyLines, ''].join('\n');
@@ -149,6 +298,8 @@ export const SystemLogs: React.FC<Props> = ({
   const handleExportLogs = () => {
     const payload = {
       exportedAt: new Date().toISOString(),
+      sessionHmacKeyFingerprint: sessionKeyFp,
+      hmacSigningActive: isHmacActive,
       filter,
       count: filteredLogs.length,
       entries: filteredLogs,
@@ -167,7 +318,7 @@ export const SystemLogs: React.FC<Props> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 h-[400px] flex flex-col shadow-xs relative overflow-hidden">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 h-[420px] flex flex-col shadow-xs relative overflow-hidden font-sans">
       {/* Header */}
       <div className="flex flex-col gap-2.5 mb-3 border-b border-slate-200 dark:border-slate-800 pb-2.5">
         <div className="flex items-center justify-between gap-2">
@@ -179,9 +330,55 @@ export const SystemLogs: React.FC<Props> = ({
             <span className="text-[11px] font-mono tabular-nums text-slate-400">
               ({filteredLogs.length})
             </span>
+
+            {/* HMAC Session Status Badge */}
+            {isHmacActive && (
+              <span
+                title={`Horodatage cryptographique HMAC-SHA256 actif (${sessionKeyFp})`}
+                className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-mono font-semibold"
+              >
+                <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                <span>{sessionKeyFp}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            {/* HMAC SIGNING OPTION TOGGLE */}
+            <button
+              type="button"
+              onClick={handleToggleHmacSigning}
+              disabled={isSealingBatch}
+              title={
+                isHmacActive
+                  ? `Désactiver l'horodatage HMAC (${sessionKeyFp})`
+                  : 'Activer l’horodatage cryptographique HMAC-SHA256 de chaque entrée'
+              }
+              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                isHmacActive
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shadow-xs'
+                  : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-cyan-500'
+              }`}
+            >
+              <KeyRound className={`w-3 h-3 ${isHmacActive ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <span className="hidden md:inline">
+                {isHmacActive ? 'Sceau HMAC Actif' : 'Activer HMAC'}
+              </span>
+            </button>
+
+            {/* Audit All Signed Logs Button */}
+            {signedCount > 0 && (
+              <button
+                type="button"
+                onClick={handleAuditAllLogs}
+                disabled={isAuditingBatch}
+                title="Vérifier l’intégrité mathématique de l’ensemble des signatures HMAC de session"
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors cursor-pointer"
+              >
+                <ShieldCheck className={`w-3.5 h-3.5 ${isAuditingBatch ? 'animate-spin text-cyan-500' : ''}`} />
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowSearch((s) => !s)}
@@ -310,6 +507,25 @@ export const SystemLogs: React.FC<Props> = ({
           </div>
         </div>
 
+        {/* Audit summary banner */}
+        {auditSummaryToast && (
+          <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[11px] font-mono flex items-center justify-between">
+            <span className="flex items-center gap-1.5 font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              <span>
+                Audit HMAC : {auditSummaryToast.valid}/{auditSummaryToast.total} signatures vérifiées intègres à {auditSummaryToast.timestamp}.
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setAuditSummaryToast(null)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Severity Filter Pills */}
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg">
           {(
@@ -367,8 +583,9 @@ export const SystemLogs: React.FC<Props> = ({
         {filteredLogs.map((log) => (
           <div
             key={log.id}
-            className="flex gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors items-start"
+            className="flex gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors items-start group"
           >
+            {/* Timestamp & IP */}
             <div className="flex flex-col shrink-0 tabular-nums text-[10px] text-slate-400 dark:text-slate-500">
               <span>[{log.timestamp}]</span>
               {log.ip && (
@@ -379,6 +596,7 @@ export const SystemLogs: React.FC<Props> = ({
               )}
             </div>
 
+            {/* Level Icon */}
             <span className="shrink-0 pt-0.5">
               {log.type === 'error' && (
                 <XCircle className="w-3.5 h-3.5 text-red-500" />
@@ -394,6 +612,7 @@ export const SystemLogs: React.FC<Props> = ({
               )}
             </span>
 
+            {/* Event Description */}
             <span
               className={`text-[11px] leading-relaxed break-words flex-1 font-sans ${
                 log.type === 'success'
@@ -407,6 +626,26 @@ export const SystemLogs: React.FC<Props> = ({
             >
               {log.event}
             </span>
+
+            {/* Cryptographic HMAC 'Vérification Active' Icon */}
+            {log.hmacSignature ? (
+              <button
+                type="button"
+                onClick={() => handleInspectLogHmac(log)}
+                title={`Vérification active : Scellement HMAC-SHA256 certifié (${log.sessionKeyFingerprint || 'Session'})\nCliquez pour auditer l’intégrité`}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[9px] font-mono font-bold shrink-0 hover:bg-emerald-500/25 transition-all cursor-pointer"
+              >
+                <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                <span className="hidden sm:inline">Vérifié</span>
+              </button>
+            ) : isHmacActive ? (
+              <span
+                title="En attente de scellement"
+                className="text-[9px] text-slate-400 font-mono px-1 opacity-50"
+              >
+                —
+              </span>
+            ) : null}
           </div>
         ))}
 
@@ -417,6 +656,136 @@ export const SystemLogs: React.FC<Props> = ({
           </div>
         )}
       </div>
+
+      {/* Floating HMAC Seal Inspector Modal / Drawer */}
+      {inspectedLog && (
+        <div className="absolute inset-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs p-4 flex flex-col justify-between border-t border-slate-200 dark:border-slate-800 animate-in fade-in duration-150">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="w-4 h-4" />
+                </span>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>Inspecteur de Sceau HMAC-SHA256</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold">
+                      FIPS 198-1
+                    </span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400 font-mono">
+                    ID : {inspectedLog.id} · Horodatage : {inspectedLog.timestamp} ({inspectedLog.timestampRaw})
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setInspectedLog(null)}
+                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold px-2 py-1 cursor-pointer"
+              >
+                ✕ Fermer
+              </button>
+            </div>
+
+            {/* Event text preview */}
+            <div className="space-y-1 text-xs">
+              <span className="text-[10px] text-slate-400 block font-semibold">Contenu scellé du log :</span>
+              <div
+                className={`p-2 rounded-lg text-xs font-sans border ${
+                  inspectedTamperedText
+                    ? 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-300 font-mono'
+                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+                }`}
+              >
+                {inspectedTamperedText || inspectedLog.event}
+              </div>
+            </div>
+
+            {/* Signature Digest */}
+            <div className="space-y-1 text-xs font-mono">
+              <div className="flex justify-between items-center text-[10px] text-slate-400">
+                <span>Signature HMAC (Clé : {inspectedLog.sessionKeyFingerprint || sessionKeyFp}) :</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (inspectedLog.hmacSignature) {
+                      navigator.clipboard.writeText(inspectedLog.hmacSignature);
+                      setCopiedSig(true);
+                      setTimeout(() => setCopiedSig(false), 2000);
+                    }
+                  }}
+                  className="text-cyan-500 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>{copiedSig ? 'Copié !' : 'Copier signature'}</span>
+                </button>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[10px] text-cyan-600 dark:text-cyan-400 break-all font-bold">
+                {inspectedLog.hmacSignature}
+              </div>
+            </div>
+
+            {/* Verification result feedback */}
+            {inspectedVerificationResult && (
+              <div
+                className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
+                  inspectedVerificationResult.valid
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                    : 'bg-red-500/10 border-red-500/30 text-red-800 dark:text-red-300'
+                }`}
+              >
+                {inspectedVerificationResult.valid ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>
+                      <strong>Intégrité Confirmée :</strong> Le sceau cryptographique HMAC correspond exactement à l'état canonique d'origine.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldAlert className="w-4 h-4 text-red-500 shrink-0" />
+                    <span>
+                      <strong>Alerte de Sécurité :</strong> {inspectedVerificationResult.errorDetail}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Tamper testing actions */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
+            {inspectedTamperedText ? (
+              <button
+                type="button"
+                onClick={handleRestoreOriginalInspected}
+                className="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold hover:border-cyan-500 transition-colors cursor-pointer"
+              >
+                Restaurer Texte Original
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleTestTamperInspected}
+                className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Injecte une modification pour vérifier que l'HMAC rejette immédiatement le log"
+              >
+                <Flame className="w-3.5 h-3.5 text-amber-500" />
+                <span>Tester Altération (Simulation Falsification)</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setInspectedLog(null)}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white text-xs font-semibold cursor-pointer"
+            >
+              Terminé
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
