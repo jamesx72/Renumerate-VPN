@@ -529,5 +529,32 @@ export interface EccBenchmarkResult {
   hardwareAccelerated: boolean;
 }
 
+export interface EccCryptographicSelfTest {
+  id: string;
+  name: string;
+  category: 'keygen' | 'sign' | 'verify' | 'tamper' | 'storage';
+  status: 'passed' | 'failed' | 'running' | 'pending';
+  latencyMs: number;
+  details: string;
+}
+
+export interface EccSecurityActivityLog {
+  id: string;
+  timestamp: string;
+  action:
+    | 'KEY_GENERATED'
+    | 'DOCUMENT_SIGNED'
+    | 'SIGNATURE_VERIFIED_VALID'
+    | 'TAMPER_DETECTED'
+    | 'PUBLIC_KEY_EXPORTED'
+    | 'PUBLIC_KEY_IMPORTED'
+    | 'TEST_SUITE_RUN';
+  curve: EccCurve;
+  status: 'success' | 'warning' | 'error' | 'info';
+  details: string;
+  digestOrFingerprint?: string;
+  latencyMs?: number;
+}
+
 
 
