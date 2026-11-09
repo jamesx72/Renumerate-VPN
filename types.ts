@@ -548,7 +548,9 @@ export interface EccSecurityActivityLog {
     | 'TAMPER_DETECTED'
     | 'PUBLIC_KEY_EXPORTED'
     | 'PUBLIC_KEY_IMPORTED'
-    | 'TEST_SUITE_RUN';
+    | 'TEST_SUITE_RUN'
+    | 'AUDIT_LOGS_EXPORTED_SIGNED'
+    | 'AUDIT_LOGS_VERIFIED';
   curve: EccCurve;
   status: 'success' | 'warning' | 'error' | 'info';
   details: string;

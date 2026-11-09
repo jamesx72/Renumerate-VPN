@@ -157,6 +157,28 @@ export const EccSecurityCenter: React.FC<EccSecurityCenterProps> = ({
   const [selfTests, setSelfTests] = useState<EccCryptographicSelfTest[]>([]);
   const [isRunningTests, setIsRunningTests] = useState(false);
 
+  // Signed Audit Export & Verification State
+  const [isSigningAudit, setIsSigningAudit] = useState(false);
+  const [signedAuditFeedback, setSignedAuditFeedback] = useState<{
+    success: boolean;
+    fingerprint: string;
+    derPrefix: string;
+    timestamp: string;
+  } | null>(null);
+
+  const [showAuditVerifier, setShowAuditVerifier] = useState(false);
+  const [auditJsonToVerify, setAuditJsonToVerify] = useState('');
+  const [isVerifyingAudit, setIsVerifyingAudit] = useState(false);
+  const [auditVerificationStatus, setAuditVerificationStatus] = useState<{
+    checked: boolean;
+    valid: boolean;
+    tampered: boolean;
+    eventCount?: number;
+    exportedAt?: string;
+    signerFingerprint?: string;
+    errorDetail?: string;
+  } | null>(null);
+
   // Advanced Tools: ECDH & ECIES
   const [ecdhCurve, setEcdhCurve] = useState<EccCurve>('P-256');
   const [ecdhResult, setEcdhResult] = useState<EcdhExchangeResult | null>(null);
@@ -568,6 +590,207 @@ export const EccSecurityCenter: React.FC<EccSecurityCenterProps> = ({
     } catch (err: any) {
       setImportedKeyStatus(`Erreur d'import : ${err?.message || 'Format invalide'}`);
       pushActivityLog('PUBLIC_KEY_IMPORTED', selectedCurve, 'error', `Échec d'import clé : ${err?.message}`);
+    }
+  };
+
+  // 8b. Export Signed Audit Logs (JSON + ECDSA P-256 signature)
+  const handleExportSignedAuditLogs = async () => {
+    setIsSigningAudit(true);
+    const startT = performance.now();
+    try {
+      let signingKeyPair = activeRawKeyPair;
+      let keyInfo = activeKeyPair;
+
+      if (!signingKeyPair || keyInfo?.usage !== 'ecdsa') {
+        const generated = await generateEccKeyPair('P-256', 'ecdsa', 'Clé d’Audit Immuable ECDSA');
+        setActiveKeyPair(generated.keyPairInfo);
+        setActiveRawKeyPair(generated.rawKeyPair || null);
+        signingKeyPair = generated.rawKeyPair || null;
+        keyInfo = generated.keyPairInfo;
+      }
+
+      if (!signingKeyPair || !keyInfo) {
+        throw new Error('Impossible d’initialiser la clé de signature ECDSA.');
+      }
+
+      const exportTimestamp = new Date().toISOString();
+      const canonicalEventsJson = JSON.stringify(activityLogs);
+      const enc = new TextEncoder();
+      const eventsBuffer = enc.encode(canonicalEventsJson);
+
+      const digestBuffer = await window.crypto.subtle.digest('SHA-256', eventsBuffer);
+      const digestHex = bytesToHex(new Uint8Array(digestBuffer));
+
+      const payloadToSign = JSON.stringify({
+        schema: 'renumerate-signed-audit-log-v2',
+        exportedAt: exportTimestamp,
+        eventCount: activityLogs.length,
+        canonicalDigestSha256: digestHex,
+        signerFingerprintSha256: keyInfo.fingerprintSha256,
+      });
+
+      const signatureResult = await signEcdsaMessage({
+        privateKey: signingKeyPair.privateKey,
+        messageText: payloadToSign,
+        hashAlg: 'SHA-256',
+        curve: 'P-256',
+      });
+
+      const signedBundle = {
+        schema: 'renumerate-signed-audit-log-v2',
+        exportMetadata: {
+          exportedAt: exportTimestamp,
+          eventCount: activityLogs.length,
+          canonicalDigestSha256: digestHex,
+          auditImmutabilityPolicy: 'FIPS-186-4-ECDSA-P256-Strict-Integrity',
+          specVersion: '2.0.0',
+        },
+        payloadSigned: payloadToSign,
+        signer: {
+          keyId: keyInfo.keyId,
+          curve: 'P-256',
+          hashAlgorithm: 'SHA-256',
+          fingerprintSha256: keyInfo.fingerprintSha256,
+          publicKeyPem: keyInfo.publicKeyPem,
+          publicKeyJwk: keyInfo.publicKeyJwk,
+        },
+        cryptographicProof: {
+          signatureHex: signatureResult.signatureHex,
+          rHex: signatureResult.rHex,
+          sHex: signatureResult.sHex,
+          asn1DerHex: signatureResult.derHex,
+          signerFingerprint: signatureResult.signerFingerprint,
+          signedAt: signatureResult.timestamp,
+        },
+        events: activityLogs,
+      };
+
+      const blob = new Blob([JSON.stringify(signedBundle, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `renumerate_ecc_audit_${Date.now()}.signed.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const lat = Number((performance.now() - startT).toFixed(2));
+      setSignedAuditFeedback({
+        success: true,
+        fingerprint: keyInfo.fingerprintSha256,
+        derPrefix: signatureResult.derHex.slice(0, 24),
+        timestamp: new Date().toLocaleTimeString('fr-FR'),
+      });
+
+      pushActivityLog(
+        'AUDIT_LOGS_EXPORTED_SIGNED',
+        'P-256',
+        'success',
+        `Journaux scellés et exportés au format signé ECDSA P-256 (${activityLogs.length} événements).`,
+        signatureResult.derHex.slice(0, 16),
+        lat
+      );
+
+      addLog(
+        `Journaux d’activité scellés sous signature ECDSA P-256 (Empreinte: ${keyInfo.fingerprintSha256.slice(0, 12)}...)`,
+        'success'
+      );
+    } catch (err: any) {
+      addLog(`Erreur lors de la signature de l’audit : ${err?.message}`, 'error');
+    } finally {
+      setIsSigningAudit(false);
+    }
+  };
+
+  // 8c. Verify External Signed Audit Log File
+  const handleVerifySignedAuditFile = async () => {
+    if (!auditJsonToVerify.trim()) return;
+    setIsVerifyingAudit(true);
+    setAuditVerificationStatus(null);
+    try {
+      const parsed = JSON.parse(auditJsonToVerify);
+      if (
+        parsed.schema !== 'renumerate-signed-audit-log-v2' ||
+        !parsed.cryptographicProof ||
+        !parsed.events ||
+        !parsed.payloadSigned
+      ) {
+        throw new Error('Fichier non conforme au schéma d’audit signé Renumerate v2.');
+      }
+
+      const canonicalEventsJson = JSON.stringify(parsed.events);
+      const enc = new TextEncoder();
+      const eventsBuffer = enc.encode(canonicalEventsJson);
+      const digestBuffer = await window.crypto.subtle.digest('SHA-256', eventsBuffer);
+      const computedDigestHex = bytesToHex(new Uint8Array(digestBuffer));
+
+      if (computedDigestHex !== parsed.exportMetadata.canonicalDigestSha256) {
+        setAuditVerificationStatus({
+          checked: true,
+          valid: false,
+          tampered: true,
+          eventCount: parsed.events.length,
+          exportedAt: parsed.exportMetadata.exportedAt,
+          signerFingerprint: parsed.signer?.fingerprintSha256,
+          errorDetail: 'Altération détectée : le digest des événements ne correspond pas au sceau signé.',
+        });
+        pushActivityLog(
+          'AUDIT_LOGS_VERIFIED',
+          'P-256',
+          'warning',
+          'Vérification d’audit : Échec ! Altération détectée dans les événements de journalisation.',
+          'TAMPER_IN_LOGS'
+        );
+        return;
+      }
+
+      const pubKey = await importPublicKeyFromPem(parsed.signer.publicKeyPem, 'P-256', 'ecdsa');
+
+      const verifyRes = await verifyEcdsaSignature({
+        publicKey: pubKey,
+        messageText: parsed.payloadSigned,
+        signatureHex: parsed.cryptographicProof.signatureHex,
+        hashAlg: 'SHA-256',
+      });
+
+      setAuditVerificationStatus({
+        checked: true,
+        valid: verifyRes.valid,
+        tampered: !verifyRes.valid,
+        eventCount: parsed.events.length,
+        exportedAt: parsed.exportMetadata.exportedAt,
+        signerFingerprint: parsed.signer?.fingerprintSha256,
+        errorDetail: verifyRes.errorDetail,
+      });
+
+      pushActivityLog(
+        'AUDIT_LOGS_VERIFIED',
+        'P-256',
+        verifyRes.valid ? 'success' : 'error',
+        verifyRes.valid
+          ? `Audit signé vérifié avec succès : Immuabilité 100% certifiée (${parsed.events.length} événements).`
+          : 'Échec de vérification : signature ECDSA invalide.',
+        verifyRes.valid ? 'AUDIT_IMMUTABLE_OK' : 'INVALID_SIG'
+      );
+
+      addLog(
+        verifyRes.valid
+          ? `Vérification du faisceau d’audit signé : VALIDE et IMMUABLE (${parsed.events.length} événements certifiés)`
+          : 'Vérification du faisceau d’audit : INVALIDE',
+        verifyRes.valid ? 'success' : 'error'
+      );
+    } catch (err: any) {
+      setAuditVerificationStatus({
+        checked: true,
+        valid: false,
+        tampered: false,
+        errorDetail: err?.message || 'Erreur lors du traitement du fichier JSON.',
+      });
+    } finally {
+      setIsVerifyingAudit(false);
     }
   };
 
@@ -1563,7 +1786,34 @@ export const EccSecurityCenter: React.FC<EccSecurityCenterProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* PRIMARY CTA: EXPORT SIGNED AUDIT */}
+              <button
+                type="button"
+                onClick={handleExportSignedAuditLogs}
+                disabled={isSigningAudit || activityLogs.length === 0}
+                className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+                title="Signe et scelle l'ensemble des événements avec la clé ECDSA P-256"
+              >
+                <FileCheck className={`w-3.5 h-3.5 ${isSigningAudit ? 'animate-spin' : ''}`} />
+                <span>{isSigningAudit ? 'Signature en cours...' : 'Exporter Audit Signé (ECDSA)'}</span>
+              </button>
+
+              {/* Verify Signed Audit Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowAuditVerifier(!showAuditVerifier)}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  showAuditVerifier
+                    ? 'bg-purple-500/15 border-purple-500/40 text-purple-700 dark:text-purple-300 font-bold'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-cyan-500'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-500" />
+                <span>Vérifier Audit Signé</span>
+              </button>
+
+              {/* Plain JSON export */}
               <button
                 type="button"
                 onClick={() => {
@@ -1577,21 +1827,110 @@ export const EccSecurityCenter: React.FC<EccSecurityCenterProps> = ({
                   document.body.removeChild(a);
                   URL.revokeObjectURL(url);
                 }}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:border-cyan-500 transition-colors cursor-pointer flex items-center gap-1.5"
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-cyan-500 transition-colors cursor-pointer flex items-center gap-1"
+                title="Exporter le JSON brut sans signature"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Exporter Audit (.json)</span>
+                <span>JSON Brut</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActivityLogs([])}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 hover:text-red-500 transition-colors cursor-pointer"
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 hover:text-red-500 transition-colors cursor-pointer"
               >
                 Purger
               </button>
             </div>
           </div>
+
+          {/* Signed Audit Export Success Feedback Banner */}
+          {signedAuditFeedback && (
+            <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>
+                  <strong>Audit scellé avec succès !</strong> Fichier signé horodaté à {signedAuditFeedback.timestamp} · Clé signataire :{' '}
+                  <code className="font-mono text-[11px] bg-emerald-500/20 px-1 rounded">{signedAuditFeedback.fingerprint.slice(0, 16)}...</code> · DER :{' '}
+                  <code className="font-mono text-[10px]">{signedAuditFeedback.derPrefix}...</code>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSignedAuditFeedback(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold px-1.5 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Signed Audit Verifier Drawer */}
+          {showAuditVerifier && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-purple-500/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-purple-500" />
+                  <span>Vérificateur d’Audit Immuable (.signed.json)</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowAuditVerifier(false)}
+                  className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Collez ici le contenu d’un fichier d’audit signé pour vérifier mathématiquement son authenticité et certifier qu'aucun événement n'a été inséré, supprimé ou modifié depuis la signature.
+              </p>
+              <textarea
+                rows={4}
+                value={auditJsonToVerify}
+                onChange={(e) => setAuditJsonToVerify(e.target.value)}
+                placeholder='Collez le JSON complet du fichier renumerate_ecc_audit_*.signed.json...'
+                className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono outline-none resize-none"
+              />
+              <button
+                type="button"
+                onClick={handleVerifySignedAuditFile}
+                disabled={isVerifyingAudit || !auditJsonToVerify.trim()}
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>{isVerifyingAudit ? 'Vérification cryptographique...' : 'Vérifier l’Intégrité de l’Audit'}</span>
+              </button>
+
+              {auditVerificationStatus && (
+                <div
+                  className={`p-3 rounded-xl border text-xs font-mono space-y-1 ${
+                    auditVerificationStatus.valid
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-300'
+                  }`}
+                >
+                  <div className="font-bold flex items-center gap-1.5 font-sans">
+                    {auditVerificationStatus.valid ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <span>Audit Immuable &amp; Valide · Intégrité 100% Certifiée</span>
+                      </>
+                    ) : (
+                      <>
+                        <BadgeAlert className="w-4 h-4 text-red-500" />
+                        <span>Échec d'Intégrité : {auditVerificationStatus.errorDetail}</span>
+                      </>
+                    )}
+                  </div>
+                  {auditVerificationStatus.valid && (
+                    <div className="text-[11px] opacity-90">
+                      Événements vérifiés : {auditVerificationStatus.eventCount} · Clé Signataire : {auditVerificationStatus.signerFingerprint?.slice(0, 16)}...
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono text-xs">
             {activityLogs.map((log) => (
