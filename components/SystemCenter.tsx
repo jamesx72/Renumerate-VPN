@@ -61,6 +61,7 @@ import {
 } from '../constants';
 import { IntrusionDetectionCenter } from './IntrusionDetectionCenter';
 import { EccSecurityCenter } from './EccSecurityCenter';
+import { DashboardECC } from './DashboardECC';
 
 interface SystemCenterProps {
   settings: AppSettings;
@@ -537,6 +538,8 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
     tone: 'success' | 'warning' | 'error' | 'info';
     text: string;
   } | null>(null);
+
+  const [eccViewMode, setEccViewMode] = useState<'dashboard' | 'advanced'>('dashboard');
 
   const [telemetry, setTelemetry] = useState<SystemRuntimeTelemetry | null>(
     null
@@ -4006,12 +4009,55 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       )}
 
       {workspaceTab === 'ecc' && (
-        <EccSecurityCenter
-          settings={settings}
-          updateSettings={updateSettings}
-          patchSettings={patchSettings}
-          addLog={addLog}
-        />
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Mode Cryptographique ECC :
+              </span>
+              <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-950 p-1 border border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEccViewMode('dashboard')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    eccViewMode === 'dashboard'
+                      ? 'bg-cyan-500 text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Dashboard ECC (P-256)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEccViewMode('advanced')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    eccViewMode === 'advanced'
+                      ? 'bg-cyan-500 text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Centre Multi-Courbes &amp; ECIES
+                </button>
+              </div>
+            </div>
+
+            <div className="text-[11px] font-mono text-slate-500 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Web Crypto API Native (NIST P-256 / SHA-256)</span>
+            </div>
+          </div>
+
+          {eccViewMode === 'dashboard' ? (
+            <DashboardECC onAddLog={addLog} />
+          ) : (
+            <EccSecurityCenter
+              settings={settings}
+              updateSettings={updateSettings}
+              patchSettings={patchSettings}
+              addLog={addLog}
+            />
+          )}
+        </div>
       )}
     </div>
   );
