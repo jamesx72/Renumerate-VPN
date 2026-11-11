@@ -22,6 +22,7 @@ import {
   Network,
   ShieldCheck,
   KeyRound,
+  Gauge,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -215,6 +216,19 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         icon: Shield,
         tone: 'default',
         onExecute: onFlushDnsCache,
+      },
+      {
+        id: 'run-iperf3-speedtest',
+        category: 'tunnel',
+        categoryLabel: 'Tunnel & Identité',
+        title: 'Lancer un test de vitesse iPerf3 (Débit & Latence)',
+        subtitle: `Benchmark socket RFC 5348 vers ${currentIdentity.city} (${currentIdentity.ip})`,
+        keywords: 'iperf iperf3 vitesse debit speedtest bande passante latence rtt throughput ping gigue',
+        icon: Gauge,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+        },
       },
       {
         id: 'emergency-killswitch',

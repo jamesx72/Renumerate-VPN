@@ -62,6 +62,7 @@ import {
 import { IntrusionDetectionCenter } from './IntrusionDetectionCenter';
 import { EccSecurityCenter } from './EccSecurityCenter';
 import { DashboardECC } from './DashboardECC';
+import { PacketInspector } from './PacketInspector';
 
 interface SystemCenterProps {
   settings: AppSettings;
@@ -3466,6 +3467,16 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       {/* =================================================================== */}
       {workspaceTab === 'inspector' && (
         <div className="space-y-6">
+          {/* Nouveau Composant D3.js PacketInspector */}
+          <PacketInspector
+            settings={settings}
+            updateSettings={updateSettings}
+            patchSettings={patchSettings}
+            currentIdentity={currentIdentity}
+            isConnected={isConnected}
+            addLog={addLog}
+          />
+
           {/* Header & Tap Controls */}
           <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

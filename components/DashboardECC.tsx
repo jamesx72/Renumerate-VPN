@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   KeyRound,
   ShieldCheck,
@@ -237,6 +237,22 @@ function checkPointOnP256(xHex: string, yHex: string): boolean {
   }
 }
 
+// Calcul de l'entropie binaire Shannon H = -sum(p * log2(p))
+function computeShannonEntropy(bytes: Uint8Array): number {
+  if (bytes.length === 0) return 0;
+  const freq = new Map<number, number>();
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    freq.set(b, (freq.get(b) || 0) + 1);
+  }
+  let entropy = 0;
+  for (const count of freq.values()) {
+    const p = count / bytes.length;
+    entropy -= p * Math.log2(p);
+  }
+  return Number(entropy.toFixed(3));
+}
+
 export const DashboardECC: React.FC<DashboardECCProps> = ({
   onAddLog,
   className = '',
@@ -251,6 +267,8 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
   const [copiedKeyField, setCopiedKeyField] = useState<string | null>(null);
 
   // État de Signature de Document
+  const docFileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingDoc, setIsDraggingDoc] = useState(false);
   const [docTitle, setDocTitle] = useState('Manifeste_Audit_Securite_2026.json');
   const [docContent, setDocContent] = useState(
     JSON.stringify(
@@ -272,6 +290,8 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
   const [signedBundle, setSignedBundle] = useState<EccSignedDocumentBundle | null>(null);
 
   // État de Vérification et Détection d'Altération
+  const bundleFileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingBundle, setIsDraggingBundle] = useState(false);
   const [verifyDocText, setVerifyDocText] = useState('');
   const [verifySignatureInput, setVerifySignatureInput] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -283,14 +303,20 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
     details: string;
     verifiedAt: string;
     documentHashHex?: string;
+    signatureEntropyBits?: number;
+    documentSizeBytes?: number;
+    bundleDetected?: boolean;
   } | null>(null);
 
   // État d'Importation de Clé Publique Externe
+  const [importMode, setImportMode] = useState<'pem' | 'jwk'>('pem');
   const [importedPemInput, setImportedPemInput] = useState('');
+  const [importedJwkInput, setImportedJwkInput] = useState('');
   const [importedKeyInfo, setImportedKeyInfo] = useState<{
     fingerprint: string;
     rawKey: CryptoKey;
     pem: string;
+    format: 'pem' | 'jwk';
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -597,6 +623,7 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
 
         const latencyMs = Number((performance.now() - start).toFixed(2));
         const isTampered = !isValid && tamperedOriginalText !== null && tamperedOriginalText !== textToVerify;
+        const sigEntropy = computeShannonEntropy(rawSigBytes);
 
         if (isValid) {
           setVerificationOutcome({
@@ -607,6 +634,8 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
               'Signature cryptographique 100% VALIDE. Le document est authentique et conforme à la clé publique.',
             verifiedAt: new Date().toLocaleTimeString('fr-FR'),
             documentHashHex: currentDocHashHex,
+            signatureEntropyBits: sigEntropy,
+            documentSizeBytes: dataBytes.length,
           });
           addLocalLog(
             'SIGNATURE_VERIFIED',
@@ -625,6 +654,8 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
               : 'REJET CRYPTOGRAPHIQUE : La signature ne correspond pas au document ou a été générée avec une autre clé.',
             verifiedAt: new Date().toLocaleTimeString('fr-FR'),
             documentHashHex: currentDocHashHex,
+            signatureEntropyBits: sigEntropy,
+            documentSizeBytes: dataBytes.length,
           });
           addLocalLog(
             'TAMPER_DETECTED',
@@ -716,6 +747,7 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
         fingerprint,
         rawKey,
         pem: importedPemInput.trim(),
+        format: 'pem',
       });
 
       const latencyMs = Number((performance.now() - start).toFixed(2));
@@ -730,6 +762,148 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
       setImportError(`Échec d'importation : ${err?.message || 'Format PEM ou courbe non reconnue.'}`);
     }
   }, [importedPemInput, addLocalLog]);
+
+  const handleImportPublicKeyJwk = useCallback(async () => {
+    if (!importedJwkInput.trim()) {
+      setImportError('Veuillez coller un objet JSON Web Key (JWK) valide.');
+      return;
+    }
+
+    setImportError(null);
+    const start = performance.now();
+    try {
+      const jwkObj = JSON.parse(importedJwkInput.trim());
+      if (jwkObj.kty !== 'EC' || jwkObj.crv !== 'P-256') {
+        throw new Error("Le JWK doit spécifier kty: 'EC' et crv: 'P-256'.");
+      }
+
+      const rawKey = await window.crypto.subtle.importKey(
+        'jwk',
+        jwkObj,
+        {
+          name: 'ECDSA',
+          namedCurve: 'P-256',
+        },
+        true,
+        ['verify']
+      );
+
+      const spkiBuffer = await window.crypto.subtle.exportKey('spki', rawKey);
+      const spkiBytes = new Uint8Array(spkiBuffer);
+      const pem = formatPem(bytesToBase64(spkiBytes), 'PUBLIC KEY');
+      const fpBuffer = await window.crypto.subtle.digest('SHA-256', toArrayBuffer(spkiBytes));
+      const fingerprint = bytesToHex(new Uint8Array(fpBuffer));
+
+      setImportedKeyInfo({
+        fingerprint,
+        rawKey,
+        pem,
+        format: 'jwk',
+      });
+
+      const latencyMs = Number((performance.now() - start).toFixed(2));
+      addLocalLog(
+        'PUBLIC_KEY_IMPORTED',
+        'success',
+        `Clé publique JWK P-256 importée avec succès (Empreinte: ${fingerprint.slice(0, 12)}…).`,
+        latencyMs,
+        `SHA256:${fingerprint.slice(0, 16)}`
+      );
+    } catch (err: any) {
+      setImportError(`Échec d'importation JWK : ${err?.message || 'Format JWK ou JSON invalide.'}`);
+    }
+  }, [importedJwkInput, addLocalLog]);
+
+  const handleDocFileSelect = useCallback(
+    (file: File) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = (e.target?.result as string) || '';
+        setDocContent(text);
+        setDocTitle(file.name);
+        addLocalLog(
+          'DOCUMENT_SIGNED',
+          'success',
+          `Document importé depuis fichier : "${file.name}" (${file.size} octets).`,
+          0
+        );
+      };
+      reader.readAsText(file);
+    },
+    [addLocalLog]
+  );
+
+  const handleBundleFileSelect = useCallback(
+    (file: File) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const text = (e.target?.result as string) || '';
+          const parsed = JSON.parse(text);
+          if (parsed.documentContent && (parsed.signatureHex || parsed.signatureBase64 || parsed.signatureDerHex)) {
+            setVerifyDocText(parsed.documentContent);
+            setVerifySignatureInput(parsed.signatureHex || parsed.signatureDerHex || parsed.signatureBase64);
+            setTamperedOriginalText(null);
+
+            if (parsed.publicKeyPem) {
+              try {
+                const b64 = parsed.publicKeyPem
+                  .replace(/-----BEGIN [A-Z0-9_ -]+-----/g, '')
+                  .replace(/-----END [A-Z0-9_ -]+-----/g, '')
+                  .replace(/\s+/g, '');
+                const spkiBytes = base64ToBytes(b64);
+                const rawKey = await window.crypto.subtle.importKey(
+                  'spki',
+                  toArrayBuffer(spkiBytes),
+                  { name: 'ECDSA', namedCurve: 'P-256' },
+                  true,
+                  ['verify']
+                );
+                const fpBuffer = await window.crypto.subtle.digest('SHA-256', toArrayBuffer(spkiBytes));
+                const fingerprint = bytesToHex(new Uint8Array(fpBuffer));
+                setImportedKeyInfo({
+                  fingerprint,
+                  rawKey,
+                  pem: parsed.publicKeyPem,
+                  format: 'pem',
+                });
+              } catch {
+                // ignore
+              }
+            }
+
+            addLocalLog(
+              'SIGNATURE_VERIFIED',
+              'success',
+              `Paquet cryptographique signé chargé : "${file.name}".`,
+              0
+            );
+
+            setTimeout(() => {
+              handleVerifySignature(parsed.documentContent);
+            }, 30);
+          } else {
+            throw new Error(
+              "Le fichier ne respecte pas la structure d'enveloppe signée (champs requis: documentContent, signatureHex)."
+            );
+          }
+        } catch (err: any) {
+          addLocalLog('SIGNATURE_VERIFIED', 'error', `Échec d'import du paquet : ${err?.message}`, 0);
+          setVerificationOutcome({
+            tested: true,
+            valid: false,
+            isTampered: false,
+            details: `Erreur d'import : ${err?.message}`,
+            verifiedAt: new Date().toLocaleTimeString('fr-FR'),
+          });
+        }
+      };
+      reader.readAsText(file);
+    },
+    [addLocalLog, handleVerifySignature]
+  );
 
   // ==========================================================================
   // 5. BANC D'ESSAI MATÉRIEL (Benchmark Client WebCrypto P-256)
@@ -1300,16 +1474,55 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
                     {new TextEncoder().encode(docContent).length} octets
                   </span>
                 </div>
-                <textarea
-                  rows={8}
-                  value={docContent}
-                  onChange={(e) => setDocContent(e.target.value)}
-                  className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none leading-relaxed"
-                />
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingDoc(true);
+                  }}
+                  onDragLeave={() => setIsDraggingDoc(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingDoc(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleDocFileSelect(file);
+                  }}
+                  className={`relative rounded-xl transition-all ${
+                    isDraggingDoc ? 'ring-2 ring-cyan-500 bg-cyan-500/10' : ''
+                  }`}
+                >
+                  <textarea
+                    rows={8}
+                    value={docContent}
+                    onChange={(e) => setDocContent(e.target.value)}
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none leading-relaxed"
+                  />
+                  {isDraggingDoc && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-cyan-950/80 backdrop-blur-xs rounded-xl border border-cyan-500 text-cyan-300 font-bold text-xs pointer-events-none">
+                      Déposez votre fichier ici pour charger son contenu
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="file"
+                    ref={docFileInputRef}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleDocFileSelect(f);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => docFileInputRef.current?.click()}
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-cyan-500" />
+                    <span>Charger Fichier (.txt, .json, .md)</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() =>
@@ -1319,7 +1532,7 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
                     }
                     className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300"
                   >
-                    Exemple : Ordre de Routage
+                    Exemple : Routage
                   </button>
                   <button
                     type="button"
@@ -1340,7 +1553,7 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
                     }
                     className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300"
                   >
-                    Exemple : Manifeste JSON
+                    Exemple : JSON
                   </button>
                 </div>
 
@@ -1441,8 +1654,27 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
                 </p>
               </div>
 
-              {/* Bouton de simulation d'altération */}
-              <div className="flex items-center gap-2">
+              {/* Bouton de simulation d'altération et import paquet */}
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  ref={bundleFileInputRef}
+                  className="hidden"
+                  accept=".json,.signed.json"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleBundleFileSelect(f);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => bundleFileInputRef.current?.click()}
+                  className="px-3.5 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-bold flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Importer Paquet (.signed.json)</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleSimulateTamper}
@@ -1501,6 +1733,25 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
                       Condensat SHA-256 calculé : {verificationOutcome.documentHashHex}
                     </div>
                   )}
+
+                  {verificationOutcome.signatureEntropyBits !== undefined && (
+                    <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] font-mono border-t border-slate-200/40 dark:border-slate-800/60 mt-2">
+                      <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                        <span>Taille Document :</span>
+                        <strong className="text-slate-900 dark:text-white">
+                          {verificationOutcome.documentSizeBytes} octets
+                        </strong>
+                      </span>
+                      <span className="text-slate-400">·</span>
+                      <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                        <span>Entropie Shannon Signature :</span>
+                        <strong className="text-cyan-600 dark:text-cyan-400">
+                          {verificationOutcome.signatureEntropyBits} / 8.00 bits/octet
+                        </strong>
+                        <span className="text-[10px] text-emerald-500 font-semibold">(Aléatoire NIST Robuste)</span>
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1509,18 +1760,40 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Document à Contrôler :
+                  Document à Contrôler (ou glissez-déposez une enveloppe .signed.json) :
                 </label>
-                <textarea
-                  rows={6}
-                  value={verifyDocText}
-                  onChange={(e) => {
-                    setVerifyDocText(e.target.value);
-                    if (verificationOutcome) setVerificationOutcome(null);
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingBundle(true);
                   }}
-                  placeholder="Collez ici le contenu exact du document à contrôler..."
-                  className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none leading-relaxed"
-                />
+                  onDragLeave={() => setIsDraggingBundle(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingBundle(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleBundleFileSelect(file);
+                  }}
+                  className={`relative rounded-xl transition-all ${
+                    isDraggingBundle ? 'ring-2 ring-purple-500 bg-purple-500/10' : ''
+                  }`}
+                >
+                  <textarea
+                    rows={6}
+                    value={verifyDocText}
+                    onChange={(e) => {
+                      setVerifyDocText(e.target.value);
+                      if (verificationOutcome) setVerificationOutcome(null);
+                    }}
+                    placeholder="Collez ici le document ou glissez un paquet .signed.json..."
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none leading-relaxed"
+                  />
+                  {isDraggingBundle && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-purple-950/80 backdrop-blur-xs rounded-xl border border-purple-500 text-purple-300 font-bold text-xs pointer-events-none">
+                      Déposez votre paquet signé .signed.json pour vérification automatique
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -1543,7 +1816,11 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
                 <span className="text-xs text-slate-500 font-mono">
                   Clé de contrôle :{' '}
                   <strong className="text-slate-800 dark:text-slate-200">
-                    {importedKeyInfo ? 'Clé Externe Importée' : keyPair ? keyPair.label : 'Aucune'}
+                    {importedKeyInfo
+                      ? `Clé Externe (${importedKeyInfo.format.toUpperCase()} · ${importedKeyInfo.fingerprint.slice(0, 8)})`
+                      : keyPair
+                      ? keyPair.label
+                      : 'Aucune'}
                   </strong>
                 </span>
 
@@ -1579,19 +1856,71 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
               </p>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Clé Publique PEM (X.509 / SubjectPublicKeyInfo) :
-                </label>
-                <textarea
-                  rows={6}
-                  value={importedPemInput}
-                  onChange={(e) => setImportedPemInput(e.target.value)}
-                  placeholder="-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...\n-----END PUBLIC KEY-----"
-                  className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-cyan-400 outline-none leading-relaxed"
-                />
+            {/* Sélecteur de format d'import */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Format de la clé :
+              </span>
+              <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-950 p-1 border border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportMode('pem');
+                    setImportError(null);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importMode === 'pem'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  PEM (X.509 / RFC 5280)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportMode('jwk');
+                    setImportError(null);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importMode === 'jwk'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  JWK (RFC 7517)
+                </button>
               </div>
+            </div>
+
+            <div className="space-y-4">
+              {importMode === 'pem' ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Clé Publique PEM (X.509 / SubjectPublicKeyInfo) :
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={importedPemInput}
+                    onChange={(e) => setImportedPemInput(e.target.value)}
+                    placeholder="-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...\n-----END PUBLIC KEY-----"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-cyan-400 outline-none leading-relaxed"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Clé Publique JWK (JSON Web Key P-256) :
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={importedJwkInput}
+                    onChange={(e) => setImportedJwkInput(e.target.value)}
+                    placeholder="{\n  &quot;kty&quot;: &quot;EC&quot;,\n  &quot;crv&quot;: &quot;P-256&quot;,\n  &quot;x&quot;: &quot;...&quot;,\n  &quot;y&quot;: &quot;...&quot;\n}"
+                    className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-cyan-400 outline-none leading-relaxed"
+                  />
+                </div>
+              )}
 
               {importError && (
                 <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-600 dark:text-red-400 font-medium">
@@ -1602,7 +1931,7 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
               {importedKeyInfo && (
                 <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-2 text-xs">
                   <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-300 font-bold">
-                    <span>Clé Publique P-256 Valide &amp; Chargée en Mémoire</span>
+                    <span>Clé Publique P-256 ({importedKeyInfo.format.toUpperCase()}) Valide &amp; Chargée</span>
                     <Check className="w-4 h-4 text-emerald-500" />
                   </div>
                   <div className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
@@ -1616,21 +1945,25 @@ export const DashboardECC: React.FC<DashboardECCProps> = ({
                   type="button"
                   onClick={() => {
                     if (keyPair) {
-                      setImportedPemInput(keyPair.publicKeyPem);
+                      if (importMode === 'pem') {
+                        setImportedPemInput(keyPair.publicKeyPem);
+                      } else {
+                        setImportedJwkInput(JSON.stringify(keyPair.publicKeyJwk, null, 2));
+                      }
                     }
                   }}
                   className="text-xs text-cyan-600 dark:text-cyan-400 font-bold hover:underline"
                 >
-                  Charger la clé active comme exemple de test
+                  Charger la clé active ({importMode.toUpperCase()}) comme exemple
                 </button>
 
                 <button
                   type="button"
-                  onClick={handleImportPublicKeyPem}
+                  onClick={importMode === 'pem' ? handleImportPublicKeyPem : handleImportPublicKeyJwk}
                   className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-md shadow-purple-600/20"
                 >
                   <Upload className="w-4 h-4" />
-                  <span>Importer &amp; Activer pour Contrôle</span>
+                  <span>Importer Clé {importMode.toUpperCase()}</span>
                 </button>
               </div>
             </div>

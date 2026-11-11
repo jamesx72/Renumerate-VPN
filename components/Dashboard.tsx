@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { TrafficMonitor, AnonymityScore } from './DashboardCharts';
 import { DnsLeakTester } from './DnsLeakTester';
+import { IperfSpeedTester } from './IperfSpeedTester';
 import {
   SecurityReport,
   PlanTier,
@@ -289,6 +290,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isDnsTesting, setIsDnsTesting] = useState(false);
   const [dnsTestTrigger, setDnsTestTrigger] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
+
+  const activeConnectedNode = useMemo(() => {
+    return nodes.find((n) => n.ip === currentIp) || nodes[0];
+  }, [nodes, currentIp]);
 
   // Split Tunneling & DNS Threat Shield quick controls
   const [newSplitTarget, setNewSplitTarget] = useState('');
@@ -1846,6 +1851,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
         updateSettings={updateSettings}
         addLog={addLog}
         externalTriggerCount={dnsTestTrigger}
+      />
+
+      {/* iPerf3 Throughput & Latency Benchmark Section */}
+      <IperfSpeedTester
+        isConnected={isConnected}
+        mode={mode}
+        protocol={protocol}
+        currentIp={currentIp}
+        currentCountry={currentCountry}
+        baseLatency={baseLatency}
+        activeNode={activeConnectedNode}
+        nodes={nodes}
+        settings={settings}
+        addLog={addLog}
       />
 
       {/* Interactive DNS Threat Shield & Split Tunneling Quick Console */}
