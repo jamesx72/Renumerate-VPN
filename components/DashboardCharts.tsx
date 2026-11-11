@@ -1342,6 +1342,7 @@ interface AnonymityScoreProps {
   isDark: boolean;
   isConnected?: boolean;
   settings?: AppSettings;
+  onHardenAll?: () => void;
 }
 
 export const AnonymityScore: React.FC<AnonymityScoreProps> = ({
@@ -1349,6 +1350,7 @@ export const AnonymityScore: React.FC<AnonymityScoreProps> = ({
   isDark,
   isConnected = false,
   settings,
+  onHardenAll,
 }) => {
   const hardeningScore = settings ? computeSettingsHardeningScore(settings) : 75;
   const clampedScore = Math.max(0, Math.min(100, Math.round(score)));
@@ -1507,6 +1509,17 @@ export const AnonymityScore: React.FC<AnonymityScoreProps> = ({
           );
         })}
       </div>
+
+      {onHardenAll && hardeningScore < 100 && (
+        <button
+          type="button"
+          onClick={onHardenAll}
+          className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+        >
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>Sécuriser le système (Durcir à 100%)</span>
+        </button>
+      )}
     </div>
   );
 };

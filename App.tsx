@@ -1571,6 +1571,54 @@ function App() {
     addLog('Paramètres réinitialisés aux valeurs d’usine', 'warning');
   }, [user?.id, addLog]);
 
+  const handleFullSystemHardening = useCallback(() => {
+    patchAppSettings(
+      {
+        killSwitch: true,
+        killSwitchMode: 'strict',
+        postQuantumKex: 'ml-kem-1024',
+        dnsLeakProtection: true,
+        ipv6LeakProtection: true,
+        webrtcLeakShield: true,
+        blockQuicUdp443: true,
+        arpSpoofGuard: true,
+        strictReversePathFilter: true,
+        strictMemoryLock: true,
+        idsEnabled: true,
+        idsSensitivity: 'paranoid',
+        idsAutoQuarantine: true,
+        idsAutoRenumberOnCritical: true,
+        trafficPaddingJitterMs: 40,
+        tlsClientHelloFragmentation: true,
+        eccStrictPointValidation: true,
+        blockCaptivePortalProbes: true,
+        ntpDriftProtection: true,
+        ebpfXdpAcceleration: true,
+        ephemeralRekeyMinutes: 10,
+        anonymityLevel: 'extreme',
+        obfuscationLevel: 'ultra',
+        excludeEyesJurisdictions: '14-eyes',
+        fingerprintProtection: {
+          canvasNoise: true,
+          webglMask: true,
+          audioContextSpoof: true,
+          timezoneSync: true,
+        },
+      },
+      'Sécurisation intégrale effectuée : 100% conformité noyau (12/12 vecteurs), eBPF actif, Post-Quantique ML-KEM-1024 et Kill Switch Strict.'
+    );
+
+    signLogsBatch(logs)
+      .then((signedLogs) => {
+        setLogs(signedLogs);
+        addLog(
+          `[Scellement HMAC] ${signedLogs.length} entrées de journaux système scellées et immuables.`,
+          'success'
+        );
+      })
+      .catch(() => {});
+  }, [patchAppSettings, logs, addLog]);
+
   const handleFlushDnsCache = useCallback((): number => {
     const cleared = Math.floor(Math.random() * 48) + 16;
     addLog(
@@ -1984,6 +2032,7 @@ function App() {
                     })
                     .catch(() => {});
                 }}
+                onFullSystemHardening={handleFullSystemHardening}
               />
               <IdentityMatrix
                 identity={currentIdentity}
@@ -2087,35 +2136,7 @@ function App() {
                 onOpenSystemCenter={() => setActiveSection('system')}
                 onOpenIds={handleOpenIdsCenter}
                 onOpenEcc={handleOpenEccCenter}
-                onAutoRemediate={() =>
-                  patchAppSettings(
-                    {
-                      killSwitch: true,
-                      killSwitchMode: 'strict',
-                      postQuantumKex:
-                        appSettings.postQuantumKex === 'classic-x25519'
-                          ? 'ml-kem-1024'
-                          : appSettings.postQuantumKex,
-                      dnsLeakProtection: true,
-                      ipv6LeakProtection: true,
-                      webrtcLeakShield: true,
-                      blockQuicUdp443: true,
-                      arpSpoofGuard: true,
-                      strictReversePathFilter: true,
-                      strictMemoryLock: true,
-                      idsEnabled: true,
-                      idsSensitivity: 'high',
-                      idsAutoQuarantine: true,
-                      fingerprintProtection: {
-                        canvasNoise: true,
-                        webglMask: true,
-                        audioContextSpoof: true,
-                        timezoneSync: true,
-                      },
-                    },
-                    'Remédiation automatique de la matrice sortie, IDS & noyau (9/9 conformes)'
-                  )
-                }
+                onAutoRemediate={handleFullSystemHardening}
               />
               <SystemLogs
                 logs={logs}

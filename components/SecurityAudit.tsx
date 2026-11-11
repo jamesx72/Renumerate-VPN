@@ -140,6 +140,28 @@ export const SecurityAudit: React.FC<Props> = ({
         detail: `${settings.eccDefaultCurve || 'P-256'} (Natif CSPRNG / ECDH / ECDSA)`,
         passed: Boolean(settings.eccStrictPointValidation !== false),
       },
+      {
+        id: 'traffic_padding',
+        label: 'Brouillage Anti-Corrélation',
+        detail:
+          settings.trafficPaddingJitterMs > 0
+            ? `Chaff ${settings.trafficPaddingJitterMs}ms + Fragment. TLS`
+            : 'Inactif',
+        passed:
+          settings.trafficPaddingJitterMs > 0 &&
+          settings.tlsClientHelloFragmentation,
+      },
+      {
+        id: 'jurisdiction_defense',
+        label: 'Sanctuaire Hors 14-Eyes',
+        detail:
+          settings.excludeEyesJurisdictions === '14-eyes'
+            ? 'Exclusion stricte 14-Eyes'
+            : settings.excludeEyesJurisdictions === '5-eyes'
+            ? 'Exclusion 5-Eyes'
+            : 'Tous pays admis',
+        passed: settings.excludeEyesJurisdictions === '14-eyes',
+      },
     ];
   }, [settings]);
 

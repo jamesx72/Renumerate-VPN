@@ -422,6 +422,54 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
       // Profils & Durcissement
       {
+        id: 'action-secure-all-now',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title: 'Sécuriser Intégralement le Système (Durcissement 100% & Scellement HMAC)',
+        subtitle: '12/12 vecteurs de sécurité conformes, Kill Switch Strict, ML-KEM-1024, IDS Paranoïaque et scellement des journaux',
+        keywords: 'securiser durcir hardening tout securite protect blindage logs audit',
+        shortcut: 'Ctrl+Shift+S',
+        icon: ShieldCheck,
+        tone: 'emerald',
+        onExecute: () => {
+          onPatchSettings(
+            {
+              killSwitch: true,
+              killSwitchMode: 'strict',
+              postQuantumKex: 'ml-kem-1024',
+              dnsLeakProtection: true,
+              ipv6LeakProtection: true,
+              webrtcLeakShield: true,
+              blockQuicUdp443: true,
+              arpSpoofGuard: true,
+              strictReversePathFilter: true,
+              strictMemoryLock: true,
+              idsEnabled: true,
+              idsSensitivity: 'paranoid',
+              idsAutoQuarantine: true,
+              idsAutoRenumberOnCritical: true,
+              trafficPaddingJitterMs: 40,
+              tlsClientHelloFragmentation: true,
+              eccStrictPointValidation: true,
+              blockCaptivePortalProbes: true,
+              ntpDriftProtection: true,
+              ebpfXdpAcceleration: true,
+              ephemeralRekeyMinutes: 10,
+              anonymityLevel: 'extreme',
+              obfuscationLevel: 'ultra',
+              excludeEyesJurisdictions: '14-eyes',
+              fingerprintProtection: {
+                canvasNoise: true,
+                webglMask: true,
+                audioContextSpoof: true,
+                timezoneSync: true,
+              },
+            },
+            'Sécurisation intégrale effectuée : 100% conformité noyau (12/12 vecteurs), eBPF actif, Post-Quantique ML-KEM-1024 et Kill Switch Strict.'
+          );
+        },
+      },
+      {
         id: 'preset-pqc-kernel',
         category: 'presets',
         categoryLabel: 'Profils & Durcissement',

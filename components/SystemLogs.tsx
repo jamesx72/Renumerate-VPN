@@ -366,6 +366,28 @@ export const SystemLogs: React.FC<Props> = ({
               </span>
             </button>
 
+            {/* Sécuriser et sceller les logs non signés */}
+            {logs.length > signedCount && onUpdateLogs && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSealingBatch(true);
+                  try {
+                    const signed = await signLogsBatch(logs);
+                    onUpdateLogs(signed);
+                  } finally {
+                    setIsSealingBatch(false);
+                  }
+                }}
+                disabled={isSealingBatch}
+                title={`Sécuriser et sceller cryptographiquement les ${logs.length - signedCount} entrées de logs non signées`}
+                className="px-2 py-1 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 transition-all cursor-pointer"
+              >
+                <Lock className={`w-3 h-3 ${isSealingBatch ? 'animate-spin' : ''}`} />
+                <span>Sécuriser ({logs.length - signedCount})</span>
+              </button>
+            )}
+
             {/* Audit All Signed Logs Button */}
             {signedCount > 0 && (
               <button

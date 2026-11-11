@@ -131,6 +131,7 @@ interface DashboardProps {
   onTriggerRenumberHop?: () => void;
   onVoiceSecurityReport?: (report: SecurityReport) => void;
   onRefreshSecurity?: () => void;
+  onFullSystemHardening?: () => void;
 }
 
 const VERIFIED_ONION_SERVICES = [
@@ -269,6 +270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onTriggerRenumberHop,
   onVoiceSecurityReport,
   onRefreshSecurity,
+  onFullSystemHardening,
 }) => {
   const [countryFilter, setCountryFilter] = useState<string>('Tous');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -1675,6 +1677,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             isDark={isDark}
             isConnected={isConnected}
             settings={settings}
+            onHardenAll={onFullSystemHardening}
           />
         </div>
       </div>
