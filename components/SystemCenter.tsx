@@ -63,6 +63,7 @@ import { IntrusionDetectionCenter } from './IntrusionDetectionCenter';
 import { EccSecurityCenter } from './EccSecurityCenter';
 import { DashboardECC } from './DashboardECC';
 import { PacketInspector } from './PacketInspector';
+import { SystemTerminal } from './SystemTerminal';
 
 interface SystemCenterProps {
   settings: AppSettings;
@@ -100,6 +101,7 @@ type SystemWorkspaceTab =
   | 'compiler'
   | 'snapshots'
   | 'inspector'
+  | 'terminal'
   | 'ids'
   | 'ecc';
 
@@ -519,7 +521,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       const custom = e as CustomEvent<SystemWorkspaceTab>;
       if (
         custom.detail &&
-        ['audit', 'lab', 'compiler', 'snapshots', 'inspector', 'ids', 'ecc'].includes(
+        ['audit', 'lab', 'compiler', 'snapshots', 'inspector', 'terminal', 'ids', 'ecc'].includes(
           custom.detail
         )
       ) {
@@ -2447,6 +2449,12 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 badge: `${packets.length}`,
               },
               {
+                id: 'terminal',
+                label: 'Console Terminal SSH',
+                icon: Terminal,
+                badge: 'TTY',
+              },
+              {
                 id: 'ids',
                 label: 'Sentinelle IDS',
                 icon: ShieldAlert,
@@ -4003,6 +4011,17 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {workspaceTab === 'terminal' && (
+        <div className="space-y-4">
+          <SystemTerminal
+            settings={settings}
+            currentIdentity={currentIdentity}
+            isConnected={isConnected}
+            addLog={addLog}
+          />
         </div>
       )}
 

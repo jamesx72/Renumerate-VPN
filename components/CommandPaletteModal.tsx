@@ -340,6 +340,35 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'nav-terminal',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir la Console Terminal SSH & Diagnostic ASCII',
+        subtitle:
+          'Accès TTY émulé, commandes ping, traceroute, wg show, mtr, sysctl et visuels ASCII',
+        keywords:
+          'terminal console ssh bash tty ping traceroute mtr sysctl top htop ascii diagnostic shell',
+        shortcut: 'Ctrl+T',
+        icon: Terminal,
+        tone: 'cyan',
+        onExecute: () => {
+          try {
+            localStorage.setItem(
+              'renumerate_system_workspace_tab',
+              'terminal'
+            );
+          } catch {
+            // ignore
+          }
+          window.dispatchEvent(
+            new CustomEvent('renumerate_switch_system_tab', {
+              detail: 'terminal',
+            })
+          );
+          onNavigateSection('system');
+        },
+      },
+      {
         id: 'nav-ids',
         category: 'navigation',
         categoryLabel: 'Navigation',
