@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   KeyRound,
   Gauge,
+  Radio,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -363,6 +364,31 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           window.dispatchEvent(
             new CustomEvent('renumerate_switch_system_tab', {
               detail: 'terminal',
+            })
+          );
+          onNavigateSection('system');
+        },
+      },
+      {
+        id: 'nav-radio-spectrum',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir le Visualiseur de Spectre Radio & TEMPEST',
+        subtitle:
+          'DSP SDR en direct, bruit électromagnétique, fuites d’horloge mémoire et waterfall RF',
+        keywords:
+          'spectre radio sdr tempest rf wifi electromagnetique frequence hertz waterfall bruit antenne',
+        icon: Radio,
+        tone: 'purple',
+        onExecute: () => {
+          try {
+            localStorage.setItem('renumerate_system_workspace_tab', 'lab');
+          } catch {
+            // ignore
+          }
+          window.dispatchEvent(
+            new CustomEvent('renumerate_switch_system_tab', {
+              detail: 'lab',
             })
           );
           onNavigateSection('system');

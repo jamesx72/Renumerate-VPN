@@ -64,6 +64,7 @@ import { EccSecurityCenter } from './EccSecurityCenter';
 import { DashboardECC } from './DashboardECC';
 import { PacketInspector } from './PacketInspector';
 import { SystemTerminal } from './SystemTerminal';
+import { RadioSpectrumVisualizer } from './RadioSpectrumVisualizer';
 
 interface SystemCenterProps {
   settings: AppSettings;
@@ -2741,6 +2742,14 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       {/* =================================================================== */}
       {workspaceTab === 'lab' && (
         <div className="space-y-6">
+          {/* Visualiseur de Spectre Radio & Bruit Électromagnétique SDR / TEMPEST */}
+          <RadioSpectrumVisualizer
+            settings={settings}
+            currentIdentity={currentIdentity}
+            isConnected={isConnected}
+            addLog={addLog}
+          />
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Volatile RAM Ephemeral Key & PFS Engine */}
             <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
