@@ -34,18 +34,26 @@ import {
   Route,
   Radar,
   ShieldCheck,
+  ShieldBan,
   Power,
   Play,
   Loader2,
   Compass,
   Copy,
   Sparkles,
+  Orbit,
 } from 'lucide-react';
-import { DeviceNode, ConnectionMode, AppSettings } from '../types';
+import {
+  DeviceNode,
+  ConnectionMode,
+  AppSettings,
+  GeoFenceRegionId,
+} from '../types';
 import {
   DEFAULT_APP_SETTINGS,
   getJurisdictionTier,
   isCountryExcludedByJurisdiction,
+  isNodeBlockedByGeoFence,
 } from '../constants';
 import {
   WorldNodeMap,
@@ -53,6 +61,8 @@ import {
   getNodeLonLat,
   computeGeodesicDistanceKm,
 } from './WorldNodeMap';
+import { GeoFenceMap } from './GeoFenceMap';
+import { NetworkPlanetarium3D } from './NetworkPlanetarium3D';
 import { BgpRouteLatencyVisualizer } from './BgpRouteLatencyVisualizer';
 import { PredictiveExitNodeAdvisor } from './PredictiveExitNodeAdvisor';
 import { ThreatCloud3DVisualizer } from './ThreatCloud3DVisualizer';
@@ -101,6 +111,11 @@ interface Props {
   onUpdateJurisdictionPolicy?: (
     policy: AppSettings['excludeEyesJurisdictions']
   ) => void;
+  onUpdateGeoFence?: (
+    regions: GeoFenceRegionId[],
+    countries: string[],
+    reason?: string
+  ) => void;
   onDeployCircuit?: (payload: CircuitDeploymentPayload) => void;
   onNodesProbed?: (updatedNodes: DeviceNode[]) => void;
   onConnectNode: (id: string) => void;
@@ -148,6 +163,7 @@ export const NetworkView: React.FC<Props> = ({
   isDark = true,
   settings = DEFAULT_APP_SETTINGS,
   onUpdateJurisdictionPolicy,
+  onUpdateGeoFence,
   onDeployCircuit,
   onNodesProbed,
   onConnectNode,
@@ -187,6 +203,8 @@ export const NetworkView: React.FC<Props> = ({
     initialState.viewMode
   );
   const [showWorldMap, setShowWorldMap] = useState(true);
+  const [showPlanetarium3D, setShowPlanetarium3D] = useState(true);
+  const [showGeoFence, setShowGeoFence] = useState(true);
   const [showBgpVisualizer, setShowBgpVisualizer] = useState(true);
   const [showPredictiveAdvisor, setShowPredictiveAdvisor] = useState(true);
   const [showThreatCloud3D, setShowThreatCloud3D] = useState(false);
@@ -274,7 +292,36 @@ export const NetworkView: React.FC<Props> = ({
   const transferTimersRef = useRef<number[]>([]);
 
   useEffect(() => {
+    const handleFocusGeoFence = () => {
+      setShowGeoFence(true);
+      window.setTimeout(() => {
+        document
+          .getElementById('geofence-panel')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+    };
+    const handleFocusPlanetarium = () => {
+      setShowPlanetarium3D(true);
+      window.setTimeout(() => {
+        document
+          .getElementById('planetarium-3d-panel')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+    };
+    window.addEventListener('renumerate_focus_geofence', handleFocusGeoFence);
+    window.addEventListener(
+      'renumerate_focus_planetarium',
+      handleFocusPlanetarium
+    );
     return () => {
+      window.removeEventListener(
+        'renumerate_focus_geofence',
+        handleFocusGeoFence
+      );
+      window.removeEventListener(
+        'renumerate_focus_planetarium',
+        handleFocusPlanetarium
+      );
       transferTimersRef.current.forEach((t) => window.clearTimeout(t));
     };
   }, []);
@@ -403,6 +450,9 @@ export const NetworkView: React.FC<Props> = ({
         settings.excludeEyesJurisdictions
       )
     );
+    const hasGeoBlockedNode = stagedCircuitNodes.some((n) =>
+      isNodeBlockedByGeoFence(n.country, settings)
+    );
 
     return {
       totalKm,
@@ -410,9 +460,15 @@ export const NetworkView: React.FC<Props> = ({
       uniqueCountries: countriesSet.size,
       allSanctuary,
       hasExcludedNode,
+      hasGeoBlockedNode,
       hasDuplicateHop: idsSet.size < stagedCircuitNodes.length,
     };
-  }, [stagedCircuitNodes, settings.excludeEyesJurisdictions]);
+  }, [
+    stagedCircuitNodes,
+    settings.excludeEyesJurisdictions,
+    settings.geoFenceBlockedRegions,
+    settings.geoFenceBlockedCountries,
+  ]);
 
   const hopLegs = useMemo(() => {
     const legs: Array<{
@@ -595,20 +651,35 @@ export const NetworkView: React.FC<Props> = ({
         !isCountryExcludedByJurisdiction(
           n.country,
           settings.excludeEyesJurisdictions
-        )
+        ) && !isNodeBlockedByGeoFence(n.country, settings)
     );
-    const pool = eligible.length > 0 ? eligible : nodes;
-    const ranked = [...pool].sort((a, b) => {
+    if (eligible.length === 0) {
+      setToast(
+        'Tous les relais sont actuellement bloqués par vos filtres juridictionnels ou la Barrière Géographique.'
+      );
+      return;
+    }
+    const ranked = [...eligible].sort((a, b) => {
       const scoreA = a.latency + (a.loadPct ?? 30) * 0.25;
       const scoreB = b.latency + (b.loadPct ?? 30) * 0.25;
       return scoreA - scoreB;
     });
     const best = ranked[0];
     if (!best) return;
-    onConnectNode(best.id);
+    handleGuardedConnectNode(best.id);
     setToast(
       `Relais optimal sélectionné : ${best.name} (${best.city || best.country} · ${best.latency} ms)`
     );
+  };
+
+  const handleGuardedConnectNode = (nodeId: string) => {
+    const target = nodes.find((n) => n.id === nodeId);
+    if (target && isNodeBlockedByGeoFence(target.country, settings)) {
+      setToast(
+        `Barrière Géographique active : connexion interdite vers ${target.name} (${target.country}).`
+      );
+    }
+    onConnectNode(nodeId);
   };
 
   const handleAutoOptimizeBgpFastest = () => {
@@ -617,10 +688,13 @@ export const NetworkView: React.FC<Props> = ({
         !isCountryExcludedByJurisdiction(
           n.country,
           settings.excludeEyesJurisdictions
-        )
+        ) && !isNodeBlockedByGeoFence(n.country, settings)
     );
-    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes;
-    if (pool.length === 0) return;
+    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes.filter((n) => !isNodeBlockedByGeoFence(n.country, settings));
+    if (pool.length === 0) {
+      setToast('Aucun relais autorisé par la Barrière Géographique.');
+      return;
+    }
 
     // Trier strictement par latence BGP (RTT le plus faible d'abord)
     const sorted = [...pool].sort((a, b) => a.latency - b.latency);
@@ -655,10 +729,13 @@ export const NetworkView: React.FC<Props> = ({
         !isCountryExcludedByJurisdiction(
           n.country,
           settings.excludeEyesJurisdictions
-        )
+        ) && !isNodeBlockedByGeoFence(n.country, settings)
     );
-    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes;
-    if (pool.length === 0) return;
+    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes.filter((n) => !isNodeBlockedByGeoFence(n.country, settings));
+    if (pool.length === 0) {
+      setToast('Aucun relais autorisé par la Barrière Géographique.');
+      return;
+    }
 
     // Extraire l'ASN primaire (ex: AS12876) pour garantir des systèmes autonomes strictement disjoints
     const getCleanAsn = (n: DeviceNode) => (n.asn || '').split(' ')[0] || n.name;
@@ -700,10 +777,21 @@ export const NetworkView: React.FC<Props> = ({
 
   const handleAutoComposeSanctuaryCircuit = () => {
     const sanctuaries = [...nodes]
-      .filter((n) => getJurisdictionTier(n.country) === 'sanctuary')
+      .filter(
+        (n) =>
+          getJurisdictionTier(n.country) === 'sanctuary' &&
+          !isNodeBlockedByGeoFence(n.country, settings)
+      )
       .sort((a, b) => a.latency - b.latency);
 
-    const pool = sanctuaries.length >= 3 ? sanctuaries : [...nodes].sort((a, b) => a.latency - b.latency);
+    const fallbackAllowed = [...nodes]
+      .filter((n) => !isNodeBlockedByGeoFence(n.country, settings))
+      .sort((a, b) => a.latency - b.latency);
+    const pool = sanctuaries.length >= 3 ? sanctuaries : fallbackAllowed;
+    if (pool.length === 0) {
+      setToast('Aucun relais sanctuaire autorisé par la Barrière Géographique.');
+      return;
+    }
     const first = pool[0];
     const second =
       pool.find((n) => n.country !== first?.country) || pool[1] || first;
@@ -729,10 +817,13 @@ export const NetworkView: React.FC<Props> = ({
         !isCountryExcludedByJurisdiction(
           n.country,
           settings.excludeEyesJurisdictions
-        )
+        ) && !isNodeBlockedByGeoFence(n.country, settings)
     );
-    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes;
-    if (pool.length === 0) return;
+    const pool = eligibleNodes.length >= 3 ? eligibleNodes : nodes.filter((n) => !isNodeBlockedByGeoFence(n.country, settings));
+    if (pool.length === 0) {
+      setToast('Aucun relais autorisé par la Barrière Géographique.');
+      return;
+    }
 
     // 1. Entrée la plus proche géographiquement et à faible latence depuis le client
     const sortedByOrigin = [...pool].sort((a, b) => {
@@ -849,6 +940,12 @@ export const NetworkView: React.FC<Props> = ({
       );
       return;
     }
+    if (circuitTelemetry.hasGeoBlockedNode) {
+      setToast(
+        'Déploiement bloqué : un ou plusieurs relais du circuit se trouvent dans une zone interdite par la Barrière Géographique.'
+      );
+      return;
+    }
 
     if (onDeployCircuit && entryNode) {
       onDeployCircuit({
@@ -858,7 +955,7 @@ export const NetworkView: React.FC<Props> = ({
         exitNode,
       });
     } else {
-      onConnectNode(exitNode.id);
+      handleGuardedConnectNode(exitNode.id);
     }
 
     const routeDesc = stagedCircuitNodes.map((n) => n.name).join(' → ');
@@ -1536,6 +1633,10 @@ export const NetworkView: React.FC<Props> = ({
                   <span className="text-rose-600 dark:text-rose-400 font-medium">
                     Doublon de nœud détecté
                   </span>
+                ) : circuitTelemetry.hasGeoBlockedNode ? (
+                  <span className="text-rose-600 dark:text-rose-400 font-medium">
+                    Bloqué par Barrière Géographique
+                  </span>
                 ) : circuitTelemetry.hasExcludedNode ? (
                   <span className="text-amber-600 dark:text-amber-400 font-medium">
                     Inclut un relais hors politique {settings.excludeEyesJurisdictions}
@@ -1637,7 +1738,10 @@ export const NetworkView: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={handleDeployStagedCircuit}
-                  disabled={circuitTelemetry.hasDuplicateHop}
+                  disabled={
+                    circuitTelemetry.hasDuplicateHop ||
+                    circuitTelemetry.hasGeoBlockedNode
+                  }
                   className="w-full py-2 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer h-[38px]"
                 >
                   <Power className="w-3.5 h-3.5" />
@@ -2179,6 +2283,42 @@ export const NetworkView: React.FC<Props> = ({
 
           <button
             type="button"
+            onClick={() => setShowPlanetarium3D(!showPlanetarium3D)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+              showPlanetarium3D
+                ? 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <Orbit className="w-4 h-4 text-cyan-500" />
+            <span className="hidden sm:inline">Planétarium 3D</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowGeoFence(!showGeoFence)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+              showGeoFence
+                ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <ShieldBan className="w-4 h-4 text-rose-500" />
+            <span className="hidden sm:inline">
+              Barrière Géo
+              {(settings.geoFenceBlockedRegions?.length || 0) +
+                (settings.geoFenceBlockedCountries?.length || 0) >
+              0
+                ? ` (${
+                    (settings.geoFenceBlockedRegions?.length || 0) +
+                    (settings.geoFenceBlockedCountries?.length || 0)
+                  })`
+                : ''}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setShowBgpVisualizer(!showBgpVisualizer)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
               showBgpVisualizer
@@ -2275,8 +2415,40 @@ export const NetworkView: React.FC<Props> = ({
           isDark={isDark}
           circuitHopIds={stagedCircuitIds}
           excludeJurisdictions={settings.excludeEyesJurisdictions}
-          onConnectNode={onConnectNode}
+          onConnectNode={handleGuardedConnectNode}
           onAssignHopRole={handleAssignHopFromMap}
+        />
+      )}
+
+      {/* 4.0 Interactive 3D WebGL Orbital Network Planetarium */}
+      {showPlanetarium3D && (
+        <div id="planetarium-3d-panel">
+          <NetworkPlanetarium3D
+            nodes={filteredNodes.length > 0 ? filteredNodes : nodes}
+            currentIp={currentIp}
+            isConnected={isConnected}
+            mode={mode}
+            settings={settings}
+            circuitHopIds={stagedCircuitIds}
+            onConnectNode={handleGuardedConnectNode}
+            onAssignHopRole={handleAssignHopFromMap}
+          />
+        </div>
+      )}
+
+      {/* 4a. Interactive SVG Geographic Fence (Barrière Géographique) */}
+      {showGeoFence && (
+        <GeoFenceMap
+          nodes={nodes}
+          currentIp={currentIp}
+          isConnected={isConnected}
+          isDark={isDark}
+          blockedRegions={settings.geoFenceBlockedRegions || []}
+          blockedCountries={settings.geoFenceBlockedCountries || []}
+          onUpdateGeoFence={(regions, countries, reason) =>
+            onUpdateGeoFence?.(regions, countries, reason)
+          }
+          onConnectNode={handleGuardedConnectNode}
         />
       )}
 
@@ -2287,7 +2459,7 @@ export const NetworkView: React.FC<Props> = ({
           currentIp={currentIp}
           isConnected={isConnected}
           isDark={isDark}
-          onConnectNode={onConnectNode}
+          onConnectNode={handleGuardedConnectNode}
           onAssignHopRole={handleAssignHopFromMap}
         />
       )}
@@ -2300,7 +2472,7 @@ export const NetworkView: React.FC<Props> = ({
           isConnected={isConnected}
           isDark={isDark}
           settings={settings}
-          onConnectNode={onConnectNode}
+          onConnectNode={handleGuardedConnectNode}
           onAssignHopRole={handleAssignHopFromMap}
           addLog={addLog}
         />
@@ -2334,10 +2506,15 @@ export const NetworkView: React.FC<Props> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredNodes.map((node) => {
               const isCurrentNode = isConnected && node.ip === currentIp;
-              const isExcluded = isCountryExcludedByJurisdiction(
+              const isGeoBlocked = isNodeBlockedByGeoFence(
                 node.country,
-                settings.excludeEyesJurisdictions
+                settings
               );
+              const isExcluded =
+                isCountryExcludedByJurisdiction(
+                  node.country,
+                  settings.excludeEyesJurisdictions
+                ) || isGeoBlocked;
               const stagedRole = getStagedRoleLabel(node.id);
 
               return (
@@ -2346,9 +2523,11 @@ export const NetworkView: React.FC<Props> = ({
                   className={`bg-white dark:bg-slate-900 rounded-2xl border p-4 transition-colors flex flex-col justify-between ${
                     isCurrentNode
                       ? 'border-emerald-500/70 dark:border-emerald-500/60'
-                      : isExcluded
-                        ? 'border-slate-200/80 dark:border-slate-800/80 opacity-75'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 dark:hover:border-cyan-500/50'
+                      : isGeoBlocked
+                        ? 'border-rose-300/80 dark:border-rose-900/60 opacity-75'
+                        : isExcluded
+                          ? 'border-slate-200/80 dark:border-slate-800/80 opacity-75'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 dark:hover:border-cyan-500/50'
                   }`}
                 >
                   <div>
@@ -2418,6 +2597,16 @@ export const NetworkView: React.FC<Props> = ({
                       <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
                         {node.ip}
                       </span>
+                      {isGeoBlocked && (
+                        <>
+                          <span className="text-slate-400" aria-hidden="true">
+                            ·
+                          </span>
+                          <span className="font-medium text-rose-600 dark:text-rose-400">
+                            Zone interdite
+                          </span>
+                        </>
+                      )}
                       {stagedRole && (
                         <>
                           <span className="text-slate-400" aria-hidden="true">
@@ -2476,14 +2665,20 @@ export const NetworkView: React.FC<Props> = ({
                   <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => onConnectNode(node.id)}
+                      onClick={() => handleGuardedConnectNode(node.id)}
                       className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                         isCurrentNode
                           ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                          : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90'
+                          : isGeoBlocked
+                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                            : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90'
                       }`}
                     >
-                      {isCurrentNode ? 'Connecté' : 'Basculer ici'}
+                      {isCurrentNode
+                        ? 'Connecté'
+                        : isGeoBlocked
+                          ? 'Zone interdite'
+                          : 'Basculer ici'}
                     </button>
                     <button
                       type="button"
@@ -2694,14 +2889,20 @@ export const NetworkView: React.FC<Props> = ({
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => onConnectNode(node.id)}
+                            onClick={() => handleGuardedConnectNode(node.id)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                               isCurrentNode
                                 ? 'bg-emerald-600 text-white'
-                                : 'bg-slate-100 dark:bg-slate-800 hover:bg-cyan-600 hover:text-white dark:hover:bg-cyan-600 text-slate-700 dark:text-slate-200'
+                                : isNodeBlockedByGeoFence(node.country, settings)
+                                  ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
+                                  : 'bg-slate-100 dark:bg-slate-800 hover:bg-cyan-600 hover:text-white dark:hover:bg-cyan-600 text-slate-700 dark:text-slate-200'
                             }`}
                           >
-                            {isCurrentNode ? 'Connecté' : 'Basculer'}
+                            {isCurrentNode
+                              ? 'Connecté'
+                              : isNodeBlockedByGeoFence(node.country, settings)
+                                ? 'Interdit'
+                                : 'Basculer'}
                           </button>
                           <button
                             type="button"

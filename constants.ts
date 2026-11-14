@@ -19,6 +19,7 @@ import {
   IntrusionVector,
   IntrusionSeverity,
   IdsFilterRule,
+  GeoFenceRegionId,
 } from './types';
 
 export const REALISTIC_USER_AGENTS = [
@@ -161,6 +162,206 @@ export function getJurisdictionTier(
   return 'sanctuary';
 }
 
+export interface GeoFenceRegionSpec {
+  id: GeoFenceRegionId;
+  name: string;
+  shortName: string;
+  description: string;
+  centerLonLat: [number, number];
+  isoNumericIds: string[];
+  nodeCountries: string[];
+}
+
+export const GEO_FENCE_REGIONS: GeoFenceRegionSpec[] = [
+  {
+    id: 'north_america',
+    name: 'Amérique du Nord',
+    shortName: 'Am. Nord',
+    description: 'États-Unis, Canada, Mexique, Groenland',
+    centerLonLat: [-100, 46],
+    isoNumericIds: ['840', '124', '484', '304'],
+    nodeCountries: ['USA', 'Canada', 'Mexique'],
+  },
+  {
+    id: 'latam',
+    name: 'Amérique Latine & Caraïbes',
+    shortName: 'Am. Latine',
+    description: 'Panama, Brésil, Argentine, Chili, Colombie, Caraïbes',
+    centerLonLat: [-62, -14],
+    isoNumericIds: [
+      '032', '152', '076', '068', '604', '170', '591', '188', '558', '340',
+      '222', '320', '084', '862', '328', '740', '218', '630', '388', '192',
+      '332', '214', '044', '238', '858', '600', '780',
+    ],
+    nodeCountries: ['Panama', 'Brésil', 'Argentine', 'Chili'],
+  },
+  {
+    id: 'west_europe',
+    name: 'Europe Occidentale & Nordique',
+    shortName: 'Europe Ouest',
+    description: 'France, Suisse, Allemagne, Islande, Royaume-Uni, UE-Ouest',
+    centerLonLat: [6, 49],
+    isoNumericIds: [
+      '250', '756', '276', '352', '826', '372', '528', '056', '442', '620',
+      '724', '380', '040', '208', '578', '752', '246', '196',
+    ],
+    nodeCountries: [
+      'France',
+      'Suisse',
+      'Allemagne',
+      'Islande',
+      'Royaume-Uni',
+      'Pays-Bas',
+      'Danemark',
+      'Norvège',
+      'Belgique',
+      'Italie',
+      'Espagne',
+      'Suède',
+    ],
+  },
+  {
+    id: 'east_europe',
+    name: 'Europe Orientale & Baltique',
+    shortName: 'Europe Est',
+    description: 'Estonie, Pologne, Ukraine, Balkans, Russie, Caucase',
+    centerLonLat: [34, 54],
+    isoNumericIds: [
+      '233', '428', '440', '616', '203', '703', '348', '642', '498', '100',
+      '300', '008', '191', '705', '070', '807', '688', '499', '112', '804',
+      '643', '268', '051', '031',
+    ],
+    nodeCountries: ['Estonie', 'Pologne', 'Ukraine', 'Roumanie', 'Russie'],
+  },
+  {
+    id: 'mena',
+    name: 'Moyen-Orient & Afrique du Nord',
+    shortName: 'MENA',
+    description: 'Maghreb, Égypte, Turquie, Golfe, Levant, Iran',
+    centerLonLat: [36, 27],
+    isoNumericIds: [
+      '504', '012', '788', '434', '818', '732', '792', '376', '422', '275',
+      '400', '760', '368', '682', '784', '634', '414', '512', '887', '364',
+    ],
+    nodeCountries: ['Maroc', 'Égypte', 'Émirats Arabes Unis', 'Turquie', 'Israël'],
+  },
+  {
+    id: 'africa_sub',
+    name: 'Afrique Subsaharienne',
+    shortName: 'Afrique Sub.',
+    description: 'Afrique de l’Ouest, Centrale, de l’Est et Australe',
+    centerLonLat: [20, 2],
+    isoNumericIds: [
+      '834', '180', '706', '404', '729', '728', '148', '710', '426', '716',
+      '072', '516', '686', '466', '478', '204', '562', '566', '120', '768',
+      '288', '384', '324', '624', '430', '694', '854', '140', '178', '266',
+      '226', '894', '454', '508', '748', '024', '108', '450', '270', '232',
+      '231', '262', '800', '646',
+    ],
+    nodeCountries: ['Afrique du Sud', 'Nigeria', 'Kenya', 'Sénégal', 'Côte d’Ivoire'],
+  },
+  {
+    id: 'south_east_asia',
+    name: 'Asie & Pacifique',
+    shortName: 'Asie',
+    description: 'Singapour, Japon, Corée, Chine, Inde, Asie Centrale & SE',
+    centerLonLat: [104, 28],
+    isoNumericIds: [
+      '398', '860', '762', '417', '795', '004', '586', '356', '050', '064',
+      '524', '144', '156', '158', '496', '408', '410', '392', '104', '764',
+      '418', '116', '704', '458', '096', '608', '360', '626',
+    ],
+    nodeCountries: ['Singapour', 'Japon', 'Inde', 'Corée du Sud', 'Taïwan'],
+  },
+  {
+    id: 'oceania',
+    name: 'Océanie',
+    shortName: 'Océanie',
+    description: 'Australie, Nouvelle-Zélande, Papouasie, Pacifique Sud',
+    centerLonLat: [138, -24],
+    isoNumericIds: ['036', '554', '598', '242', '548', '540', '090', '010', '260'],
+    nodeCountries: ['Australie', 'Nouvelle-Zélande'],
+  },
+];
+
+const ISO_TO_GEO_REGION: Record<string, GeoFenceRegionId> = (() => {
+  const map: Record<string, GeoFenceRegionId> = {};
+  for (const reg of GEO_FENCE_REGIONS) {
+    for (const id of reg.isoNumericIds) {
+      map[id] = reg.id;
+    }
+  }
+  return map;
+})();
+
+const ATLAS_NAME_TO_GEO_REGION: Record<string, GeoFenceRegionId> = {
+  'N. Cyprus': 'west_europe',
+  Somaliland: 'africa_sub',
+  Kosovo: 'east_europe',
+};
+
+const NODE_COUNTRY_TO_ATLAS_NAMES: Record<string, string[]> = {
+  France: ['France'],
+  Suisse: ['Switzerland'],
+  Allemagne: ['Germany'],
+  Islande: ['Iceland'],
+  Estonie: ['Estonia'],
+  USA: ['United States of America'],
+  Panama: ['Panama'],
+  Singapour: ['Malaysia'], // Singapore micro-island shares proximity with Malay peninsula on 110m atlas
+  Canada: ['Canada'],
+  'Royaume-Uni': ['United Kingdom'],
+  Australie: ['Australia'],
+  'Nouvelle-Zélande': ['New Zealand'],
+  'Pays-Bas': ['Netherlands'],
+  Suède: ['Sweden'],
+  Norvège: ['Norway'],
+  Danemark: ['Denmark'],
+  Espagne: ['Spain'],
+  Italie: ['Italy'],
+  Belgique: ['Belgium'],
+  Japon: ['Japan'],
+};
+
+export function getGeoRegionByCountryId(
+  isoId?: string | number,
+  atlasName?: string
+): GeoFenceRegionId {
+  if (isoId !== undefined && isoId !== null) {
+    const padded = String(isoId).padStart(3, '0');
+    if (ISO_TO_GEO_REGION[padded]) return ISO_TO_GEO_REGION[padded];
+    if (ISO_TO_GEO_REGION[String(isoId)]) return ISO_TO_GEO_REGION[String(isoId)];
+  }
+  if (atlasName && ATLAS_NAME_TO_GEO_REGION[atlasName]) {
+    return ATLAS_NAME_TO_GEO_REGION[atlasName];
+  }
+  return 'west_europe';
+}
+
+export function getNodeGeoRegion(country: string): GeoFenceRegionId {
+  for (const reg of GEO_FENCE_REGIONS) {
+    if (reg.nodeCountries.includes(country)) return reg.id;
+  }
+  return 'west_europe';
+}
+
+export function isNodeBlockedByGeoFence(
+  country: string,
+  settings?: Pick<
+    AppSettings,
+    'geoFenceBlockedRegions' | 'geoFenceBlockedCountries'
+  > | null
+): boolean {
+  if (!settings) return false;
+  const blockedRegions = settings.geoFenceBlockedRegions || [];
+  const blockedCountries = settings.geoFenceBlockedCountries || [];
+  const region = getNodeGeoRegion(country);
+  if (blockedRegions.includes(region)) return true;
+  if (blockedCountries.includes(country)) return true;
+  const mappedAtlasNames = NODE_COUNTRY_TO_ATLAS_NAMES[country] || [];
+  return mappedAtlasNames.some((n) => blockedCountries.includes(n));
+}
+
 export const DEFAULT_SPLIT_TUNNEL_RULES: SplitTunnelRule[] = [
   {
     id: 'rule-lan-cidr',
@@ -274,6 +475,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   eccDefaultCurve: 'P-256',
   eccSignatureHash: 'SHA-256',
   eccStrictPointValidation: true,
+  geoFenceBlockedRegions: [],
+  geoFenceBlockedCountries: [],
 };
 
 function clampInt(val: unknown, min: number, max: number, fallback: number): number {
@@ -761,6 +964,24 @@ export function sanitizeAppSettings(
       typeof src.eccStrictPointValidation === 'boolean'
         ? src.eccStrictPointValidation
         : DEFAULT_APP_SETTINGS.eccStrictPointValidation,
+    geoFenceBlockedRegions: Array.isArray(src.geoFenceBlockedRegions)
+      ? Array.from(
+          new Set(
+            src.geoFenceBlockedRegions.filter((r): r is GeoFenceRegionId =>
+              GEO_FENCE_REGIONS.some((spec) => spec.id === r)
+            )
+          )
+        )
+      : DEFAULT_APP_SETTINGS.geoFenceBlockedRegions,
+    geoFenceBlockedCountries: Array.isArray(src.geoFenceBlockedCountries)
+      ? Array.from(
+          new Set(
+            src.geoFenceBlockedCountries.filter(
+              (c): c is string => typeof c === 'string' && c.trim().length > 0
+            )
+          )
+        )
+      : DEFAULT_APP_SETTINGS.geoFenceBlockedCountries,
   };
 }
 
@@ -957,6 +1178,8 @@ export function getNextHopCandidateNodes(params: {
   currentCountry: string;
   nodes?: DeviceNode[];
   excludePolicy?: AppSettings['excludeEyesJurisdictions'];
+  geoFenceBlockedRegions?: GeoFenceRegionId[];
+  geoFenceBlockedCountries?: string[];
 }): DeviceNode[] {
   const {
     level,
@@ -964,11 +1187,22 @@ export function getNextHopCandidateNodes(params: {
     currentCountry,
     nodes = MOCK_NODES,
     excludePolicy = 'none',
+    geoFenceBlockedRegions = [],
+    geoFenceBlockedCountries = [],
   } = params;
 
   const sourceNodes = nodes.length > 0 ? nodes : MOCK_NODES;
-  const withoutCurrentIp = sourceNodes.filter((n) => n.ip !== currentIp);
-  const basePool = withoutCurrentIp.length > 0 ? withoutCurrentIp : sourceNodes;
+  const geoAllowed = sourceNodes.filter(
+    (n) =>
+      !isNodeBlockedByGeoFence(n.country, {
+        geoFenceBlockedRegions,
+        geoFenceBlockedCountries,
+      })
+  );
+  const effectiveSource = geoAllowed.length > 0 ? geoAllowed : sourceNodes;
+  const withoutCurrentIp = effectiveSource.filter((n) => n.ip !== currentIp);
+  const basePool =
+    withoutCurrentIp.length > 0 ? withoutCurrentIp : effectiveSource;
 
   if (level === 'low') {
     const allowed = basePool.filter(
@@ -1083,6 +1317,8 @@ export function computeNextRenumberHop(params: {
     currentCountry: currentIdentity.country,
     nodes,
     excludePolicy: settings.excludeEyesJurisdictions,
+    geoFenceBlockedRegions: settings.geoFenceBlockedRegions,
+    geoFenceBlockedCountries: settings.geoFenceBlockedCountries,
   });
 
   let selectionPool = candidates;

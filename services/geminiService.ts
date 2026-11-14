@@ -1,4 +1,4 @@
-import { ConnectionMode, SecurityReport } from '../types';
+import { AppSettings, ConnectionMode, SecurityReport } from '../types';
 
 export interface SecurityContextOptions {
   protocol?: string;
@@ -341,6 +341,322 @@ export const synthesizeSentinelSpeech = async (
     return data.audioWavBase64;
   } catch {
     return null;
+  }
+};
+
+export type RiskBulletinTopic = 'global' | 'vpn_tunnel' | 'zero_day' | 'dns_bgp';
+
+export interface RiskBulletinVectorAlert {
+  id: string;
+  title: string;
+  category: string;
+  severity: 'critique' | 'élevée' | 'modérée';
+  summary: string;
+  cveOrRef?: string;
+}
+
+export interface AdaptiveRecommendation {
+  id: string;
+  priority: 'urgente' | 'haute' | 'maintenance';
+  title: string;
+  rationale: string;
+  scoreGain: number;
+  settingsPatch?: Partial<AppSettings>;
+}
+
+export interface NetworkRiskBulletinResult {
+  globalThreatLevel: 'Critique' | 'Élevé' | 'Modéré' | 'Faible';
+  threatIndex: number;
+  headline: string;
+  summary: string;
+  observedAt: string;
+  topic: RiskBulletinTopic;
+  searchQueries: string[];
+  sources: { title: string; uri: string }[];
+  activeThreats: RiskBulletinVectorAlert[];
+  searchRecommendations: string[];
+  engine: 'gemini-search' | 'local-heuristic';
+  quotaLimited?: boolean;
+  quotaNotice?: string;
+}
+
+const riskBulletinClientCache = new Map<string, NetworkRiskBulletinResult>();
+
+/**
+ * Calcule des recommandations de sécurité adaptatives en fonction du score de durcissement réel du système.
+ */
+export function computeAdaptiveSecurityRecommendations(
+  settings: AppSettings,
+  hardeningScore: number,
+  globalThreatLevel: NetworkRiskBulletinResult['globalThreatLevel'] = 'Élevé'
+): AdaptiveRecommendation[] {
+  const recs: AdaptiveRecommendation[] = [];
+  const highWorldRisk =
+    globalThreatLevel === 'Critique' || globalThreatLevel === 'Élevé';
+
+  if (!settings.killSwitch || settings.killSwitchMode !== 'strict') {
+    recs.push({
+      id: 'rec-killswitch-strict',
+      priority: 'urgente',
+      title: 'Verrouiller le Kill Switch nftables en mode Strict',
+      rationale: highWorldRisk
+        ? 'Indispensable face aux risques d’injection de routes hors tunnel : bloque instantanément tout paquet sortant hors interface chiffrée.'
+        : 'Empêche toute fuite IP directe lors d’une micro-coupure de liaison.',
+      scoreGain: settings.killSwitch ? 4 : 12,
+      settingsPatch: { killSwitch: true, killSwitchMode: 'strict' },
+    });
+  }
+
+  if (!settings.dnsLeakProtection || !settings.ipv6LeakProtection || !settings.webrtcLeakShield) {
+    const missingGain =
+      (!settings.dnsLeakProtection ? 10 : 0) +
+      (!settings.ipv6LeakProtection ? 9 : 0) +
+      (!settings.webrtcLeakShield ? 7 : 0);
+    recs.push({
+      id: 'rec-leak-shield',
+      priority: hardeningScore < 70 ? 'urgente' : 'haute',
+      title: 'Sceller les boucliers anti-fuites DNS, IPv6 & WebRTC',
+      rationale:
+        'Élimine l’exposition parallèle des requêtes AAAA/DoH et des sondes STUN navigateur identifiées dans les campagnes de désanonymisation.',
+      scoreGain: missingGain,
+      settingsPatch: {
+        dnsLeakProtection: true,
+        ipv6LeakProtection: true,
+        webrtcLeakShield: true,
+      },
+    });
+  }
+
+  if (!settings.idsEnabled || settings.idsSensitivity !== 'paranoid' || !settings.idsAutoQuarantine) {
+    recs.push({
+      id: 'rec-ids-paranoid',
+      priority: hardeningScore < 65 ? 'urgente' : 'haute',
+      title: 'Activer la Sentinelle IDS eBPF/XDP (Paranoïaque + Auto-Quarantaine)',
+      rationale:
+        'Permet le rejet matériel XDP des scans de ports, tentatives d’exploitation réseau et signatures d’intrusion actives.',
+      scoreGain:
+        (!settings.idsEnabled ? 5 : settings.idsSensitivity !== 'paranoid' ? 1 : 0) +
+        (!settings.idsAutoQuarantine ? 2 : 0) +
+        (!settings.idsAutoRenumberOnCritical ? 2 : 0),
+      settingsPatch: {
+        idsEnabled: true,
+        idsSensitivity: 'paranoid',
+        idsAutoQuarantine: true,
+        idsAutoRenumberOnCritical: true,
+      },
+    });
+  }
+
+  if (settings.postQuantumKex !== 'ml-kem-1024') {
+    recs.push({
+      id: 'rec-pqc-mlkem',
+      priority: hardeningScore < 80 ? 'haute' : 'maintenance',
+      title: 'Basculer l’échange de clés vers Post-Quantique ML-KEM-1024',
+      rationale:
+        'Protège les sessions actives contre l’interception passive à long terme (« Harvest Now, Decrypt Later »).',
+      scoreGain: settings.postQuantumKex === 'sntrup761' ? 2 : 6,
+      settingsPatch: { postQuantumKex: 'ml-kem-1024' },
+    });
+  }
+
+  if (!settings.blockQuicUdp443 || !settings.arpSpoofGuard || !settings.strictReversePathFilter) {
+    const gain =
+      (!settings.blockQuicUdp443 ? 4 : 0) +
+      (!settings.arpSpoofGuard ? 4 : 0) +
+      (!settings.strictReversePathFilter ? 3 : 0);
+    recs.push({
+      id: 'rec-l2-quic',
+      priority: 'haute',
+      title: 'Activer le filtrage QUIC UDP/443, Garde ARP & rp_filter strict',
+      rationale:
+        'Bloque les contournements HTTP/3 hors tunnel et protège contre l’empoisonnement ARP sur les réseaux Wi-Fi publics.',
+      scoreGain: gain,
+      settingsPatch: {
+        blockQuicUdp443: true,
+        arpSpoofGuard: true,
+        strictReversePathFilter: true,
+      },
+    });
+  }
+
+  if (settings.trafficPaddingJitterMs === 0 || !settings.tlsClientHelloFragmentation || settings.obfuscationLevel !== 'ultra') {
+    const gain =
+      (settings.trafficPaddingJitterMs === 0 ? 2 : 0) +
+      (!settings.tlsClientHelloFragmentation ? 2 : 0) +
+      (settings.obfuscationLevel === 'ultra' ? 0 : settings.obfuscationLevel === 'high' ? 2 : 5);
+    recs.push({
+      id: 'rec-anti-dpi',
+      priority: hardeningScore >= 75 ? 'haute' : 'maintenance',
+      title: 'Déployer le brouillage Chaff 40 ms & fragmentation TLS Ultra',
+      rationale:
+        'Neutralise l’inspection profonde de paquets (DPI) et la corrélation temporelle des flux chiffrés.',
+      scoreGain: gain,
+      settingsPatch: {
+        trafficPaddingJitterMs: 40,
+        tlsClientHelloFragmentation: true,
+        obfuscationLevel: 'ultra',
+      },
+    });
+  }
+
+  if (settings.excludeEyesJurisdictions !== '14-eyes' || settings.anonymityLevel !== 'extreme') {
+    recs.push({
+      id: 'rec-sanctuary-14eyes',
+      priority: 'maintenance',
+      title: 'Restreindre le routage aux sanctuaires hors 14-Eyes (Mode Extrême)',
+      rationale:
+        'Exclut les juridictions soumises aux lois de rétention forcée et accélère la re-numérotation IP/MAC.',
+      scoreGain:
+        (settings.excludeEyesJurisdictions === '14-eyes'
+          ? 0
+          : settings.excludeEyesJurisdictions === '5-eyes'
+            ? 2
+            : 5) +
+        (settings.anonymityLevel === 'extreme'
+          ? 0
+          : settings.anonymityLevel === 'balanced'
+            ? 2
+            : 5),
+      settingsPatch: {
+        excludeEyesJurisdictions: '14-eyes',
+        anonymityLevel: 'extreme',
+        autoRotation: true,
+      },
+    });
+  }
+
+  if (
+    !settings.strictMemoryLock ||
+    !settings.ntpDriftProtection ||
+    !settings.ebpfXdpAcceleration ||
+    settings.ephemeralRekeyMinutes > 10 ||
+    !settings.blockCaptivePortalProbes
+  ) {
+    recs.push({
+      id: 'rec-kernel-mem',
+      priority: 'maintenance',
+      title: 'Verrouiller la RAM (mlockall), horloge NTP & re-cléage PFS ≤ 10 min',
+      rationale:
+        'Évite le vidage des clés de session dans le fichier d’échange disque et réduit la fenêtre d’exposition cryptographique.',
+      scoreGain:
+        (!settings.strictMemoryLock ? 2 : 0) +
+        (!settings.ntpDriftProtection ? 2 : 0) +
+        (!settings.ebpfXdpAcceleration ? 1 : 0) +
+        (settings.ephemeralRekeyMinutes > 10 ? 2 : 0) +
+        (!settings.blockCaptivePortalProbes ? 2 : 0),
+      settingsPatch: {
+        strictMemoryLock: true,
+        ntpDriftProtection: true,
+        ebpfXdpAcceleration: true,
+        ephemeralRekeyMinutes: 10,
+        blockCaptivePortalProbes: true,
+      },
+    });
+  }
+
+  if (recs.length === 0) {
+    recs.push({
+      id: 'rec-fortress-maintain',
+      priority: 'maintenance',
+      title: 'Posture Forteresse 100/100 confirmée — Rotation préventive recommandée',
+      rationale:
+        'Tous les vecteurs noyau, PQC, IDS et anti-DPI sont actifs face au niveau de menace mondial actuel. Maintenez l’audit DNS et la rotation MAC/IP.',
+      scoreGain: 0,
+    });
+  }
+
+  return recs.slice(0, 5);
+}
+
+/**
+ * Interroge l'API de recherche Google Search Grounding (via /api/gemini/risk-bulletin)
+ * pour obtenir le niveau de menace cybernétique mondial actuel.
+ */
+export const fetchNetworkRiskBulletin = async (params: {
+  hardeningScore: number;
+  topic: RiskBulletinTopic;
+  location: string;
+  mode: ConnectionMode;
+  protocol: string;
+  missingControls: string[];
+  forceRefresh?: boolean;
+}): Promise<NetworkRiskBulletinResult> => {
+  const scoreBucket =
+    params.hardeningScore >= 90
+      ? '90+'
+      : params.hardeningScore >= 75
+        ? '75+'
+        : params.hardeningScore >= 55
+          ? '55+'
+          : 'low';
+  const cacheKey = `${params.topic}|${scoreBucket}|${params.mode}|${params.protocol}`;
+
+  if (!params.forceRefresh) {
+    const cached = riskBulletinClientCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  try {
+    const { ok, data } = await fetchJsonWithTimeout<Partial<NetworkRiskBulletinResult>>(
+      '/api/gemini/risk-bulletin',
+      params as unknown as Record<string, unknown>,
+      18_000
+    );
+
+    if (!ok || !data.globalThreatLevel || !data.headline) {
+      throw new Error('Réponse bulletin invalide');
+    }
+
+    const result: NetworkRiskBulletinResult = {
+      globalThreatLevel: data.globalThreatLevel,
+      threatIndex: typeof data.threatIndex === 'number' ? data.threatIndex : 74,
+      headline: data.headline,
+      summary:
+        data.summary ||
+        'Synthèse mondiale des cybermenaces réseau et avis de sécurité actifs.',
+      observedAt: data.observedAt || new Date().toISOString(),
+      topic: (data.topic as RiskBulletinTopic) || params.topic,
+      searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
+      sources: Array.isArray(data.sources) ? data.sources : [],
+      activeThreats: Array.isArray(data.activeThreats) ? data.activeThreats : [],
+      searchRecommendations: Array.isArray(data.searchRecommendations)
+        ? data.searchRecommendations
+        : [],
+      engine: data.engine || 'gemini-search',
+      quotaLimited: Boolean(data.quotaLimited),
+      quotaNotice: data.quotaNotice,
+    };
+
+    riskBulletinClientCache.set(cacheKey, result);
+    return result;
+  } catch {
+    const fallback: NetworkRiskBulletinResult = {
+      globalThreatLevel: 'Élevé',
+      threatIndex: 74,
+      headline:
+        'Vigilance élevée sur les passerelles VPN, détournements DNS/BGP et failles périmétriques',
+      summary: `L’indice de menace mondiale reste élevé (74/100). Priorisez la mise en conformité de vos vecteurs de durcissement (score actuel : ${params.hardeningScore}/100).`,
+      observedAt: new Date().toISOString(),
+      topic: params.topic,
+      searchQueries: ['cyber threat level advisories CISA KEV CERT-FR'],
+      sources: [],
+      activeThreats: [
+        {
+          id: 'fallback-vpn-edge',
+          title: 'Sondes automatisées sur tunnels et passerelles distantes',
+          category: 'VPN & Périmètre',
+          severity: 'critique',
+          cveOrRef: 'Veille Heuristique',
+          summary:
+            'Activité persistante de balayage et d’injection de routes hors tunnel sur réseaux non cloisonnés.',
+        },
+      ],
+      searchRecommendations: [
+        'Maintenez le Kill Switch Strict et le bouclier IPv6/DNS actifs.',
+      ],
+      engine: 'local-heuristic',
+    };
+    return fallback;
   }
 };
 

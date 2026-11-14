@@ -26,6 +26,7 @@ import {
 } from './components/NetworkView';
 import { LocalVault } from './components/LocalVault';
 import { SystemCenter } from './components/SystemCenter';
+import { NetworkRiskBulletin } from './components/NetworkRiskBulletin';
 import {
   PricingModal,
   PaymentSettlementMethod,
@@ -59,6 +60,7 @@ import {
   computeSettingsHardeningScore,
   pickUserAgentByComplexity,
   isCountryExcludedByJurisdiction,
+  isNodeBlockedByGeoFence,
   computeRncEarningRate,
   computeWithdrawalQuote,
   validateWithdrawalDestination,
@@ -292,7 +294,34 @@ function App() {
           'info'
         );
       }
-      const targetIdentity = overrideIdentity ?? currentIdentity;
+      let targetIdentity = overrideIdentity ?? currentIdentity;
+      if (!overrideIdentity && isNodeBlockedByGeoFence(targetIdentity.country, appSettings)) {
+        const safeNode = nodes.find(
+          (n) => !isNodeBlockedByGeoFence(n.country, appSettings)
+        );
+        if (!safeNode) {
+          addLog(
+            `[Barrière Géographique] Connexion impossible : toutes les zones géographiques sont actuellement interdites`,
+            'error',
+            targetIdentity.ip
+          );
+          return;
+        }
+        targetIdentity = {
+          ...targetIdentity,
+          ip: safeNode.ip,
+          country: safeNode.country,
+          city: safeNode.city || safeNode.country,
+          latency: safeNode.latency,
+          timezone: safeNode.timezone || targetIdentity.timezone,
+        };
+        setCurrentIdentity(targetIdentity);
+        addLog(
+          `[Barrière Géographique] Passerelle initiale hors zone autorisée — redirection vers ${targetIdentity.city} (${targetIdentity.country})`,
+          'warning',
+          targetIdentity.ip
+        );
+      }
       setIsDisconnecting(false);
       addLog(
         `Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()}) vers ${targetIdentity.city}, ${targetIdentity.country}...`,
@@ -333,8 +362,8 @@ function App() {
       }, 950);
     },
     [
-      appSettings.protocol,
-      appSettings.vortexCircuitLength,
+      appSettings,
+      nodes,
       mode,
       currentIdentity,
       addLog,
@@ -1263,6 +1292,15 @@ function App() {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return;
 
+    if (isNodeBlockedByGeoFence(node.country, appSettings)) {
+      addLog(
+        `[Barrière Géographique] Connexion refusée vers ${node.name} (${node.city || node.country}, ${node.country}) : région interdite`,
+        'warning',
+        node.ip
+      );
+      return;
+    }
+
     const nextCity =
       node.city ||
       (node.country === 'France'
@@ -2102,6 +2140,14 @@ function App() {
                     .catch(() => {});
                 }}
               />
+              <NetworkRiskBulletin
+                settings={appSettings}
+                mode={mode}
+                location={currentIdentity.country}
+                onApplyPatch={patchAppSettings}
+                onFullSystemHardening={handleFullSystemHardening}
+                addLog={addLog}
+              />
             </div>
 
             <div className="lg:col-span-4 space-y-6">
@@ -2198,6 +2244,15 @@ function App() {
               onUpdateJurisdictionPolicy={(policy) =>
                 updateAppSettings('excludeEyesJurisdictions', policy)
               }
+              onUpdateGeoFence={(regions, countries, reason) =>
+                patchAppSettings(
+                  {
+                    geoFenceBlockedRegions: regions,
+                    geoFenceBlockedCountries: countries,
+                  },
+                  reason
+                )
+              }
               onDeployCircuit={handleDeployCircuit}
               onNodesProbed={(updatedNodes) => {
                 setNodes(updatedNodes);
@@ -2221,8 +2276,10 @@ function App() {
         {activeSection === 'system' && (
           <SystemCenter
             settings={appSettings}
+            mode={mode}
             updateSettings={updateAppSettings}
             patchSettings={patchAppSettings}
+            onFullSystemHardening={handleFullSystemHardening}
             onResetSettings={resetAppSettings}
             currentIdentity={currentIdentity}
             isConnected={isConnected}

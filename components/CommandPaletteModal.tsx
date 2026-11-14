@@ -24,6 +24,9 @@ import {
   KeyRound,
   Gauge,
   Radio,
+  Activity,
+  ShieldBan,
+  Radar,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -301,6 +304,49 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         onExecute: () => onNavigateSection('network'),
       },
       {
+        id: 'nav-geofence',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir la Barrière Géographique (Zones interdites)',
+        subtitle: `${
+          (settings.geoFenceBlockedRegions?.length || 0) +
+            (settings.geoFenceBlockedCountries?.length || 0) >
+          0
+            ? `${settings.geoFenceBlockedRegions?.length || 0} région(s) et ${settings.geoFenceBlockedCountries?.length || 0} pays interdits`
+            : 'Définir des zones interdites à la connexion par simple clic sur la carte SVG'
+        }`,
+        keywords:
+          'barriere geographique geofence carte svg zones interdites bloquer pays regions monde',
+        icon: ShieldBan,
+        tone: 'danger',
+        onExecute: () => {
+          onNavigateSection('network');
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('renumerate_focus_geofence'));
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-planetarium',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir le Planétarium Réseau 3D (Sphère Orbitale)',
+        subtitle:
+          'Visualisation Three.js WebGL interactive des nœuds en orbite, latence en direct et routage',
+        keywords:
+          'planetarium 3d sphere orbitale webgl threejs noeuds latence routage topologie',
+        icon: Orbit,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('network');
+          window.setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent('renumerate_focus_planetarium')
+            );
+          }, 80);
+        },
+      },
+      {
         id: 'nav-system',
         category: 'navigation',
         categoryLabel: 'Navigation',
@@ -335,6 +381,31 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           window.dispatchEvent(
             new CustomEvent('renumerate_switch_system_tab', {
               detail: 'inspector',
+            })
+          );
+          onNavigateSection('system');
+        },
+      },
+      {
+        id: 'nav-flow-monitor',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir le Moniteur de Flux WebSocket (Capture Wireshark)',
+        subtitle:
+          'Capture réseau en direct via WebSockets : protocoles, IP source/dest, tailles et dump Hex/ASCII',
+        keywords:
+          'moniteur flux websocket ws wireshark capture paquets tcpdump live hex ip source destination',
+        icon: Activity,
+        tone: 'cyan',
+        onExecute: () => {
+          try {
+            localStorage.setItem('renumerate_system_workspace_tab', 'flow');
+          } catch {
+            // ignore
+          }
+          window.dispatchEvent(
+            new CustomEvent('renumerate_switch_system_tab', {
+              detail: 'flow',
             })
           );
           onNavigateSection('system');
@@ -389,6 +460,34 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           window.dispatchEvent(
             new CustomEvent('renumerate_switch_system_tab', {
               detail: 'lab',
+            })
+          );
+          onNavigateSection('system');
+        },
+      },
+      {
+        id: 'nav-risk-bulletin',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir le Bulletin de Risque Réseau',
+        subtitle:
+          'Niveau de menace cybernétique mondial en direct (Google Search) & recommandations adaptatives',
+        keywords:
+          'bulletin risque menace cyber cve zero-day search google securite durcissement alerte',
+        icon: Radar,
+        tone: 'amber',
+        onExecute: () => {
+          try {
+            localStorage.setItem(
+              'renumerate_system_workspace_tab',
+              'bulletin'
+            );
+          } catch {
+            // ignore
+          }
+          window.dispatchEvent(
+            new CustomEvent('renumerate_switch_system_tab', {
+              detail: 'bulletin',
             })
           );
           onNavigateSection('system');

@@ -47,6 +47,31 @@ interface DeepAuditPayload {
   quotaNotice?: string;
 }
 
+interface RiskBulletinAlertItem {
+  id: string;
+  title: string;
+  category: string;
+  severity: 'critique' | 'élevée' | 'modérée';
+  summary: string;
+  cveOrRef?: string;
+}
+
+interface NetworkRiskBulletinServerPayload {
+  globalThreatLevel: 'Critique' | 'Élevé' | 'Modéré' | 'Faible';
+  threatIndex: number;
+  headline: string;
+  summary: string;
+  observedAt: string;
+  topic: string;
+  searchQueries: string[];
+  sources: { title: string; uri: string }[];
+  activeThreats: RiskBulletinAlertItem[];
+  searchRecommendations: string[];
+  engine: 'gemini-search' | 'local-heuristic';
+  quotaLimited?: boolean;
+  quotaNotice?: string;
+}
+
 interface CacheEntry<T> {
   value: T;
   expiresAt: number;
@@ -56,6 +81,7 @@ const modelCooldownUntil = new Map<string, number>();
 const securityAnalysisCache = new Map<string, CacheEntry<SecurityReportPayload>>();
 const securityAnalysisInFlight = new Map<string, Promise<SecurityReportPayload>>();
 const deepAuditCache = new Map<string, CacheEntry<DeepAuditPayload>>();
+const riskBulletinCache = new Map<string, CacheEntry<NetworkRiskBulletinServerPayload>>();
 
 let globalQuotaCircuitUntil = 0;
 let globalQuotaTrippedAt = 0;
@@ -511,6 +537,203 @@ function buildDeterministicDeepAudit(
   };
 }
 
+function extractJsonObject(rawText: string): Record<string, unknown> | null {
+  const trimmed = rawText.trim();
+  if (!trimmed) return null;
+
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fencedMatch?.[1]?.trim() || trimmed;
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        const sliced = JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
+        if (sliced && typeof sliced === 'object' && !Array.isArray(sliced)) {
+          return sliced as Record<string, unknown>;
+        }
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function buildDeterministicRiskBulletin(params: {
+  hardeningScore: number;
+  topic: string;
+  location: string;
+  mode: string;
+  protocol: string;
+}): NetworkRiskBulletinServerPayload {
+  const { hardeningScore, topic, location, mode, protocol } = params;
+  const nowIso = new Date().toISOString();
+
+  const threatsByTopic: Record<string, RiskBulletinAlertItem[]> = {
+    global: [
+      {
+        id: 'thr-edge-vpn',
+        title: 'Campagnes ciblées sur passerelles VPN et équipements périmétriques',
+        category: 'VPN & Périmètre',
+        severity: 'critique',
+        cveOrRef: 'CISA KEV · Veille Active',
+        summary:
+          'Multiplication des exploitations de vulnérabilités d’authentification et de dépassements mémoire sur des concentrateurs d’accès distant exposés.',
+      },
+      {
+        id: 'thr-dns-hijack',
+        title: 'Détournement BGP et empoisonnement opportuniste de résolveurs DNS',
+        category: 'DNS & BGP',
+        severity: 'élevée',
+        cveOrRef: 'CERT-FR / MANRS',
+        summary:
+          'Anomalies de propagation de routes AS favorisant l’interception de requêtes DNS en clair hors tunnels DoH/DoT authentifiés.',
+      },
+      {
+        id: 'thr-quic-dpi',
+        title: 'Sondes DPI temps réel & corrélation de trafic HTTP/3 QUIC',
+        category: 'Trafic & DPI',
+        severity: 'modérée',
+        cveOrRef: 'IETF RFC 9000',
+        summary:
+          'Contournement potentiel des pare-feu de session via UDP/443 (QUIC) lorsque le filtrage strict et le bourrage temporel sont désactivés.',
+      },
+    ],
+    vpn_tunnel: [
+      {
+        id: 'thr-tunnel-crack',
+        title: 'Attaques par canal latéral et fuite d’interface hors Kill Switch',
+        category: 'Tunnel & Egress',
+        severity: 'critique',
+        cveOrRef: 'CVE-Audit · TunnelVision',
+        summary:
+          'Des réseaux locaux hostiles peuvent injecter des routes DHCP (Option 121) pour détourner le trafic hors du tunnel si le pare-feu strict est absent.',
+      },
+      {
+        id: 'thr-webrtc-leak',
+        title: 'Exposition d’adresse IP réelle via requêtes STUN/TURN WebRTC',
+        category: 'Navigateur & WebRTC',
+        severity: 'élevée',
+        cveOrRef: 'Audit WebRTC',
+        summary:
+          'Certains scripts embarqués sondent les interfaces locales pour corréler l’hôte d’origine malgré un relais actif.',
+      },
+      {
+        id: 'thr-pqc-harvest',
+        title: 'Collecte passive « Harvest Now, Decrypt Later » sur échanges classiques',
+        category: 'Cryptographie PQC',
+        severity: 'modérée',
+        cveOrRef: 'NIST FIPS 203',
+        summary:
+          'Recommandation d’activer un échange de clés hybride post-quantique ML-KEM-1024 pour pérenniser la confidentialité des flux.',
+      },
+    ],
+    zero_day: [
+      {
+        id: 'thr-0day-browser',
+        title: 'Failles d’exécution critique dans les moteurs de rendu web',
+        category: 'Zero-Day Client',
+        severity: 'critique',
+        cveOrRef: 'Bulletin NVD / CERT',
+        summary:
+          'Exploitations ciblées exploitant le fingerprinting matériel (Canvas/WebGL) et la corruption mémoire pour identifier les terminaux.',
+      },
+      {
+        id: 'thr-kernel-ebpf',
+        title: 'Durcissement requis des hooks noyau et confinement mémoire mlockall',
+        category: 'Noyau & RAM',
+        severity: 'élevée',
+        cveOrRef: 'Kernel Security',
+        summary:
+          'Maintenir le verrouillage RAM sans swap et la vérification stricte rp_filter sur les interfaces réseau virtuelles.',
+      },
+      {
+        id: 'thr-rekey-drift',
+        title: 'Persistance de session et dérive d’horloge NTP sur clés éphémères',
+        category: 'PFS & Horloge',
+        severity: 'modérée',
+        cveOrRef: 'RFC 7748 / PFS',
+        summary:
+          'Réduire le cycle de re-cléage PFS à 10 minutes ou moins avec protection anti-dérive NTP active.',
+      },
+    ],
+    dns_bgp: [
+      {
+        id: 'thr-bgp-leak',
+        title: 'Fuites de préfixes BGP et détournement de transit inter-AS',
+        category: 'Routage BGP',
+        severity: 'élevée',
+        cveOrRef: 'RPKI / BGP Monitoring',
+        summary:
+          'L’utilisation d’ASNs disjoints et de circuits multi-sauts réduit fortement l’impact d’une interception sur un système autonome unique.',
+      },
+      {
+        id: 'thr-ipv6-dual',
+        title: 'Fuites silencieuses IPv6 sur réseaux Dual-Stack non confinés',
+        category: 'IPv6 & DNS',
+        severity: 'critique',
+        cveOrRef: 'Audit IPv6 Dual-Stack',
+        summary:
+          'Sans blocage explicite IPv6 hors tunnel, les résolutions AAAA peuvent emprunter l’interface FAI directe.',
+      },
+      {
+        id: 'thr-captive-probe',
+        title: 'Sondes automatiques de portail captif exposant le profil système',
+        category: 'Sondes Egress',
+        severity: 'modérée',
+        cveOrRef: 'Privacy Telemetry',
+        summary:
+          'Bloquer les requêtes HTTP en clair vers les domaines de détection de connectivité OS.',
+      },
+    ],
+  };
+
+  const selectedAlerts = threatsByTopic[topic] || threatsByTopic.global;
+  const searchRecommendations: string[] = [];
+
+  if (hardeningScore < 60) {
+    searchRecommendations.push(
+      'Priorité critique : activez le Kill Switch Strict nftables et le confinement DNS/IPv6 pour stopper toute exposition directe hors tunnel.',
+      'Déployez la Sentinelle IDS eBPF/XDP avec quarantaine automatique et basculez vers WireGuard avec échange post-quantique ML-KEM-1024.'
+    );
+  } else if (hardeningScore < 85) {
+    searchRecommendations.push(
+      `Votre indice de durcissement (${hardeningScore}/100) couvre la base : activez le blocage QUIC UDP/443, la garde ARP et le brouillage temporel anti-corrélation.`,
+      'Passez la politique de juridiction sur l’exclusion 14-Eyes et réduisez la rotation des clés PFS à 10 minutes.'
+    );
+  } else {
+    searchRecommendations.push(
+      `Posture solide (${hardeningScore}/100) sur ${location} (${mode} / ${protocol.toUpperCase()}) : maintenez les sondes DNS/BGP périodiques et la rotation d’identité MAC/IP.`,
+      'Vérifiez régulièrement la révocation des clés éphémères et privilégiez les circuits multi-sauts disjoints face aux menaces de corrélation.'
+    );
+  }
+
+  return {
+    globalThreatLevel: 'Élevé',
+    threatIndex: 74,
+    headline:
+      'Activité soutenue sur les passerelles réseau, fuites DNS/BGP et vulnérabilités périmétriques',
+    summary: `Niveau de menace cybernétique mondial évalué à Élevé (74/100). La veille active relève des campagnes ciblant les accès distants, le détournement DNS hors tunnel et la corrélation de trafic. Votre posture locale affiche un score de durcissement de ${hardeningScore}/100.`,
+    observedAt: nowIso,
+    topic,
+    searchQueries: [
+      'CISA KEV CERT-FR cyber threat level network VPN advisories',
+      'active zero-day BGP DNS hijacking vulnerabilities',
+    ],
+    sources: [],
+    activeThreats: selectedAlerts,
+    searchRecommendations,
+    engine: 'local-heuristic',
+  };
+}
+
 function buildContextualSentinelReply(
   userPrompt: string,
   context: Record<string, unknown>
@@ -827,6 +1050,214 @@ Attribue un score de 0 à 100 et fournis exactement 3 recommandations techniques
         ...(isQuota ? { quotaNotice: QUOTA_GUIDANCE_FR } : {}),
       };
       setCachedValue(deepAuditCache, cacheKey, fallback, 5 * 60_000, 64);
+      res.json(fallback);
+    }
+  });
+
+  app.post('/api/gemini/risk-bulletin', async (req: Request, res: Response) => {
+    const {
+      hardeningScore = 70,
+      topic = 'global',
+      location = 'France',
+      mode = 'Standard',
+      protocol = 'wireguard',
+      missingControls = [],
+      forceRefresh = false,
+    } = (req.body || {}) as {
+      hardeningScore?: number;
+      topic?: string;
+      location?: string;
+      mode?: string;
+      protocol?: string;
+      missingControls?: string[];
+      forceRefresh?: boolean;
+    };
+
+    const cleanScore = Math.max(0, Math.min(100, Math.round(Number(hardeningScore) || 0)));
+    const cleanTopic = ['global', 'vpn_tunnel', 'zero_day', 'dns_bgp'].includes(String(topic))
+      ? String(topic)
+      : 'global';
+    const scoreBucket = cleanScore >= 90 ? '90+' : cleanScore >= 75 ? '75+' : cleanScore >= 55 ? '55+' : 'low';
+    const cacheKey = `${cleanTopic}|${scoreBucket}|${String(mode)}|${String(protocol)}`;
+
+    if (!forceRefresh) {
+      const cached = getCachedValue(riskBulletinCache, cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+    }
+
+    const fallbackBase = buildDeterministicRiskBulletin({
+      hardeningScore: cleanScore,
+      topic: cleanTopic,
+      location: String(location),
+      mode: String(mode),
+      protocol: String(protocol),
+    });
+
+    const ai = createGenAIClient();
+    if (!ai) {
+      res.json(fallbackBase);
+      return;
+    }
+
+    const topicFocusMap: Record<string, string> = {
+      global: 'les cybermenaces mondiales actuelles, alertes CERT/CISA/ANSSI récentes, attaques réseau et vulnérabilités critiques en cours',
+      vpn_tunnel: 'les vulnérabilités récentes affectant les VPN, protocoles de tunnel, fuites DHCP/DNS/WebRTC et interceptions de trafic',
+      zero_day: 'les vulnérabilités zero-day récentes exploitées activement (CISA KEV, navigateurs, noyau Linux, OpenSSL/SSH)',
+      dns_bgp: 'les incidents récents de détournement BGP, attaques DNS, DDoS applicatifs et sécurité du routage Internet',
+    };
+
+    const missingText =
+      Array.isArray(missingControls) && missingControls.length > 0
+        ? missingControls.slice(0, 6).join(', ')
+        : 'aucun écart critique signalé';
+
+    const prompt = `Tu es un analyste senior en Cyber Threat Intelligence (CTI) pour "Renumerate VPN".
+Utilise Google Search pour rechercher les bulletins de cybersécurité réels les plus récents concernant : ${topicFocusMap[cleanTopic]}.
+
+Contexte système de l'opérateur :
+- Score de durcissement actuel du système : ${cleanScore}/100
+- Relais actif : ${String(location)} (Mode ${String(mode)}, Protocole ${String(protocol).toUpperCase()})
+- Écarts ou protections manquantes : ${missingText}
+
+Réponds UNIQUEMENT avec un objet JSON valide (sans texte avant ni après) respectant exactement cette structure :
+{
+  "globalThreatLevel": "Critique" | "Élevé" | "Modéré" | "Faible",
+  "threatIndex": number (0 à 100 reflétant l'intensité mondiale actuelle),
+  "headline": "titre court en français résumant la situation mondiale actuelle (max 14 mots)",
+  "summary": "synthèse factuelle en français de 2 à 3 phrases s'appuyant sur les alertes trouvées via la recherche",
+  "activeThreats": [
+    {
+      "title": "titre de la menace ou CVE réelle récente",
+      "category": "catégorie courte (ex: Zero-Day, VPN & Périmètre, DNS / BGP, Ransomware)",
+      "severity": "critique" | "élevée" | "modérée",
+      "cveOrRef": "identifiant CVE ou organisme (ex: CISA KEV, CERT-FR, NVD)",
+      "summary": "résumé technique précis en français (1 à 2 phrases)"
+    }
+  ],
+  "searchRecommendations": [
+    "2 ou 3 recommandations concrètes en français adaptées spécifiquement au score de durcissement ${cleanScore}/100 et aux menaces trouvées"
+  ]
+}`;
+
+    try {
+      const { response } = await generateWithModelCascade({
+        ai,
+        contents: prompt,
+        allowCircuitProbe: Boolean(forceRefresh),
+        models: ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-flash-latest'],
+        buildConfig: () => ({
+          tools: [{ googleSearch: {} }],
+        }),
+      });
+
+      const rawText = (response.text ?? '').trim();
+      const parsed = extractJsonObject(rawText);
+
+      const groundingMeta = response.candidates?.[0]?.groundingMetadata;
+      const chunks = groundingMeta?.groundingChunks || [];
+      const sources = chunks
+        .filter((chunk) => Boolean(chunk.web?.uri))
+        .map((chunk) => ({
+          title: chunk.web?.title || 'Source Cyber Threat Intelligence',
+          uri: chunk.web?.uri || '',
+        }))
+        .slice(0, 6);
+
+      const searchQueries = Array.isArray(groundingMeta?.webSearchQueries)
+        ? groundingMeta.webSearchQueries
+            .filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
+            .slice(0, 4)
+        : fallbackBase.searchQueries;
+
+      const validLevels = new Set(['Critique', 'Élevé', 'Modéré', 'Faible']);
+      const parsedLevel =
+        parsed && typeof parsed.globalThreatLevel === 'string' && validLevels.has(parsed.globalThreatLevel)
+          ? (parsed.globalThreatLevel as NetworkRiskBulletinServerPayload['globalThreatLevel'])
+          : fallbackBase.globalThreatLevel;
+
+      const parsedIndexNum = parsed ? Number(parsed.threatIndex) : NaN;
+      const parsedIndex = Number.isFinite(parsedIndexNum)
+        ? Math.max(10, Math.min(100, Math.round(parsedIndexNum)))
+        : fallbackBase.threatIndex;
+
+      const parsedHeadline =
+        parsed && typeof parsed.headline === 'string' && parsed.headline.trim().length > 8
+          ? parsed.headline.trim()
+          : fallbackBase.headline;
+
+      const parsedSummary =
+        parsed && typeof parsed.summary === 'string' && parsed.summary.trim().length > 20
+          ? parsed.summary.trim()
+          : rawText.length > 30 && !rawText.startsWith('{')
+            ? rawText.slice(0, 420)
+            : fallbackBase.summary;
+
+      const validSev = new Set(['critique', 'élevée', 'modérée']);
+      const rawThreats = parsed && Array.isArray(parsed.activeThreats) ? parsed.activeThreats : [];
+      const parsedThreats: RiskBulletinAlertItem[] = rawThreats
+        .filter((t): t is Record<string, unknown> => Boolean(t && typeof t === 'object'))
+        .map((t, idx) => ({
+          id: `search-thr-${idx}`,
+          title:
+            typeof t.title === 'string' && t.title.trim()
+              ? t.title.trim()
+              : 'Alerte cybersécurité active',
+          category:
+            typeof t.category === 'string' && t.category.trim()
+              ? t.category.trim()
+              : 'Menace Réseau',
+          severity:
+            typeof t.severity === 'string' && validSev.has(t.severity.toLowerCase())
+              ? (t.severity.toLowerCase() as RiskBulletinAlertItem['severity'])
+              : 'élevée',
+          cveOrRef:
+            typeof t.cveOrRef === 'string' && t.cveOrRef.trim()
+              ? t.cveOrRef.trim()
+              : 'Veille Search',
+          summary:
+            typeof t.summary === 'string' && t.summary.trim()
+              ? t.summary.trim()
+              : 'Activité malveillante détectée sur les vecteurs réseau publics.',
+        }))
+        .slice(0, 4);
+
+      const rawRecs =
+        parsed && Array.isArray(parsed.searchRecommendations)
+          ? parsed.searchRecommendations.filter(
+              (r): r is string => typeof r === 'string' && r.trim().length > 6
+            )
+          : [];
+
+      const payload: NetworkRiskBulletinServerPayload = {
+        globalThreatLevel: parsedLevel,
+        threatIndex: parsedIndex,
+        headline: parsedHeadline,
+        summary: parsedSummary,
+        observedAt: new Date().toISOString(),
+        topic: cleanTopic,
+        searchQueries,
+        sources,
+        activeThreats: parsedThreats.length > 0 ? parsedThreats : fallbackBase.activeThreats,
+        searchRecommendations:
+          rawRecs.length > 0 ? rawRecs.slice(0, 3) : fallbackBase.searchRecommendations,
+        engine: 'gemini-search',
+      };
+
+      setCachedValue(riskBulletinCache, cacheKey, payload, 15 * 60_000, 32);
+      res.json(payload);
+    } catch (err) {
+      const info = classifyGeminiError(err);
+      const isQuota = info.isQuotaExhausted || info.isRateLimited;
+      const fallback: NetworkRiskBulletinServerPayload = {
+        ...fallbackBase,
+        engine: 'local-heuristic',
+        quotaLimited: isQuota,
+        ...(isQuota ? { quotaNotice: QUOTA_GUIDANCE_FR } : {}),
+      };
+      setCachedValue(riskBulletinCache, cacheKey, fallback, 5 * 60_000, 32);
       res.json(fallback);
     }
   });
@@ -2593,6 +3024,7 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
 
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });
+  const flowWss = new WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', (request, socket, head) => {
     const pathname = new URL(
@@ -2604,7 +3036,318 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
+    } else if (pathname === '/api/ws/packet-stream') {
+      flowWss.handleUpgrade(request, socket, head, (ws) => {
+        flowWss.emit('connection', ws, request);
+      });
     }
+  });
+
+  // WebSocket Server for live Wireshark-style packet stream capture (/api/ws/packet-stream)
+  flowWss.on('connection', (clientWs: WebSocket, request) => {
+    const reqUrl = new URL(
+      request.url || '/api/ws/packet-stream',
+      `http://${request.headers.host || 'localhost'}`
+    );
+    const localIp = reqUrl.searchParams.get('ip') || '10.84.0.2';
+    const tunnelProto = reqUrl.searchParams.get('protocol') || 'wireguard';
+    const pqcKex = reqUrl.searchParams.get('pqc') || 'ml-kem-1024';
+    const isTunnelUp = reqUrl.searchParams.get('connected') !== 'false';
+    const mainIface = tunnelProto === 'wireguard' ? 'wg0' : 'tun0';
+
+    const sessionId = `ws-${crypto.randomBytes(4).toString('hex')}`;
+    let seq = 1;
+    let isPaused = false;
+    let intervalMs = 500;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const remoteEndpoints = [
+      { ip: '1.1.1.1', org: 'Cloudflare DoH', port: 443, proto: 'DNS/DoH' },
+      { ip: '9.9.9.9', org: 'Quad9 DNSSEC', port: 853, proto: 'DNS/DoH' },
+      { ip: '179.43.168.24', org: 'CH-ZUR-01 Exit', port: 51820, proto: 'WireGuard' },
+      { ip: '185.212.149.42', org: 'FR-PAR-01 Relay', port: 443, proto: 'TLSv1.3' },
+      { ip: '142.250.74.14', org: 'QUIC Edge Node', port: 443, proto: 'QUIC' },
+      { ip: '198.51.100.44', org: 'Telemetry Tracker', port: 443, proto: 'TCP' },
+      { ip: '91.198.174.192', org: 'DE-CIX Peer', port: 22, proto: 'SSH' },
+      { ip: '2606:4700::1111', org: 'IPv6 Anycast', port: 53, proto: 'ICMPv6' },
+      { ip: '104.16.132.229', org: 'WebSocket Telemetry', port: 443, proto: 'WebSocket' },
+    ];
+
+    const buildHexAndAscii = (seedText: string, byteLen: number) => {
+      const hash = crypto.createHash('sha256').update(seedText).digest();
+      const previewLen = Math.min(48, Math.max(16, byteLen));
+      const hexLines: string[] = [];
+      const asciiLines: string[] = [];
+      for (let offset = 0; offset < previewLen; offset += 16) {
+        const chunkBytes: number[] = [];
+        for (let i = 0; i < 16 && offset + i < previewLen; i++) {
+          const b = hash[(offset + i) % hash.length] ^ ((offset + i * 17) & 0xff);
+          chunkBytes.push(b);
+        }
+        const hexPart = chunkBytes
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join(' ');
+        const asciiPart = chunkBytes
+          .map((b) => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.'))
+          .join('');
+        const addr = offset.toString(16).padStart(4, '0');
+        hexLines.push(`${addr}  ${hexPart}`);
+        asciiLines.push(`${addr}  ${asciiPart}`);
+      }
+      return {
+        hexDump: hexLines.join('\n'),
+        asciiDump: asciiLines.join('\n'),
+      };
+    };
+
+    const createPacket = (forcedKind?: 'https' | 'dns_leak' | 'port_scan' | 'pqc_handshake') => {
+      const currentSeq = seq++;
+      const now = Date.now();
+      const d = new Date(now);
+      const timeStr = `${d.toTimeString().split(' ')[0]}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+
+      let protocol = 'WireGuard';
+      let direction: 'out' | 'in' = Math.random() > 0.45 ? 'out' : 'in';
+      let srcIp = direction === 'out' ? localIp : '179.43.168.24';
+      let dstIp = direction === 'out' ? '179.43.168.24' : localIp;
+      let srcPort = direction === 'out' ? 49152 + Math.floor(Math.random() * 14000) : 51820;
+      let dstPort = direction === 'out' ? 51820 : 49152 + Math.floor(Math.random() * 14000);
+      let lengthBytes = 128 + Math.floor(Math.random() * 1290);
+      let iface: 'wg0' | 'tun0' | 'eth0' | 'sinkhole0' = isTunnelUp ? mainIface : 'eth0';
+      let verdict: 'ACCEPT' | 'DROP' | 'QUARANTINE' | 'BYPASS' = 'ACCEPT';
+      let flags = 'AEAD-DATA';
+      let info = `Transport Data [ChaCha20-Poly1305] Seq=${currentSeq} Len=${lengthBytes}`;
+      let ttl = 64;
+
+      if (forcedKind === 'pqc_handshake') {
+        protocol = 'WireGuard';
+        direction = 'out';
+        srcIp = localIp;
+        dstIp = '179.43.168.24';
+        srcPort = 51820;
+        dstPort = 51820;
+        lengthBytes = pqcKex === 'ml-kem-1024' ? 1568 : 1158;
+        iface = mainIface;
+        verdict = 'ACCEPT';
+        flags = 'KEX-INIT';
+        info = `Post-Quantum Key Exchange [${pqcKex.toUpperCase()}] Ephemeral Ratchet`;
+      } else if (forcedKind === 'dns_leak') {
+        protocol = 'DNS/DoH';
+        direction = 'out';
+        srcIp = localIp;
+        dstIp = '8.8.8.8';
+        srcPort = 53412;
+        dstPort = 53;
+        lengthBytes = 74;
+        iface = 'sinkhole0';
+        verdict = 'DROP';
+        flags = 'DNS-STD-QRY';
+        info = 'Tentative fuite DNS UDP/53 bloquée → Redirection sinkhole0';
+      } else if (forcedKind === 'port_scan') {
+        protocol = 'TCP';
+        direction = 'in';
+        srcIp = `185.220.101.${Math.floor(Math.random() * 200 + 10)}`;
+        dstIp = localIp;
+        srcPort = 39812 + Math.floor(Math.random() * 5000);
+        dstPort = [22, 443, 3389, 51820][Math.floor(Math.random() * 4)];
+        lengthBytes = 60;
+        iface = 'eth0';
+        verdict = 'QUARANTINE';
+        flags = 'FIN, PSH, URG';
+        info = `Sonde Xmas/SYN suspecte détectée (XDP Drop & nftables Quarantine)`;
+        ttl = 49;
+      } else if (forcedKind === 'https') {
+        protocol = 'TLSv1.3';
+        direction = 'out';
+        srcIp = localIp;
+        dstIp = '185.212.149.42';
+        srcPort = 44120 + (currentSeq % 900);
+        dstPort = 443;
+        lengthBytes = 1360;
+        iface = mainIface;
+        verdict = 'ACCEPT';
+        flags = 'PSH, ACK';
+        info = `Application Data [TLS 1.3 ECDHE-X25519] Seq=${currentSeq} Win=65535`;
+      } else {
+        const sample = remoteEndpoints[Math.floor(Math.random() * remoteEndpoints.length)];
+        protocol = sample.proto;
+        if (direction === 'out') {
+          srcIp = localIp;
+          dstIp = sample.ip;
+          dstPort = sample.port;
+        } else {
+          srcIp = sample.ip;
+          dstIp = localIp;
+          srcPort = sample.port;
+          ttl = 52 + (currentSeq % 12);
+        }
+
+        if (protocol === 'QUIC') {
+          iface = 'eth0';
+          verdict = 'DROP';
+          flags = 'QUIC-INIT';
+          lengthBytes = 1200;
+          info = `QUIC Initial UDP/443 bloqué (Prévention contournement TCP/TLS)`;
+        } else if (protocol === 'TCP' && sample.ip.startsWith('198.51.100.')) {
+          iface = 'sinkhole0';
+          verdict = 'DROP';
+          flags = 'SYN';
+          lengthBytes = 64;
+          info = `Domaine télémétrie bloqué par bouclier DNS (Sinkhole)`;
+        } else if (protocol === 'DNS/DoH') {
+          iface = mainIface;
+          verdict = 'ACCEPT';
+          flags = 'DoH-GET';
+          lengthBytes = 96 + Math.floor(Math.random() * 140);
+          info = `Requête chiffrée DNS-over-HTTPS (${sample.org}) DNSSEC=AD`;
+        } else if (protocol === 'TLSv1.3') {
+          iface = mainIface;
+          verdict = 'ACCEPT';
+          flags = Math.random() > 0.3 ? 'PSH, ACK' : 'ACK';
+          lengthBytes = 240 + Math.floor(Math.random() * 1180);
+          info = `Application Data (${sample.org}) Seq=${currentSeq} Len=${lengthBytes}`;
+        } else if (protocol === 'SSH') {
+          iface = mainIface;
+          verdict = 'ACCEPT';
+          flags = 'PSH, ACK';
+          lengthBytes = 112 + Math.floor(Math.random() * 260);
+          info = `Encrypted SSH-2.0 Channel Packet (PQC Rekey OK)`;
+        } else if (protocol === 'ICMPv6') {
+          iface = 'eth0';
+          verdict = 'DROP';
+          flags = 'ND-SOL';
+          lengthBytes = 86;
+          info = `Fuite ICMPv6 Neighbor Solicitation confinée hors interface physique`;
+        } else if (protocol === 'WebSocket') {
+          iface = mainIface;
+          verdict = 'ACCEPT';
+          flags = 'WS-FRAME';
+          lengthBytes = 180 + Math.floor(Math.random() * 420);
+          info = `Télémétrie WebSocket binaire chiffrée (${sample.org})`;
+        } else {
+          iface = mainIface;
+          verdict = 'ACCEPT';
+          flags = 'AEAD-DATA';
+          lengthBytes = 320 + Math.floor(Math.random() * 1100);
+          info = `WireGuard Transport [ChaCha20-Poly1305] Nonce=${currentSeq * 17}`;
+        }
+      }
+
+      const { hexDump, asciiDump } = buildHexAndAscii(
+        `${currentSeq}|${srcIp}|${dstIp}|${protocol}|${now}`,
+        lengthBytes
+      );
+
+      return {
+        id: `pkt-${sessionId}-${currentSeq}`,
+        seq: currentSeq,
+        timestampMs: now,
+        timeStr,
+        iface,
+        direction,
+        srcIp,
+        dstIp,
+        srcPort,
+        dstPort,
+        protocol,
+        lengthBytes,
+        ttl,
+        flags,
+        verdict,
+        info,
+        hexDump,
+        asciiDump,
+      };
+    };
+
+    const startCaptureLoop = (ms: number) => {
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
+        if (isPaused || clientWs.readyState !== clientWs.OPEN) return;
+        clientWs.send(
+          JSON.stringify({
+            type: 'packet',
+            packet: createPacket(),
+          })
+        );
+      }, ms);
+    };
+
+    // Send initial authoritative state snapshot over WebSocket
+    if (clientWs.readyState === clientWs.OPEN) {
+      const recentPackets = Array.from({ length: 12 }, () => createPacket());
+      clientWs.send(
+        JSON.stringify({
+          type: 'init',
+          sessionId,
+          serverTime: new Date().toISOString(),
+          hostInterface: mainIface,
+          intervalMs,
+          recentPackets,
+        })
+      );
+    }
+
+    startCaptureLoop(intervalMs);
+
+    clientWs.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString()) as {
+          action?: string;
+          intervalMs?: number;
+          kind?: 'https' | 'dns_leak' | 'port_scan' | 'pqc_handshake';
+          clientTs?: number;
+        };
+
+        if (msg.action === 'pause') {
+          isPaused = true;
+          clientWs.send(JSON.stringify({ type: 'status', paused: true, intervalMs }));
+        } else if (msg.action === 'resume') {
+          isPaused = false;
+          clientWs.send(JSON.stringify({ type: 'status', paused: false, intervalMs }));
+        } else if (msg.action === 'set_rate' && typeof msg.intervalMs === 'number') {
+          intervalMs = Math.max(150, Math.min(2500, Math.round(msg.intervalMs)));
+          startCaptureLoop(intervalMs);
+          clientWs.send(JSON.stringify({ type: 'status', paused: isPaused, intervalMs }));
+        } else if (msg.action === 'clear') {
+          seq = 1;
+          clientWs.send(JSON.stringify({ type: 'cleared' }));
+        } else if (msg.action === 'inject_burst') {
+          const kind = msg.kind || 'https';
+          const burst = Array.from({ length: 3 }, () => createPacket(kind));
+          clientWs.send(
+            JSON.stringify({
+              type: 'burst',
+              packets: burst,
+            })
+          );
+        } else if (msg.action === 'ping') {
+          clientWs.send(
+            JSON.stringify({
+              type: 'pong',
+              clientTs: msg.clientTs || Date.now(),
+              serverTs: Date.now(),
+            })
+          );
+        }
+      } catch {
+        // Ignore malformed control frames
+      }
+    });
+
+    clientWs.on('close', () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    });
+
+    clientWs.on('error', () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    });
   });
 
   wss.on('connection', async (clientWs: WebSocket, request) => {

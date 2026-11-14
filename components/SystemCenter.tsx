@@ -34,9 +34,12 @@ import {
   ArrowDown,
   ArrowUp,
   X,
+  Activity,
+  Radar,
 } from 'lucide-react';
 import {
   AppSettings,
+  ConnectionMode,
   VirtualIdentity,
   SystemRuntimeTelemetry,
   TcpCongestionControl,
@@ -65,14 +68,18 @@ import { DashboardECC } from './DashboardECC';
 import { PacketInspector } from './PacketInspector';
 import { SystemTerminal } from './SystemTerminal';
 import { RadioSpectrumVisualizer } from './RadioSpectrumVisualizer';
+import { FlowMonitor } from './FlowMonitor';
+import { NetworkRiskBulletin } from './NetworkRiskBulletin';
 
 interface SystemCenterProps {
   settings: AppSettings;
+  mode?: ConnectionMode;
   updateSettings: <K extends keyof AppSettings>(
     key: K,
     value: AppSettings[K]
   ) => void;
   patchSettings: (patch: Partial<AppSettings>, reason?: string) => void;
+  onFullSystemHardening?: () => void;
   onResetSettings: () => void;
   currentIdentity: VirtualIdentity;
   isConnected: boolean;
@@ -102,9 +109,11 @@ type SystemWorkspaceTab =
   | 'compiler'
   | 'snapshots'
   | 'inspector'
+  | 'flow'
   | 'terminal'
   | 'ids'
-  | 'ecc';
+  | 'ecc'
+  | 'bulletin';
 
 type CompilerTab =
   | 'tunnel'
@@ -462,8 +471,10 @@ function generateRealisticPacket(params: {
 
 export const SystemCenter: React.FC<SystemCenterProps> = ({
   settings,
+  mode = ConnectionMode.STANDARD,
   updateSettings,
   patchSettings,
+  onFullSystemHardening,
   onResetSettings,
   currentIdentity,
   isConnected,
@@ -492,8 +503,11 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
         saved === 'compiler' ||
         saved === 'snapshots' ||
         saved === 'inspector' ||
+        saved === 'flow' ||
+        saved === 'terminal' ||
         saved === 'ids' ||
-        saved === 'ecc'
+        saved === 'ecc' ||
+        saved === 'bulletin'
       ) {
         return saved;
       }
@@ -522,9 +536,18 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
       const custom = e as CustomEvent<SystemWorkspaceTab>;
       if (
         custom.detail &&
-        ['audit', 'lab', 'compiler', 'snapshots', 'inspector', 'terminal', 'ids', 'ecc'].includes(
-          custom.detail
-        )
+        [
+          'audit',
+          'lab',
+          'compiler',
+          'snapshots',
+          'inspector',
+          'flow',
+          'terminal',
+          'ids',
+          'ecc',
+          'bulletin',
+        ].includes(custom.detail)
       ) {
         setWorkspaceTab(custom.detail);
       }
@@ -2450,6 +2473,12 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 badge: `${packets.length}`,
               },
               {
+                id: 'flow',
+                label: 'Moniteur de Flux',
+                icon: Activity,
+                badge: 'WS Live',
+              },
+              {
                 id: 'terminal',
                 label: 'Console Terminal SSH',
                 icon: Terminal,
@@ -2466,6 +2495,12 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
                 label: 'Cryptographie ECC',
                 icon: KeyRound,
                 badge: settings.eccDefaultCurve || 'P-256',
+              },
+              {
+                id: 'bulletin',
+                label: 'Bulletin Risque',
+                icon: Radar,
+                badge: 'Search',
               },
             ] as Array<{
               id: SystemWorkspaceTab;
@@ -4023,6 +4058,17 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
         </div>
       )}
 
+      {workspaceTab === 'flow' && (
+        <div className="space-y-4">
+          <FlowMonitor
+            settings={settings}
+            currentIdentity={currentIdentity}
+            isConnected={isConnected}
+            addLog={addLog}
+          />
+        </div>
+      )}
+
       {workspaceTab === 'terminal' && (
         <div className="space-y-4">
           <SystemTerminal
@@ -4096,6 +4142,19 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
               addLog={addLog}
             />
           )}
+        </div>
+      )}
+
+      {workspaceTab === 'bulletin' && (
+        <div className="space-y-4">
+          <NetworkRiskBulletin
+            settings={settings}
+            mode={mode}
+            location={currentIdentity.country}
+            onApplyPatch={patchSettings}
+            onFullSystemHardening={onFullSystemHardening}
+            addLog={addLog}
+          />
         </div>
       )}
     </div>

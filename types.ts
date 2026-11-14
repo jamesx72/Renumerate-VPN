@@ -251,7 +251,20 @@ export interface AppSettings {
   eccDefaultCurve?: EccCurve;
   eccSignatureHash?: EccHashAlgorithm;
   eccStrictPointValidation?: boolean;
+  // Geographic Fence (Barrière Géographique)
+  geoFenceBlockedRegions: GeoFenceRegionId[];
+  geoFenceBlockedCountries: string[];
 }
+
+export type GeoFenceRegionId =
+  | 'north_america'
+  | 'latam'
+  | 'west_europe'
+  | 'east_europe'
+  | 'mena'
+  | 'africa_sub'
+  | 'south_east_asia'
+  | 'oceania';
 
 export interface DeviceNode {
   id: string;
