@@ -2,28 +2,30 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Radio,
   Activity,
-  Zap,
   Sliders,
-  Shield,
   ShieldAlert,
   ShieldCheck,
-  RefreshCw,
   Play,
   Pause,
   Download,
   Info,
-  Layers,
-  Sparkles,
   Wifi,
-  Eye,
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
 } from 'lucide-react';
 import { AppSettings, VirtualIdentity } from '../types';
+
+export interface ThroughputMetrics {
+  up: number;
+  down: number;
+}
 
 export interface RadioSpectrumVisualizerProps {
   settings: AppSettings;
   currentIdentity?: VirtualIdentity;
   isConnected?: boolean;
+  throughput?: ThroughputMetrics;
   addLog?: (
     event: string,
     type?: 'info' | 'warning' | 'success' | 'error',
@@ -40,7 +42,20 @@ interface FrequencyBin {
   peakHoldDbm: number;
 }
 
-const BANDS_CONFIG = {
+interface BandDefinition {
+  label: string;
+  startFreq: number;
+  endFreq: number;
+  centerFreq: number;
+  unit: string;
+  nominalNoiseFloor: number;
+  carrierCenter: number;
+  carrierWidth: number;
+  txSubcarrierFreq: number;
+  description: string;
+}
+
+const BANDS_CONFIG: Record<SpectrumBand, BandDefinition> = {
   wifi: {
     label: 'Wi-Fi 2.4 & 5 GHz (802.11ax)',
     startFreq: 2400,
@@ -48,9 +63,11 @@ const BANDS_CONFIG = {
     centerFreq: 2442,
     unit: 'MHz',
     nominalNoiseFloor: -98,
-    carrierCenter: 2442,
+    carrierCenter: 2437,
     carrierWidth: 20,
-    description: 'Surveillance des canaux Wi-Fi, fuites de trames balises (Beacons) et congestion RF locale.',
+    txSubcarrierFreq: 2462,
+    description:
+      'Surveillance des canaux Wi-Fi, sous-porteuses OFDM RX/TX et congestion électromagnétique locale.',
   },
   cellular: {
     label: 'Cellulaire 4G / 5G NR (Sub-6)',
@@ -59,9 +76,11 @@ const BANDS_CONFIG = {
     centerFreq: 3600,
     unit: 'MHz',
     nominalNoiseFloor: -102,
-    carrierCenter: 3600,
-    carrierWidth: 60,
-    description: 'Analyse des ondes porteuses station de base (eNodeB / gNodeB) et détection d’IMSI-Catchers.',
+    carrierCenter: 3560,
+    carrierWidth: 55,
+    txSubcarrierFreq: 3710,
+    description:
+      'Analyse des porteuses station de base (eNodeB / gNodeB), enveloppes TDD RX/TX et détection d’IMSI-Catchers.',
   },
   tempest: {
     label: 'Émissions Parasites TEMPEST (Bus RAM & CPU)',
@@ -71,8 +90,10 @@ const BANDS_CONFIG = {
     unit: 'MHz',
     nominalNoiseFloor: -110,
     carrierCenter: 133,
-    carrierWidth: 15,
-    description: 'Rayonnement électromagnétique compromettant émis par les cycles d’horloge mémoire et les rondes de chiffrement AEAD.',
+    carrierWidth: 16,
+    txSubcarrierFreq: 295,
+    description:
+      'Rayonnement électromagnétique émis par les cycles d’horloge mémoire et la modulation AEAD corrélée au débit réseau.',
   },
   subghz: {
     label: 'Bande Sub-GHz ISM (868 / 915 MHz)',
@@ -82,15 +103,29 @@ const BANDS_CONFIG = {
     unit: 'MHz',
     nominalNoiseFloor: -105,
     carrierCenter: 868.3,
-    carrierWidth: 2,
-    description: 'Signaux télémétriques LoRa, balises radio et sondes d’interception passives.',
+    carrierWidth: 2.2,
+    txSubcarrierFreq: 873.5,
+    description:
+      'Signaux télémétriques ISM, harmoniques d’horloge NIC et sondes RF passives à proximité.',
   },
 };
+
+const BIN_COUNT = 96;
+
+function buildInitialBins(band: BandDefinition): FrequencyBin[] {
+  const step = (band.endFreq - band.startFreq) / (BIN_COUNT - 1);
+  return Array.from({ length: BIN_COUNT }, (_, i) => ({
+    freqMhz: Number((band.startFreq + i * step).toFixed(2)),
+    powerDbm: Number((band.nominalNoiseFloor + (Math.random() * 4 - 2)).toFixed(1)),
+    peakHoldDbm: band.nominalNoiseFloor,
+  }));
+}
 
 export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = ({
   settings,
   currentIdentity,
   isConnected = true,
+  throughput = { up: 0, down: 0 },
   addLog,
   className = '',
 }) => {
@@ -100,169 +135,337 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
   const [showPeakHold, setShowPeakHold] = useState(true);
   const [showWaterfall, setShowWaterfall] = useState(true);
   const [isSimulatingTempestAttack, setIsSimulatingTempestAttack] = useState(false);
-  const [hoveredPoint, setHoveredPoint] = useState<{ freq: number; power: number; x: number; y: number } | null>(null);
+  const [hoveredPoint, setHoveredPoint] = useState<{
+    freq: number;
+    power: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
-  const binCount = 96;
-  const binsRef = useRef<FrequencyBin[]>([]);
-  const peakHoldRef = useRef<number[]>([]);
-  const waterfallHistoryRef = useRef<number[][]>([]);
+  const bandConfig = BANDS_CONFIG[selectedBand];
+
+  // Live reactive simulation state updated smoothly on animation frames (~30 FPS)
+  const [bins, setBins] = useState<FrequencyBin[]>(() =>
+    buildInitialBins(BANDS_CONFIG.tempest)
+  );
+  const [waterfallHistory, setWaterfallHistory] = useState<number[][]>([]);
+  const [smoothedFlow, setSmoothedFlow] = useState<ThroughputMetrics>({
+    up: throughput.up,
+    down: throughput.down,
+  });
+
+  const peakHoldRef = useRef<number[]>(
+    Array.from({ length: BIN_COUNT }, () => BANDS_CONFIG.tempest.nominalNoiseFloor)
+  );
+  const waterfallRef = useRef<number[][]>([]);
+  const binsRef = useRef<FrequencyBin[]>(bins);
+
+  // Refs for smooth interpolation without restarting animation loop on every throughput tick
+  const throughputTargetRef = useRef<ThroughputMetrics>(throughput);
+  const throughputSmoothRef = useRef<ThroughputMetrics>({
+    up: throughput.up,
+    down: throughput.down,
+  });
+  const settingsRef = useRef(settings);
+  const isConnectedRef = useRef(isConnected);
+  const gainDbRef = useRef(gainDb);
+  const attackActiveRef = useRef(isSimulatingTempestAttack);
   const animFrameRef = useRef<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const [svgDimensions, setSvgDimensions] = useState({ width: 700, height: 240 });
 
-  const bandConfig = BANDS_CONFIG[selectedBand];
-
-  // Initialize bins
   useEffect(() => {
-    const { startFreq, endFreq, nominalNoiseFloor } = bandConfig;
-    const step = (endFreq - startFreq) / (binCount - 1);
-    binsRef.current = Array.from({ length: binCount }, (_, i) => ({
-      freqMhz: Number((startFreq + i * step).toFixed(2)),
-      powerDbm: nominalNoiseFloor + (Math.random() * 4 - 2),
-      peakHoldDbm: nominalNoiseFloor,
-    }));
-    peakHoldRef.current = Array.from({ length: binCount }, () => nominalNoiseFloor);
-    waterfallHistoryRef.current = [];
-  }, [selectedBand, bandConfig]);
+    throughputTargetRef.current = throughput;
+  }, [throughput]);
 
-  // Handle responsive resize of the SVG container
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+
+  useEffect(() => {
+    gainDbRef.current = gainDb;
+  }, [gainDb]);
+
+  useEffect(() => {
+    attackActiveRef.current = isSimulatingTempestAttack;
+  }, [isSimulatingTempestAttack]);
+
+  // Reset spectral buffers cleanly on band switch
+  useEffect(() => {
+    const initial = buildInitialBins(bandConfig);
+    binsRef.current = initial;
+    peakHoldRef.current = Array.from(
+      { length: BIN_COUNT },
+      () => bandConfig.nominalNoiseFloor
+    );
+    waterfallRef.current = [];
+    setBins(initial);
+    setWaterfallHistory([]);
+  }, [bandConfig]);
+
+  // Responsive SVG measurement via ResizeObserver + window resize fallback
   useEffect(() => {
     const updateSize = () => {
       if (svgRef.current) {
-        setSvgDimensions({
-          width: svgRef.current.clientWidth || 700,
-          height: 240,
-        });
+        const w = svgRef.current.clientWidth;
+        if (w > 0) {
+          setSvgDimensions({ width: w, height: 240 });
+        }
       }
     };
     updateSize();
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && svgRef.current) {
+      observer = new ResizeObserver(updateSize);
+      observer.observe(svgRef.current);
+    }
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
   }, []);
 
-  // Real-time smooth animation loop simulating RF physics
+  // Real-time continuous animation loop driven by actual throughput (up/down)
   useEffect(() => {
     if (isPaused) return;
 
-    let time = 0;
-    const { startFreq, endFreq, nominalNoiseFloor, carrierCenter, carrierWidth } = bandConfig;
-    const step = (endFreq - startFreq) / (binCount - 1);
+    let phase = 0;
+    let lastUiCommit = 0;
+    let lastWaterfallPush = 0;
+    let burstSeed = 0;
+    const {
+      startFreq,
+      endFreq,
+      nominalNoiseFloor,
+      carrierCenter,
+      carrierWidth,
+      txSubcarrierFreq,
+    } = bandConfig;
+    const step = (endFreq - startFreq) / (BIN_COUNT - 1);
 
-    const updatePhysics = () => {
-      time += 0.05;
-      const hasPadding = settings.trafficPaddingJitterMs > 0;
-      const isChaCha = settings.protocol === 'wireguard';
+    const tick = (now: number) => {
+      // Smooth exponential follower for real throughput metrics (up & down)
+      const target = throughputTargetRef.current;
+      const connected = isConnectedRef.current;
+      const targetDown = connected ? Math.max(0, target.down) : 0;
+      const targetUp = connected ? Math.max(0, target.up) : 0;
 
-      const currentBins: FrequencyBin[] = [];
-      const newWaterfallRow: number[] = [];
+      const curSmooth = throughputSmoothRef.current;
+      curSmooth.down += (targetDown - curSmooth.down) * 0.14;
+      curSmooth.up += (targetUp - curSmooth.up) * 0.16;
 
-      for (let i = 0; i < binCount; i++) {
-        const freq = startFreq + i * step;
+      // Normalized activity factors [0..1+] from real network load
+      const downNorm = Math.min(1.25, curSmooth.down / 55);
+      const upNorm = Math.min(1.25, curSmooth.up / 3.8);
+      const combinedLoad = Math.min(1.2, downNorm * 0.72 + upNorm * 0.28);
 
-        // Base atmospheric thermal noise
-        let power = nominalNoiseFloor + gainDb * 0.25;
-        power += Math.sin(i * 0.4 + time * 2) * 2.5;
-        power += (Math.random() - 0.5) * 4;
+      // Speed of electromagnetic phase oscillation accelerates with traffic
+      phase += 0.055 + combinedLoad * 0.085;
+      burstSeed += 0.19 + upNorm * 0.35;
 
-        // Active Connection Carrier Wave
-        if (isConnected) {
-          const distFromCarrier = Math.abs(freq - carrierCenter);
-          if (distFromCarrier < carrierWidth) {
-            const bell = Math.exp(-Math.pow(distFromCarrier / (carrierWidth * 0.4), 2));
-            const signalBoost = 45 + Math.sin(time * 6) * 5;
-            power += bell * signalBoost;
-          }
-        }
+      // Commit UI frames at ~30 FPS (every 33ms) for buttery-smooth SVG without overhead
+      if (now - lastUiCommit >= 33) {
+        lastUiCommit = now;
 
-        // TEMPEST Cryptographic Clock Harmonics
-        if (selectedBand === 'tempest') {
-          // Bus clock leakage (133 MHz, 266 MHz, 400 MHz harmonics)
-          [133, 266, 400].forEach((harmonic) => {
-            const dist = Math.abs(freq - harmonic);
-            if (dist < 8) {
-              const spike = Math.exp(-Math.pow(dist / 3, 2)) * (hasPadding ? 14 : 32);
-              power += spike;
+        const curSettings = settingsRef.current;
+        const currentGain = gainDbRef.current;
+        const hasPadding = curSettings.trafficPaddingJitterMs > 0;
+        const isChaCha = curSettings.protocol === 'wireguard';
+        const isAttack = attackActiveRef.current;
+
+        // Jitter & broadband noise floor rise slightly under heavy RX/TX load
+        const emNoiseLift = combinedLoad * (hasPadding ? 4.5 : 10.5);
+        const dynamicJitterAmp = 2.6 + combinedLoad * 5.2 + (hasPadding ? 2.4 : 0);
+
+        const nextBins: FrequencyBin[] = [];
+        const newWaterfallRow: number[] = [];
+
+        for (let i = 0; i < BIN_COUNT; i++) {
+          const freq = startFreq + i * step;
+
+          // 1. Base thermal noise + LNA gain + throughput-induced broadband EMI lift
+          let power = nominalNoiseFloor + currentGain * 0.24 + emNoiseLift;
+          power +=
+            Math.sin(i * 0.36 + phase * 1.9) * (2.0 + downNorm * 2.6) +
+            Math.cos(i * 0.85 - burstSeed) * (1.1 + upNorm * 2.2);
+          power += (Math.random() - 0.5) * dynamicJitterAmp;
+
+          // 2. Downlink (RX) Main Carrier & OFDM Sidebands correlated to throughput.down
+          if (connected) {
+            const distFromRx = Math.abs(freq - carrierCenter);
+            const activeWidth = carrierWidth * (0.75 + downNorm * 0.65);
+            if (distFromRx < activeWidth * 1.6) {
+              const bell = Math.exp(-Math.pow(distFromRx / (activeWidth * 0.45), 2));
+              // Modulation ripple speeds up and deepens as down Mb/s climbs
+              const qamRipple =
+                Math.sin(phase * 4.5 + i * 0.65) * (2.2 + downNorm * 4.8) +
+                Math.cos(phase * 8.2 - i * 1.1) * (downNorm * 2.4);
+              const rxBoost = 16 + downNorm * 34 + qamRipple;
+              power += bell * Math.max(4, rxBoost);
+
+              // Orthogonal sub-carrier spurs proportional to throughput.down
+              if (downNorm > 0.08) {
+                const subLobe =
+                  Math.abs(Math.sin(((freq - carrierCenter) / activeWidth) * Math.PI * 3)) *
+                  downNorm *
+                  7;
+                power += bell * subLobe;
+              }
             }
+
+            // 3. Uplink (TX) Harmonic Subcarrier correlated to throughput.up
+            const distFromTx = Math.abs(freq - txSubcarrierFreq);
+            const txWidth = carrierWidth * (0.45 + upNorm * 0.35);
+            if (distFromTx < txWidth * 1.8) {
+              const txBell = Math.exp(-Math.pow(distFromTx / (txWidth * 0.42), 2));
+              // Packet burst envelope driven by TX stream
+              const txBurst =
+                0.7 + 0.3 * Math.sin(burstSeed * 3.1 + Math.sin(phase * 2.2));
+              const txBoost = (10 + upNorm * 32) * txBurst;
+              power += txBell * txBoost;
+            }
+          }
+
+          // 4. TEMPEST Bus Clock & AEAD Encryption Cycle Harmonics (intensified by throughput)
+          if (selectedBand === 'tempest') {
+            const cryptoMultiplier = isChaCha ? 0.92 : 1.18;
+            const loadScale = connected ? 0.55 + combinedLoad * 0.95 : 0.35;
+            [133, 266, 400].forEach((harmonic, idx) => {
+              const dist = Math.abs(freq - harmonic);
+              if (dist < 10) {
+                const harmonicPulse =
+                  1 + Math.sin(phase * (4 + idx * 2.3)) * (0.12 + upNorm * 0.25);
+                const rawSpike =
+                  Math.exp(-Math.pow(dist / 3.2, 2)) *
+                  (hasPadding ? 11 : 28) *
+                  loadScale *
+                  cryptoMultiplier *
+                  harmonicPulse;
+                power += rawSpike;
+              }
+            });
+
+            // Simulated Side-Channel Exfiltration Spike at 315 MHz
+            if (isAttack) {
+              const dist = Math.abs(freq - 315);
+              if (dist < 11) {
+                const attackSpike =
+                  Math.exp(-Math.pow(dist / 4, 2)) *
+                  (48 + Math.sin(phase * 9) * 11);
+                power += attackSpike;
+              }
+            }
+
+            // Anti-TEMPEST Chaff Padding masks throughput-correlated clock side-channels
+            if (hasPadding) {
+              const chaffStrength = Math.min(
+                10,
+                3 + curSettings.trafficPaddingJitterMs * 0.14
+              );
+              power +=
+                Math.sin(freq * 1.9 + phase * 6.5) * chaffStrength +
+                Math.cos(freq * 0.7 - phase * 4.2) * (chaffStrength * 0.5) -
+                2.5;
+            }
+          }
+
+          // 5. Broadband TX Switching Transient Ripple during high uplink peaks
+          if (connected && upNorm > 0.15) {
+            const transient =
+              Math.pow(Math.max(0, Math.sin(i * 0.27 - burstSeed * 2.4)), 4) *
+              upNorm *
+              (hasPadding ? 3.5 : 7.5);
+            power += transient;
+          }
+
+          power = Math.max(-125, Math.min(-15, power));
+
+          const prevPeak = peakHoldRef.current[i] ?? nominalNoiseFloor;
+          const newPeak = Math.max(power, prevPeak - 0.18);
+          peakHoldRef.current[i] = newPeak;
+
+          nextBins.push({
+            freqMhz: Number(freq.toFixed(2)),
+            powerDbm: Number(power.toFixed(1)),
+            peakHoldDbm: Number(newPeak.toFixed(1)),
           });
-
-          // Simulated exfiltration attack: distinct pulsed peak
-          if (isSimulatingTempestAttack) {
-            const dist = Math.abs(freq - 315);
-            if (dist < 10) {
-              const attackSpike = Math.exp(-Math.pow(dist / 4, 2)) * (48 + Math.sin(time * 12) * 10);
-              power += attackSpike;
-            }
-          }
-
-          // Anti-TEMPEST Chaff Brouillage Flattening
-          if (hasPadding) {
-            // Adds broadband pseudorandom dithering that hides distinct leakage peaks
-            power += (Math.sin(freq * 1.8 + time * 8) * 8) - 4;
-          }
+          newWaterfallRow.push(power);
         }
 
-        // Clamp power between -125 dBm and -10 dBm
-        power = Math.max(-125, Math.min(-15, power));
-
-        // Peak Hold logic
-        const prevPeak = peakHoldRef.current[i] ?? -125;
-        const newPeak = Math.max(power, prevPeak - 0.15); // Slow decay
-        peakHoldRef.current[i] = newPeak;
-
-        currentBins.push({
-          freqMhz: Number(freq.toFixed(2)),
-          powerDbm: Number(power.toFixed(1)),
-          peakHoldDbm: Number(newPeak.toFixed(1)),
+        binsRef.current = nextBins;
+        setBins(nextBins);
+        setSmoothedFlow({
+          up: Number(curSmooth.up.toFixed(2)),
+          down: Number(curSmooth.down.toFixed(2)),
         });
 
-        newWaterfallRow.push(power);
+        // Push waterfall spectrogram row every ~95ms for legible temporal scroll
+        if (now - lastWaterfallPush >= 95) {
+          lastWaterfallPush = now;
+          waterfallRef.current = [
+            newWaterfallRow,
+            ...waterfallRef.current.slice(0, 23),
+          ];
+          setWaterfallHistory(waterfallRef.current);
+        }
       }
 
-      binsRef.current = currentBins;
-
-      // Update waterfall history (keep 24 recent rows)
-      waterfallHistoryRef.current = [newWaterfallRow, ...waterfallHistoryRef.current.slice(0, 23)];
-
-      animFrameRef.current = requestAnimationFrame(updatePhysics);
+      animFrameRef.current = requestAnimationFrame(tick);
     };
 
-    animFrameRef.current = requestAnimationFrame(updatePhysics);
+    animFrameRef.current = requestAnimationFrame(tick);
 
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [
-    isPaused,
-    selectedBand,
-    bandConfig,
-    gainDb,
-    isConnected,
-    settings.trafficPaddingJitterMs,
-    settings.protocol,
-    isSimulatingTempestAttack,
-  ]);
+  }, [isPaused, selectedBand, bandConfig]);
 
-  // Derived telemetry metrics
+  // Derived telemetry metrics updated continuously with animated bins
   const activeMetrics = useMemo(() => {
-    const bins = binsRef.current;
     if (bins.length === 0) {
-      return { peakDbm: -95, avgDbm: -100, snrDb: 18, tempestShielded: true };
+      return {
+        peakDbm: -95,
+        avgDbm: -100,
+        snrDb: 18,
+        tempestShielded: settings.trafficPaddingJitterMs > 0,
+        emiIndex: 0,
+      };
     }
     const powers = bins.map((b) => b.powerDbm);
     const peakDbm = Math.max(...powers);
-    const avgDbm = Number((powers.reduce((a, b) => a + b, 0) / powers.length).toFixed(1));
+    const avgDbm = Number(
+      (powers.reduce((a, b) => a + b, 0) / powers.length).toFixed(1)
+    );
     const noiseFloor = bandConfig.nominalNoiseFloor;
     const snrDb = Math.max(0, Number((peakDbm - noiseFloor).toFixed(1)));
     const tempestShielded = settings.trafficPaddingJitterMs > 0;
+    const emiRaw =
+      ((smoothedFlow.down / 60) * 0.65 + (smoothedFlow.up / 4) * 0.35) * 100;
+    const emiIndex = isConnected
+      ? Math.max(4, Math.min(100, Math.round(emiRaw)))
+      : 0;
 
-    return { peakDbm, avgDbm, snrDb, tempestShielded };
-  }, [bandConfig.nominalNoiseFloor, settings.trafficPaddingJitterMs]);
+    return { peakDbm, avgDbm, snrDb, tempestShielded, emiIndex };
+  }, [
+    bins,
+    bandConfig.nominalNoiseFloor,
+    settings.trafficPaddingJitterMs,
+    smoothedFlow.down,
+    smoothedFlow.up,
+    isConnected,
+  ]);
 
-  // Generate SVG path points
-  const { pathData, peakHoldPathData } = useMemo(() => {
-    const bins = binsRef.current;
-    if (bins.length === 0) return { pathData: '', peakHoldPathData: '' };
+  // Generate SVG curve paths & carrier markers
+  const { pathData, peakHoldPathData, rxMarkerX, txMarkerX } = useMemo(() => {
+    if (bins.length === 0) {
+      return { pathData: '', peakHoldPathData: '', rxMarkerX: 0, txMarkerX: 0 };
+    }
 
     const { width, height } = svgDimensions;
     const paddingLeft = 45;
@@ -276,14 +479,22 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
     const minDbm = -120;
     const maxDbm = -20;
 
-    const getX = (idx: number) => paddingLeft + (idx / (bins.length - 1)) * plotWidth;
+    const getX = (idx: number) =>
+      paddingLeft + (idx / (bins.length - 1)) * plotWidth;
     const getY = (dbm: number) => {
       const clamped = Math.max(minDbm, Math.min(maxDbm, dbm));
       const ratio = (clamped - minDbm) / (maxDbm - minDbm);
       return paddingTop + (1 - ratio) * plotHeight;
     };
 
-    // Smooth curve path
+    const freqToX = (freq: number) => {
+      const ratio =
+        (freq - bandConfig.startFreq) /
+        (bandConfig.endFreq - bandConfig.startFreq);
+      return paddingLeft + Math.max(0, Math.min(1, ratio)) * plotWidth;
+    };
+
+    // Smooth quadratic Bezier curve
     let d = `M ${getX(0)} ${getY(bins[0].powerDbm)}`;
     for (let i = 1; i < bins.length; i++) {
       const prevX = getX(i - 1);
@@ -297,16 +508,19 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
     const lastY = getY(bins[bins.length - 1].powerDbm);
     d += ` L ${lastX} ${lastY}`;
 
-    // Peak hold path
     let peakD = `M ${getX(0)} ${getY(bins[0].peakHoldDbm)}`;
     for (let i = 1; i < bins.length; i++) {
       peakD += ` L ${getX(i)} ${getY(bins[i].peakHoldDbm)}`;
     }
 
-    return { pathData: d, peakHoldPathData: peakD };
-  }, [svgDimensions]);
+    return {
+      pathData: d,
+      peakHoldPathData: peakD,
+      rxMarkerX: freqToX(bandConfig.carrierCenter),
+      txMarkerX: freqToX(bandConfig.txSubcarrierFreq),
+    };
+  }, [bins, svgDimensions, bandConfig]);
 
-  // Closed polygon for the gradient fill under the spectrum curve
   const fillPathData = useMemo(() => {
     if (!pathData) return '';
     const { width, height } = svgDimensions;
@@ -319,9 +533,8 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
     return `${pathData} L ${lastX} ${plotBottomY} L ${paddingLeft} ${plotBottomY} Z`;
   }, [pathData, svgDimensions]);
 
-  // Handle click on canvas / hover detection
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current || binsRef.current.length === 0) return;
+    if (!svgRef.current || bins.length === 0) return;
     const rect = svgRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -337,10 +550,10 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
 
     const ratio = (mouseX - paddingLeft) / plotWidth;
     const binIdx = Math.min(
-      binsRef.current.length - 1,
-      Math.max(0, Math.round(ratio * (binsRef.current.length - 1)))
+      bins.length - 1,
+      Math.max(0, Math.round(ratio * (bins.length - 1)))
     );
-    const bin = binsRef.current[binIdx];
+    const bin = bins[binIdx];
 
     setHoveredPoint({
       freq: bin.freqMhz,
@@ -352,32 +565,32 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
 
   const handleSimulateAttack = () => {
     setIsSimulatingTempestAttack(true);
-    if (addLog) {
-      addLog(
-        '[TEMPEST] Simulation d’exfiltration par canal auxiliaire électromagnétique (315 MHz) lancée.',
-        'warning'
-      );
-    }
+    addLog?.(
+      '[TEMPEST] Simulation d’exfiltration par canal auxiliaire électromagnétique (315 MHz) lancée.',
+      'warning'
+    );
     setTimeout(() => {
       setIsSimulatingTempestAttack(false);
-      if (addLog) {
-        addLog(
-          '[TEMPEST] Simulation d’émission parasite terminée. Spectre RF stabilisé.',
-          'info'
-        );
-      }
+      addLog?.(
+        '[TEMPEST] Simulation d’émission parasite terminée. Spectre RF stabilisé.',
+        'info'
+      );
     }, 9000);
   };
 
   const handleExportData = useCallback(() => {
     const data = {
       timestamp: new Date().toISOString(),
+      identityIp: currentIdentity?.ip,
       band: selectedBand,
       bandConfig,
+      throughput,
       metrics: activeMetrics,
       bins: binsRef.current,
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: 'application/json',
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -386,42 +599,41 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [selectedBand, bandConfig, activeMetrics]);
+  }, [selectedBand, bandConfig, activeMetrics, throughput, currentIdentity?.ip]);
 
   return (
     <div
-      className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-6 shadow-xs relative overflow-hidden ${className}`}
+      className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5 shadow-xs relative overflow-hidden ${className}`}
     >
-      {/* Background glow décoratif */}
-      <div className="absolute top-0 right-0 w-80 h-80 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
-
       {/* Header Visualiseur de Spectre Radio */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
         <div className="flex items-start gap-3.5">
           <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5">
-            <Radio className="w-6 h-6 animate-pulse" />
+            <Radio className="w-6 h-6" />
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900 dark:text-white">
                 Visualiseur de Spectre Radio &amp; Bruit Électromagnétique
               </h2>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-300">
+              <span className="text-xs font-mono text-purple-700 dark:text-purple-300 font-semibold">
                 DSP SDR · FFT 96 Bins
               </span>
+              <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
+                ·
+              </span>
               <span
-                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                className={`text-xs font-semibold ${
                   isPaused
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
-                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-emerald-600 dark:text-emerald-400'
                 }`}
               >
-                {isPaused ? 'Écoute Suspendue' : 'Balayage Live 60 FPS'}
+                {isPaused ? 'Écoute Suspendue' : 'Balayage Corrélé au Débit'}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
-              Modélisation spectrale en temps réel des émissions RF résiduelles, fuites TEMPEST du bus mémoire et bruit
-              électromagnétique de la liaison réseau active.
+              Modélisation spectrale SVG en direct réagissant au débit réseau actuel (RX ↓ / TX ↑), aux harmoniques TEMPEST du bus mémoire et au chiffrement de session.
             </p>
           </div>
         </div>
@@ -462,6 +674,46 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
         </div>
       </div>
 
+      {/* Live Throughput <-> EM Correlation Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs font-mono">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <ArrowDown className="w-3.5 h-3.5 text-cyan-500" />
+            <span>Porteuse RX (Down)</span>
+          </span>
+          <span className="font-bold tabular-nums text-cyan-600 dark:text-cyan-400">
+            {isConnected ? `${smoothedFlow.down.toFixed(2)} Mb/s` : '0.00 Mb/s'}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 sm:border-x sm:border-slate-200 dark:sm:border-slate-800 sm:px-3">
+          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <ArrowUp className="w-3.5 h-3.5 text-purple-500" />
+            <span>Harmonique TX (Up)</span>
+          </span>
+          <span className="font-bold tabular-nums text-purple-600 dark:text-purple-400">
+            {isConnected ? `${smoothedFlow.up.toFixed(2)} Mb/s` : '0.00 Mb/s'}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-slate-500 dark:text-slate-400">
+            Modulation EMI
+          </span>
+          <div className="flex items-center gap-2">
+            <div className="w-16 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 transition-all duration-150"
+                style={{ width: `${activeMetrics.emiIndex}%` }}
+              />
+            </div>
+            <span className="font-bold tabular-nums text-slate-900 dark:text-white">
+              {activeMetrics.emiIndex}%
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Sélecteur de Bande RF */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -485,8 +737,8 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
           })}
         </div>
 
-        {/* Bouton de simulation TEMPEST */}
-        <div className="flex items-center gap-2">
+        {/* Bouton de simulation TEMPEST & Gain LNA */}
+        <div className="flex flex-wrap items-center gap-3">
           {selectedBand === 'tempest' && (
             <button
               type="button"
@@ -494,12 +746,16 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
               disabled={isSimulatingTempestAttack}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 isSimulatingTempestAttack
-                  ? 'bg-rose-500 text-white animate-pulse'
+                  ? 'bg-rose-500 text-white'
                   : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
               }`}
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>{isSimulatingTempestAttack ? 'Attaque en cours (315 MHz)...' : 'Simuler Fuite TEMPEST'}</span>
+              <span>
+                {isSimulatingTempestAttack
+                  ? 'Fuite simulée (315 MHz)...'
+                  : 'Simuler Fuite TEMPEST'}
+              </span>
             </button>
           )}
 
@@ -513,30 +769,32 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
               onChange={(e) => setGainDb(Number(e.target.value))}
               className="w-20 accent-purple-500 cursor-pointer"
             />
-            <span className="font-bold text-slate-700 dark:text-slate-300">{gainDb} dB</span>
+            <span className="font-bold tabular-nums text-slate-700 dark:text-slate-300">
+              {gainDb} dB
+            </span>
           </div>
         </div>
       </div>
 
       {/* Description de la bande */}
-      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800/80 font-mono">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800/80 font-mono">
         <div className="flex items-center gap-2">
           <Info className="w-4 h-4 text-purple-500 shrink-0" />
           <span>{bandConfig.description}</span>
         </div>
-        <div className="text-[11px] shrink-0 font-bold text-slate-700 dark:text-slate-300">
+        <div className="text-[11px] shrink-0 font-bold tabular-nums text-slate-700 dark:text-slate-300">
           Plage : {bandConfig.startFreq} – {bandConfig.endFreq} {bandConfig.unit}
         </div>
       </div>
 
-      {/* =====================================================================
-          GRAPHIQUE DU SPECTRE SVG FLUIDE
-      ====================================================================== */}
+      {/* GRAPHIQUE DU SPECTRE SVG FLUIDE */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between text-xs text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span className="font-semibold flex items-center gap-1.5">
             <Activity className="w-3.5 h-3.5 text-purple-500" />
-            Courbe Spectrale FFT (Puissance en dBm vs Fréquence en {bandConfig.unit})
+            <span>
+              Courbe Spectrale FFT (Puissance dBm vs Fréquence en {bandConfig.unit})
+            </span>
           </span>
           <div className="flex items-center gap-3 font-mono text-[11px]">
             <label className="flex items-center gap-1.5 cursor-pointer">
@@ -561,7 +819,7 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
         </div>
 
         {/* SVG Container */}
-        <div className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-2 overflow-hidden shadow-2xl relative select-none">
+        <div className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-2 overflow-hidden shadow-xl relative select-none">
           <svg
             ref={svgRef}
             className="w-full h-60 cursor-crosshair block"
@@ -569,16 +827,18 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
             onMouseLeave={() => setHoveredPoint(null)}
           >
             <defs>
-              {/* Gradient pour l'aire spectrale */}
               <linearGradient id="spectrumGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#a855f7" stopOpacity="0.45" />
-                <stop offset="50%" stopColor="#06b6d4" stopOpacity="0.2" />
+                <stop
+                  offset="0%"
+                  stopColor="#c084fc"
+                  stopOpacity={isConnected ? 0.45 + Math.min(0.25, activeMetrics.emiIndex / 300) : 0.25}
+                />
+                <stop offset="55%" stopColor="#06b6d4" stopOpacity="0.22" />
                 <stop offset="100%" stopColor="#0f172a" stopOpacity="0.0" />
               </linearGradient>
 
-              {/* Filtre de lueur */}
               <filter id="spectrumGlow">
-                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feGaussianBlur stdDeviation="2.5" result="blur" />
                 <feMerge>
                   <feMergeNode in="blur" />
                   <feMergeNode in="SourceGraphic" />
@@ -625,7 +885,9 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
               const paddingRight = 15;
               const plotWidth = svgDimensions.width - paddingLeft - paddingRight;
               const x = paddingLeft + ratio * plotWidth;
-              const freq = bandConfig.startFreq + ratio * (bandConfig.endFreq - bandConfig.startFreq);
+              const freq =
+                bandConfig.startFreq +
+                ratio * (bandConfig.endFreq - bandConfig.startFreq);
 
               return (
                 <g key={ratio}>
@@ -652,6 +914,51 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
               );
             })}
 
+            {/* Marqueurs Porteuse RX (Downlink) & TX (Uplink) */}
+            {isConnected && rxMarkerX > 0 && (
+              <g>
+                <line
+                  x1={rxMarkerX}
+                  y1="22"
+                  x2={rxMarkerX}
+                  y2={svgDimensions.height - 30}
+                  stroke="#06b6d4"
+                  strokeWidth="1"
+                  strokeDasharray="3,3"
+                  opacity="0.5"
+                />
+                <text
+                  x={rxMarkerX + 4}
+                  y="30"
+                  fill="#22d3ee"
+                  fontSize="9"
+                  fontFamily="monospace"
+                >
+                  RX ↓ {smoothedFlow.down.toFixed(1)} Mb/s
+                </text>
+
+                <line
+                  x1={txMarkerX}
+                  y1="22"
+                  x2={txMarkerX}
+                  y2={svgDimensions.height - 30}
+                  stroke="#a855f7"
+                  strokeWidth="1"
+                  strokeDasharray="3,3"
+                  opacity="0.5"
+                />
+                <text
+                  x={txMarkerX + 4}
+                  y="42"
+                  fill="#c084fc"
+                  fontSize="9"
+                  fontFamily="monospace"
+                >
+                  TX ↑ {smoothedFlow.up.toFixed(2)} Mb/s
+                </text>
+              </g>
+            )}
+
             {/* Aire remplie sous la courbe */}
             {fillPathData && (
               <path d={fillPathData} fill="url(#spectrumGradient)" />
@@ -665,7 +972,7 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
                 stroke="#f59e0b"
                 strokeWidth="1"
                 strokeDasharray="3,3"
-                opacity="0.6"
+                opacity="0.65"
               />
             )}
 
@@ -674,7 +981,7 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
               <path
                 d={pathData}
                 fill="none"
-                stroke="#c084fc"
+                stroke={isSimulatingTempestAttack ? '#fb7185' : '#c084fc'}
                 strokeWidth="2"
                 filter="url(#spectrumGlow)"
               />
@@ -706,9 +1013,7 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
 
           {/* Badge interactif au survol */}
           {hoveredPoint && (
-            <div
-              className="absolute top-4 right-4 bg-slate-900/90 border border-purple-500/40 rounded-xl px-3 py-1.5 text-[11px] font-mono text-white shadow-xl backdrop-blur-xs pointer-events-none"
-            >
+            <div className="absolute top-4 right-4 bg-slate-900/90 border border-purple-500/40 rounded-xl px-3 py-1.5 text-[11px] font-mono text-white shadow-xl backdrop-blur-xs pointer-events-none">
               <div className="flex items-center gap-3">
                 <span className="font-bold text-purple-400">
                   {hoveredPoint.freq} {bandConfig.unit}
@@ -722,33 +1027,37 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
         </div>
 
         {/* Cascade RF (Waterfall Spectrogram Display) */}
-        {showWaterfall && waterfallHistoryRef.current.length > 0 && (
+        {showWaterfall && waterfallHistory.length > 0 && (
           <div className="space-y-1">
             <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-1">
-              <span>Spectrogramme Waterfall Temporel (Densité spectrale sur 24 tranches)</span>
+              <span>
+                Spectrogramme Waterfall Temporel (Densité spectrale sur {waterfallHistory.length} tranches)
+              </span>
               <span>Plus récent ↓</span>
             </div>
             <div className="w-full bg-slate-950 rounded-xl p-1.5 border border-slate-800 space-y-0.5 overflow-hidden">
-              {waterfallHistoryRef.current.map((row, rowIdx) => (
+              {waterfallHistory.map((row, rowIdx) => (
                 <div key={rowIdx} className="flex h-1.5 w-full gap-px">
                   {row.map((val, colIdx) => {
                     const norm = Math.max(0, Math.min(1, (val - -110) / 70));
-                    // Color from deep navy to cyan to purple to bright yellow/red
                     const bg =
                       norm > 0.8
                         ? '#f43f5e'
                         : norm > 0.6
-                        ? '#eab308'
-                        : norm > 0.4
-                        ? '#a855f7'
-                        : norm > 0.2
-                        ? '#06b6d4'
-                        : '#0f172a';
+                          ? '#eab308'
+                          : norm > 0.4
+                            ? '#a855f7'
+                            : norm > 0.2
+                              ? '#06b6d4'
+                              : '#0f172a';
                     return (
                       <div
                         key={colIdx}
                         className="flex-1"
-                        style={{ backgroundColor: bg, opacity: 1 - rowIdx * 0.035 }}
+                        style={{
+                          backgroundColor: bg,
+                          opacity: Math.max(0.15, 1 - rowIdx * 0.035),
+                        }}
                       />
                     );
                   })}
@@ -769,7 +1078,9 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
           <div className="text-lg font-bold text-slate-900 dark:text-white tabular-nums">
             {activeMetrics.peakDbm} dBm
           </div>
-          <div className="text-[10px] text-slate-500">Émission de crête détectée</div>
+          <div className="text-[10px] text-slate-500">
+            Crête modulée par le débit
+          </div>
         </div>
 
         <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 space-y-1">
@@ -780,18 +1091,22 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
           <div className="text-lg font-bold text-slate-900 dark:text-white tabular-nums">
             +{activeMetrics.snrDb} dB
           </div>
-          <div className="text-[10px] text-slate-500">Marge signal / bruit thermique</div>
+          <div className="text-[10px] text-slate-500">
+            Marge signal / bruit thermique
+          </div>
         </div>
 
         <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 space-y-1">
           <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-between">
-            <span>PLANCHER BRUIT</span>
+            <span>MOYENNE SPECTRALE</span>
             <Sliders className="w-3.5 h-3.5" />
           </div>
           <div className="text-lg font-bold text-slate-900 dark:text-white tabular-nums">
-            {bandConfig.nominalNoiseFloor} dBm
+            {activeMetrics.avgDbm} dBm
           </div>
-          <div className="text-[10px] text-slate-500">Sensibilité récepteur SDR</div>
+          <div className="text-[10px] text-slate-500">
+            Plancher nominal {bandConfig.nominalNoiseFloor} dBm
+          </div>
         </div>
 
         <div
@@ -816,12 +1131,14 @@ export const RadioSpectrumVisualizer: React.FC<RadioSpectrumVisualizerProps> = (
             )}
           </div>
           <div className="text-sm font-bold text-slate-900 dark:text-white">
-            {activeMetrics.tempestShielded ? 'Chaff Actif (40ms)' : 'Vulnérable'}
+            {activeMetrics.tempestShielded
+              ? `Chaff Actif (${settings.trafficPaddingJitterMs}ms)`
+              : 'Corrélation exposée'}
           </div>
           <div className="text-[10px] text-slate-500">
             {activeMetrics.tempestShielded
-              ? 'Brouillage anti-side-channel'
-              : 'Émissions parasites visibles'}
+              ? 'Masquage du débit RX/TX'
+              : 'Harmoniques corrélées au trafic'}
           </div>
         </div>
       </div>

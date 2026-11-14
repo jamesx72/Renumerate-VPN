@@ -17,6 +17,7 @@ import {
   Cpu,
   EyeOff,
   Search,
+  Contrast,
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { IdentityMatrix } from './components/IdentityMatrix';
@@ -27,6 +28,12 @@ import {
 import { LocalVault } from './components/LocalVault';
 import { SystemCenter } from './components/SystemCenter';
 import { NetworkRiskBulletin } from './components/NetworkRiskBulletin';
+import { CockpitArOverlay } from './components/CockpitArOverlay';
+import {
+  DigitalDarknessMode,
+  DarknessFilterVariant,
+} from './components/DigitalDarknessMode';
+import { LatencySpectrumAnalyzer } from './components/LatencySpectrumAnalyzer';
 import {
   PricingModal,
   PaymentSettlementMethod,
@@ -96,6 +103,35 @@ type WorkspaceSection = 'cockpit' | 'vault' | 'network' | 'system';
 
 function App() {
   const [isDark, setIsDark] = useState(true);
+  const [digitalDarknessEnabled, setDigitalDarknessEnabled] = useState<boolean>(
+    () => {
+      try {
+        return (
+          localStorage.getItem('renumerate_digital_darkness_enabled') === 'true'
+        );
+      } catch {
+        return false;
+      }
+    }
+  );
+  const [digitalDarknessVariant, setDigitalDarknessVariant] =
+    useState<DarknessFilterVariant>(() => {
+      try {
+        const saved = localStorage.getItem(
+          'renumerate_digital_darkness_variant'
+        );
+        if (
+          saved === 'grayscale' ||
+          saved === 'noir_contraste' ||
+          saved === 'eink'
+        ) {
+          return saved;
+        }
+      } catch {
+        // ignore
+      }
+      return 'grayscale';
+    });
   const [activeSection, setActiveSection] =
     useState<WorkspaceSection>('cockpit');
   const [systemInitialTab, setSystemInitialTab] = useState<
@@ -786,6 +822,48 @@ function App() {
       );
     };
   }, [appSettings.idsSoundAlert]);
+
+  // Apply global Digital Darkness visual filter (grayscale / high-contrast B&W / e-ink)
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'renumerate_digital_darkness_enabled',
+        String(digitalDarknessEnabled)
+      );
+      localStorage.setItem(
+        'renumerate_digital_darkness_variant',
+        digitalDarknessVariant
+      );
+    } catch {
+      // ignore
+    }
+
+    const root = document.documentElement;
+    root.classList.remove(
+      'grayscale',
+      'contrast-125',
+      'contrast-110',
+      'brightness-95'
+    );
+
+    if (digitalDarknessEnabled) {
+      root.classList.add('grayscale');
+      if (digitalDarknessVariant === 'noir_contraste') {
+        root.classList.add('contrast-125');
+      } else if (digitalDarknessVariant === 'eink') {
+        root.classList.add('contrast-110', 'brightness-95');
+      }
+    }
+
+    return () => {
+      root.classList.remove(
+        'grayscale',
+        'contrast-125',
+        'contrast-110',
+        'brightness-95'
+      );
+    };
+  }, [digitalDarknessEnabled, digitalDarknessVariant]);
 
   // Occasional intrusion neutralization watcher during active VPN connection
   useEffect(() => {
@@ -1944,6 +2022,21 @@ function App() {
               )}
             </button>
             <button
+              onClick={() => setDigitalDarknessEnabled((prev) => !prev)}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                digitalDarknessEnabled
+                  ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'
+                  : 'text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-800'
+              }`}
+              title={
+                digitalDarknessEnabled
+                  ? 'Désactiver le Mode Obscurité Numérique'
+                  : 'Activer le Mode Obscurité Numérique (Noir & Blanc / Niveaux de gris)'
+              }
+            >
+              <Contrast className="w-4 h-4" />
+            </button>
+            <button
               onClick={handleLogout}
               className="p-1.5 rounded-lg text-slate-500 hover:bg-red-500/10 hover:text-red-500 transition-colors cursor-pointer"
               title="Se déconnecter"
@@ -2072,6 +2165,25 @@ function App() {
                 }}
                 onFullSystemHardening={handleFullSystemHardening}
               />
+              <CockpitArOverlay
+                nodes={nodes}
+                currentIdentity={currentIdentity}
+                isConnected={isConnected}
+                mode={mode}
+                settings={appSettings}
+                throughput={throughput}
+                onConnectNode={handleConnectNode}
+                addLog={addLog}
+              />
+              <LatencySpectrumAnalyzer
+                nodes={nodes}
+                currentIdentity={currentIdentity}
+                isConnected={isConnected}
+                mode={mode}
+                settings={appSettings}
+                onConnectNode={handleConnectNode}
+                addLog={addLog}
+              />
               <IdentityMatrix
                 identity={currentIdentity}
                 availableIdentities={MOCK_IDENTITIES}
@@ -2151,6 +2263,25 @@ function App() {
             </div>
 
             <div className="lg:col-span-4 space-y-6">
+              <DigitalDarknessMode
+                enabled={digitalDarknessEnabled}
+                variant={digitalDarknessVariant}
+                onToggle={(next) => {
+                  setDigitalDarknessEnabled(next);
+                  addLog(
+                    next
+                      ? `Mode Obscurité Numérique activé (${digitalDarknessVariant})`
+                      : 'Mode Obscurité Numérique désactivé (spectre couleur restauré)',
+                    'info'
+                  );
+                }}
+                onVariantChange={(v) => {
+                  setDigitalDarknessVariant(v);
+                  if (digitalDarknessEnabled) {
+                    addLog(`Profil Obscurité Numérique basculé : ${v}`, 'info');
+                  }
+                }}
+              />
               <SecureFileTransfer
                 userId={vaultOwnerKey}
                 sessionPassword={sessionPassword}
@@ -2283,6 +2414,7 @@ function App() {
             onResetSettings={resetAppSettings}
             currentIdentity={currentIdentity}
             isConnected={isConnected}
+            throughput={throughput}
             isEmergency={isEmergency}
             vaultUnlocked={Boolean(sessionPassword)}
             vaultCount={vaultCount}
@@ -2536,6 +2668,10 @@ function App() {
         onOpenHistory={() => setShowConnectionHistory(true)}
         onOpenIds={handleOpenIdsCenter}
         onOpenEcc={handleOpenEccCenter}
+        digitalDarknessEnabled={digitalDarknessEnabled}
+        onToggleDigitalDarkness={() =>
+          setDigitalDarknessEnabled((prev) => !prev)
+        }
       />
 
       {/* Alerte Toast d'intrusion bloquée avec inspection directe */}

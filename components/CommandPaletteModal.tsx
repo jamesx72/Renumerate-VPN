@@ -27,6 +27,9 @@ import {
   Activity,
   ShieldBan,
   Radar,
+  Camera,
+  Contrast,
+  Waves,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -92,6 +95,8 @@ export interface CommandPaletteModalProps {
   onOpenHistory: () => void;
   onOpenIds?: () => void;
   onOpenEcc?: () => void;
+  digitalDarknessEnabled?: boolean;
+  onToggleDigitalDarkness?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -125,6 +130,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenHistory,
   onOpenIds,
   onOpenEcc,
+  digitalDarknessEnabled = false,
+  onToggleDigitalDarkness,
 }) => {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CommandCategory>('all');
@@ -232,6 +239,67 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         tone: 'cyan',
         onExecute: () => {
           onNavigateSection('cockpit');
+        },
+      },
+      {
+        id: 'nav-cockpit-ar',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir la Superposition Réalité Augmentée 3D (Caméra)',
+        subtitle:
+          'Projection AR des nœuds VPN en icônes 3D flottantes et flux paquets sur la caméra',
+        keywords:
+          'ar realite augmentee camera 3d threejs cockpit superposition noeuds flux',
+        icon: Camera,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('cockpit-ar-overlay')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-latency-spectrum',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir l’Analyseur de Spectre de Latence (D3.js)',
+        subtitle:
+          'Gigue RFC 3550, perte de paquets, quantiles P95/P99 et indice MOS par nœud de sortie',
+        keywords:
+          'latence gigue jitter perte paquets d3 analyseur spectre mos rtt p95 p99 diagnostic',
+        icon: Waves,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('latency-spectrum-analyzer')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'toggle-digital-darkness',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title: digitalDarknessEnabled
+          ? 'Désactiver le Mode Obscurité Numérique (Couleur RVB)'
+          : 'Activer le Mode Obscurité Numérique (Noir & Blanc)',
+        subtitle:
+          'Applique un filtre achromatique global pour simuler une navigation sans empreinte colorimétrique',
+        keywords:
+          'obscurite numerique noir blanc grayscale monochrome achromatique filtre discret',
+        icon: Contrast,
+        tone: 'default',
+        onExecute: () => {
+          if (onToggleDigitalDarkness) {
+            onToggleDigitalDarkness();
+          } else {
+            onNavigateSection('cockpit');
+          }
         },
       },
       {

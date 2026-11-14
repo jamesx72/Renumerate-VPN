@@ -83,6 +83,7 @@ interface SystemCenterProps {
   onResetSettings: () => void;
   currentIdentity: VirtualIdentity;
   isConnected: boolean;
+  throughput?: { up: number; down: number };
   isEmergency: boolean;
   vaultUnlocked: boolean;
   vaultCount: number;
@@ -478,6 +479,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
   onResetSettings,
   currentIdentity,
   isConnected,
+  throughput = { up: 0, down: 0 },
   isEmergency,
   vaultUnlocked,
   vaultCount,
@@ -2782,6 +2784,7 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
             settings={settings}
             currentIdentity={currentIdentity}
             isConnected={isConnected}
+            throughput={throughput}
             addLog={addLog}
           />
 
