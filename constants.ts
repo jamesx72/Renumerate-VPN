@@ -418,7 +418,13 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   macFormat: 'random',
   uaComplexity: 'diverse',
   bssidSsidRandomization: true,
+  wifiGeoSpoofing: true,
   tlsFingerprintMasking: true,
+  wifiDirectBindEnabled: false,
+  preferredWifiAdapterId: 'wlan0-ax210',
+  wifiDirectBypassBridge: true,
+  sentinelRfNoiseEnabled: true,
+  sentinelRfNoiseProfile: 'ofdm_spread',
   fingerprintProtection: {
     canvasNoise: true,
     webglMask: true,
@@ -702,10 +708,36 @@ export function sanitizeAppSettings(
       typeof src.bssidSsidRandomization === 'boolean'
         ? src.bssidSsidRandomization
         : DEFAULT_APP_SETTINGS.bssidSsidRandomization,
+    wifiGeoSpoofing:
+      typeof src.wifiGeoSpoofing === 'boolean'
+        ? src.wifiGeoSpoofing
+        : DEFAULT_APP_SETTINGS.wifiGeoSpoofing,
     tlsFingerprintMasking:
       typeof src.tlsFingerprintMasking === 'boolean'
         ? src.tlsFingerprintMasking
         : DEFAULT_APP_SETTINGS.tlsFingerprintMasking,
+    wifiDirectBindEnabled:
+      typeof src.wifiDirectBindEnabled === 'boolean'
+        ? src.wifiDirectBindEnabled
+        : DEFAULT_APP_SETTINGS.wifiDirectBindEnabled,
+    preferredWifiAdapterId:
+      typeof src.preferredWifiAdapterId === 'string' &&
+      src.preferredWifiAdapterId.trim().length > 0
+        ? src.preferredWifiAdapterId.trim().slice(0, 64)
+        : DEFAULT_APP_SETTINGS.preferredWifiAdapterId,
+    wifiDirectBypassBridge:
+      typeof src.wifiDirectBypassBridge === 'boolean'
+        ? src.wifiDirectBypassBridge
+        : DEFAULT_APP_SETTINGS.wifiDirectBypassBridge,
+    sentinelRfNoiseEnabled:
+      typeof src.sentinelRfNoiseEnabled === 'boolean'
+        ? src.sentinelRfNoiseEnabled
+        : DEFAULT_APP_SETTINGS.sentinelRfNoiseEnabled,
+    sentinelRfNoiseProfile: (
+      ['awgn', 'ofdm_spread', 'fhss_burst'] as const
+    ).includes(src.sentinelRfNoiseProfile as AppSettings['sentinelRfNoiseProfile'])
+      ? (src.sentinelRfNoiseProfile as AppSettings['sentinelRfNoiseProfile'])
+      : DEFAULT_APP_SETTINGS.sentinelRfNoiseProfile,
     fingerprintProtection: {
       canvasNoise:
         typeof src.fingerprintProtection?.canvasNoise === 'boolean'
@@ -1019,6 +1051,9 @@ export function computeSettingsHardeningScore(settings: AppSettings): number {
   if (settings.ebpfXdpAcceleration) score += 1;
   if (settings.tlsClientHelloFragmentation) score += 2;
   if (settings.tlsFingerprintMasking) score += 2;
+  if (settings.wifiGeoSpoofing) score += 1;
+  if (settings.sentinelRfNoiseEnabled) score += 2;
+  if (settings.wifiDirectBindEnabled && settings.wifiDirectBypassBridge) score += 1;
   if (settings.trafficPaddingJitterMs > 0) score += 2;
   if (settings.ephemeralRekeyMinutes <= 10) score += 2;
   if (settings.adBlocker) {

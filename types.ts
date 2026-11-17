@@ -188,7 +188,13 @@ export interface AppSettings {
   macFormat: 'standard' | 'hyphen' | 'cisco' | 'random';
   uaComplexity: 'standard' | 'diverse' | 'chaotic';
   bssidSsidRandomization: boolean;
+  wifiGeoSpoofing: boolean;
   tlsFingerprintMasking: boolean;
+  wifiDirectBindEnabled: boolean;
+  preferredWifiAdapterId: string;
+  wifiDirectBypassBridge: boolean;
+  sentinelRfNoiseEnabled: boolean;
+  sentinelRfNoiseProfile: 'awgn' | 'ofdm_spread' | 'fhss_burst';
   fingerprintProtection: FingerprintProtectionConfig;
   // Vortex (Tor) Config & Jurisdictions
   vortexBridge: 'none' | 'obfs4' | 'snowflake' | 'meek-azure';
@@ -591,6 +597,42 @@ export interface TlsClientHelloProfile {
   mutatedAt: string;
   rotationCount: number;
 }
+
+export interface WifiCardAdapter {
+  id: string;
+  ifaceName: string;
+  chipset: string;
+  driver: string;
+  band: '2.4 GHz' | '5 GHz' | '6 GHz' | 'Dual-Band';
+  channel: number;
+  frequencyMhz: number;
+  linkSpeedMbps: number;
+  rssiDbm: number;
+  mac: string;
+  ssid: string | null;
+  security: 'WPA3-SAE' | 'WPA2-PSK' | 'OWE-Enhanced' | 'Direct-P2P';
+  mtu: number;
+  source: 'os_detected' | 'virtual_profile';
+  supportsDirectBind: boolean;
+  ipv4Cidr?: string;
+}
+
+export interface WifiDirectBindingState {
+  bound: boolean;
+  adapterId: string;
+  ifaceName: string;
+  chipset: string;
+  ssid: string;
+  band: string;
+  channel: number;
+  rssiDbm: number;
+  clampedMtu: number;
+  bypassBridge: boolean;
+  bindingDigest: string;
+  source: 'os_detected' | 'virtual_profile';
+  connectedAt: string;
+}
+
 
 
 

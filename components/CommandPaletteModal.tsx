@@ -33,6 +33,7 @@ import {
   Bug,
   Clock,
   Wifi,
+  Compass,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -425,6 +426,26 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'nav-wifi-direct-connector',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Connecter directement via Carte Wi-Fi (WLAN)',
+        subtitle:
+          'Sélectionner un adaptateur Wi-Fi (wlan0 / wlp3s0) et lier le tunnel directement sans pont intermédiaire',
+        keywords:
+          'wifi carte adaptateur wlan0 wlp3s0 direct bindtodevice ssid radio connexion',
+        icon: Wifi,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('wifi-direct-connector')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
         id: 'nav-zero-trust-validator',
         category: 'navigation',
         categoryLabel: 'Navigation',
@@ -524,6 +545,64 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           window.setTimeout(() => {
             document
               .getElementById('bssid-ssid-randomization')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'toggle-wifi-geo-spoofing',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title: settings.wifiGeoSpoofing
+          ? 'Désactiver Wi-Fi Geo-Spoofing (Trilatération RF)'
+          : 'Activer Wi-Fi Geo-Spoofing (Trilatération RF)',
+        subtitle: settings.wifiGeoSpoofing
+          ? 'Génère des balayages Wi-Fi fictifs aux RSSI réalistes autour de la passerelle active'
+          : 'Synthétise des réseaux sans fil fictifs pour leurrer la géolocalisation Wi-Fi',
+        keywords:
+          'wifi geo spoofing rssi trilateration geolocalisation passerelle anti fingerprinting',
+        icon: Compass,
+        tone: 'cyan',
+        onExecute: () => {
+          onPatchSettings(
+            { wifiGeoSpoofing: !settings.wifiGeoSpoofing },
+            !settings.wifiGeoSpoofing
+              ? 'Wi-Fi Geo-Spoofing activé via palette opérateur'
+              : 'Wi-Fi Geo-Spoofing désactivé via palette opérateur'
+          );
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('wifi-geo-spoofing')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'toggle-sentinel-noise-generator',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title: settings.sentinelRfNoiseEnabled
+          ? 'Désactiver Sentinel-IA Noise Generator (Bruit RF)'
+          : 'Activer Sentinel-IA Noise Generator (Bruit RF Wi-Fi)',
+        subtitle: settings.sentinelRfNoiseEnabled
+          ? 'Injecte un bruit radioélectrique simulé sur la carte Wi-Fi pour masquer les signatures TX'
+          : 'Brouille le spectre RF de la carte Wi-Fi contre les sondes de géolocalisation passives',
+        keywords:
+          'sentinel ia noise generator bruit radioelectrique rf wifi snr tdoa rssi sonde passive',
+        icon: Radio,
+        tone: 'cyan',
+        onExecute: () => {
+          onPatchSettings(
+            { sentinelRfNoiseEnabled: !settings.sentinelRfNoiseEnabled },
+            !settings.sentinelRfNoiseEnabled
+              ? 'Sentinel-IA Noise Generator activé via palette opérateur'
+              : 'Sentinel-IA Noise Generator désactivé via palette opérateur'
+          );
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('sentinel-noise-generator')
               ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 80);
         },

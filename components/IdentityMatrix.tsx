@@ -11,6 +11,7 @@ import {
   MOCK_IDENTITIES,
   generateSpoofedTlsClientHelloProfile,
 } from '../constants';
+import { WifiGeoSpoofing } from './WifiGeoSpoofing';
 import {
   Globe,
   Copy,
@@ -41,6 +42,7 @@ import {
   WifiOff,
   Lock,
   Shuffle,
+  Compass,
 } from 'lucide-react';
 
 interface Props {
@@ -70,6 +72,8 @@ interface Props {
   onHarmonizeFingerprints?: () => void;
   bssidSsidRandomization?: boolean;
   onToggleBssidSsidRandomization?: (enabled: boolean) => void;
+  wifiGeoSpoofing?: boolean;
+  onToggleWifiGeoSpoofing?: (enabled: boolean) => void;
   tlsFingerprintMasking?: boolean;
   onToggleTlsFingerprintMasking?: (enabled: boolean) => void;
   activeTlsProfile?: TlsClientHelloProfile;
@@ -512,6 +516,8 @@ export const IdentityMatrix: React.FC<Props> = ({
   onHarmonizeFingerprints,
   bssidSsidRandomization = true,
   onToggleBssidSsidRandomization,
+  wifiGeoSpoofing = true,
+  onToggleWifiGeoSpoofing,
   tlsFingerprintMasking = true,
   onToggleTlsFingerprintMasking,
   activeTlsProfile,
@@ -586,6 +592,7 @@ export const IdentityMatrix: React.FC<Props> = ({
     if (fingerprintProtection?.webglMask) base += 0.03;
     if (fingerprintProtection?.timezoneSync) base += 0.02;
     if (bssidSsidRandomization) base += 0.04;
+    if (wifiGeoSpoofing) base += 0.03;
     if (tlsFingerprintMasking) base += 0.04;
     return Math.min(9.99, base).toFixed(2);
   }, [
@@ -594,6 +601,7 @@ export const IdentityMatrix: React.FC<Props> = ({
     webrtcLeakShield,
     fingerprintProtection,
     bssidSsidRandomization,
+    wifiGeoSpoofing,
     tlsFingerprintMasking,
   ]);
 
@@ -781,6 +789,7 @@ export const IdentityMatrix: React.FC<Props> = ({
       ipv6LeakProtection,
       webrtcLeakShield,
       bssidSsidRandomization,
+      wifiGeoSpoofing,
       tlsFingerprintMasking,
       tlsClientHelloProfile: resolvedTlsProfile,
       fingerprintProtection,
@@ -1122,6 +1131,26 @@ export const IdentityMatrix: React.FC<Props> = ({
                       <span>Randomisation BSSID/SSID</span>
                     </span>
                     {bssidSsidRandomization && (
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                  </button>
+                )}
+
+                {onToggleWifiGeoSpoofing && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleWifiGeoSpoofing(!wifiGeoSpoofing)}
+                    className={`w-full px-3 py-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                      wifiGeoSpoofing
+                        ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5" />
+                      <span>Wi-Fi Geo-Spoofing (Trilatération)</span>
+                    </span>
+                    {wifiGeoSpoofing && (
                       <Check className="w-3.5 h-3.5 shrink-0" />
                     )}
                   </button>
@@ -1506,6 +1535,15 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
         )}
       </section>
+
+      {/* Wi-Fi Geo-Spoofing Component anchored to active gateway geolocation */}
+      <WifiGeoSpoofing
+        identity={identity}
+        enabled={wifiGeoSpoofing}
+        onToggle={onToggleWifiGeoSpoofing}
+        isRotating={isRotating}
+        isMasking={isMasking}
+      />
 
       {/* TLS Fingerprint Masking (ClientHello & Cipher Suites Anti-JA3 DPI) */}
       <section

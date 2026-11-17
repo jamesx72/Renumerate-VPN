@@ -41,6 +41,8 @@ import { GhostProtocolToggle } from './components/GhostProtocolToggle';
 import { TemporalityChronograph } from './components/TemporalityChronograph';
 import { ZeroTrustNodeValidator } from './components/ZeroTrustNodeValidator';
 import { JitterBufferStatus } from './components/JitterBufferStatus';
+import { WifiDirectConnector } from './components/WifiDirectConnector';
+import { SentinelNoiseGenerator } from './components/SentinelNoiseGenerator';
 import {
   PricingModal,
   PaymentSettlementMethod,
@@ -99,6 +101,8 @@ import {
   Transaction,
   IntrusionAttempt,
   TlsClientHelloProfile,
+  WifiCardAdapter,
+  WifiDirectBindingState,
 } from './types';
 import { analyzeSecurity } from './services/geminiService';
 import {
@@ -241,6 +245,8 @@ function App() {
         0
       )
   );
+  const [activeWifiBinding, setActiveWifiBinding] =
+    useState<WifiDirectBindingState | null>(null);
   const [settingsLoadedForUser, setSettingsLoadedForUser] = useState<
     string | null
   >(null);
@@ -468,6 +474,7 @@ function App() {
       securityRequestSeqRef.current += 1;
       setIsConnected(false);
       setIsDisconnecting(false);
+      setActiveWifiBinding(null);
       setSecurityReport(null);
       setIsRefreshingSecurity(false);
       if (appSettings.logRetentionHours === 0) {
@@ -1780,6 +1787,8 @@ function App() {
         obfuscationLevel: 'ultra',
         excludeEyesJurisdictions: '14-eyes',
         bssidSsidRandomization: true,
+        wifiGeoSpoofing: true,
+        sentinelRfNoiseEnabled: true,
         tlsFingerprintMasking: true,
         fingerprintProtection: {
           canvasNoise: true,
@@ -2020,6 +2029,9 @@ function App() {
                   ? 'SNTRUP761'
                   : 'X25519'}{' '}
               · {appSettings.tcpCongestionControl.toUpperCase()}
+              {isConnected && activeWifiBinding?.bound
+                ? ` · Wi-Fi ${activeWifiBinding.ifaceName}`
+                : ''}
             </span>
           </div>
 
@@ -2269,6 +2281,15 @@ function App() {
                 onApplyPatch={patchAppSettings}
                 addLog={addLog}
               />
+              <SentinelNoiseGenerator
+                isConnected={isConnected}
+                currentIdentity={currentIdentity}
+                throughput={throughput}
+                settings={appSettings}
+                activeWifiBinding={activeWifiBinding}
+                onApplyPatch={patchAppSettings}
+                addLog={addLog}
+              />
               <WebRtcLeakTester
                 isConnected={isConnected}
                 mode={mode}
@@ -2340,6 +2361,7 @@ function App() {
                       ipv6LeakProtection: true,
                       webrtcLeakShield: true,
                       bssidSsidRandomization: true,
+                      wifiGeoSpoofing: true,
                       tlsFingerprintMasking: true,
                       fingerprintProtection: {
                         canvasNoise: true,
@@ -2348,13 +2370,24 @@ function App() {
                         timezoneSync: true,
                       },
                     },
-                    'Harmonisation intégrale des boucliers navigateur, WebRTC, BSSID/SSID & TLS JA3'
+                    'Harmonisation intégrale des boucliers navigateur, WebRTC, BSSID/SSID, Wi-Fi Geo-Spoofing & TLS JA3'
                   )
                 }
                 bssidSsidRandomization={appSettings.bssidSsidRandomization}
                 onToggleBssidSsidRandomization={(enabled) =>
                   updateAppSettings('bssidSsidRandomization', enabled)
                 }
+                wifiGeoSpoofing={appSettings.wifiGeoSpoofing}
+                onToggleWifiGeoSpoofing={(enabled) => {
+                  updateAppSettings('wifiGeoSpoofing', enabled);
+                  addLog(
+                    enabled
+                      ? `[Wi-Fi Geo-Spoofing] Activé · Réseaux synthétiques ancrés sur ${currentIdentity.city}`
+                      : '[Wi-Fi Geo-Spoofing] Désactivé — vecteurs trilatération Wi-Fi non usurpés',
+                    enabled ? 'success' : 'warning',
+                    currentIdentity.ip
+                  );
+                }}
                 tlsFingerprintMasking={appSettings.tlsFingerprintMasking}
                 activeTlsProfile={activeTlsProfile}
                 onToggleTlsFingerprintMasking={(enabled) => {
@@ -2416,6 +2449,34 @@ function App() {
             </div>
 
             <div className="lg:col-span-4 space-y-6">
+              <WifiDirectConnector
+                isConnected={isConnected}
+                isDisconnecting={isDisconnecting}
+                currentIdentity={currentIdentity}
+                settings={appSettings}
+                activeBinding={activeWifiBinding}
+                onApplyPatch={patchAppSettings}
+                onConnectViaWifi={async (adapter, binding) => {
+                  setActiveWifiBinding(binding);
+                  addLog(
+                    `[Wi-Fi Direct] Interface ${adapter.ifaceName} (${adapter.chipset}) liée sur SSID ${binding.ssid} · MTU ${binding.clampedMtu} · Digest ${binding.bindingDigest.slice(0, 12)}`,
+                    'success',
+                    currentIdentity.ip
+                  );
+                  if (!isConnected) {
+                    await connectVPN();
+                  } else {
+                    await runSecurityAnalysis(
+                      mode,
+                      currentIdentity.country,
+                      currentIdentity.ip,
+                      true
+                    );
+                  }
+                }}
+                onDisconnectWifiTunnel={disconnectVPN}
+                addLog={addLog}
+              />
               <DigitalDarknessMode
                 enabled={digitalDarknessEnabled}
                 variant={digitalDarknessVariant}
