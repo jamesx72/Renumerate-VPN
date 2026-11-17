@@ -40,6 +40,7 @@ import { IntrusionDeceptionGrid } from './components/IntrusionDeceptionGrid';
 import { GhostProtocolToggle } from './components/GhostProtocolToggle';
 import { TemporalityChronograph } from './components/TemporalityChronograph';
 import { ZeroTrustNodeValidator } from './components/ZeroTrustNodeValidator';
+import { JitterBufferStatus } from './components/JitterBufferStatus';
 import {
   PricingModal,
   PaymentSettlementMethod,
@@ -2248,6 +2249,15 @@ function App() {
                 mode={mode}
                 settings={appSettings}
                 onConnectNode={handleConnectNode}
+                addLog={addLog}
+              />
+              <JitterBufferStatus
+                nodes={nodes}
+                currentIdentity={currentIdentity}
+                isConnected={isConnected}
+                mode={mode}
+                settings={appSettings}
+                onApplyPatch={patchAppSettings}
                 addLog={addLog}
               />
               <SentinelTrafficFlow

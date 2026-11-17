@@ -405,6 +405,26 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'nav-jitter-buffer-status',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir Jitter Buffer Status (Tampon IA D3.js)',
+        subtitle:
+          'Visualisation temps réel de l’ajustement dynamique du tampon de gigue par l’IA sur les nœuds distants',
+        keywords:
+          'jitter buffer gigue tampon ia adaptatif d3 reseau noeuds distants latence',
+        icon: Activity,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('jitter-buffer-status')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
         id: 'nav-zero-trust-validator',
         category: 'navigation',
         categoryLabel: 'Navigation',
