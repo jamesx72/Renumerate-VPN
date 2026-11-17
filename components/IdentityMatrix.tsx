@@ -4,8 +4,13 @@ import {
   ConnectionMode,
   SecurityReport,
   FingerprintProtectionConfig,
+  TlsClientHelloProfile,
 } from '../types';
-import { REALISTIC_USER_AGENTS, MOCK_IDENTITIES } from '../constants';
+import {
+  REALISTIC_USER_AGENTS,
+  MOCK_IDENTITIES,
+  generateSpoofedTlsClientHelloProfile,
+} from '../constants';
 import {
   Globe,
   Copy,
@@ -34,6 +39,8 @@ import {
   Radio,
   Wifi,
   WifiOff,
+  Lock,
+  Shuffle,
 } from 'lucide-react';
 
 interface Props {
@@ -63,6 +70,10 @@ interface Props {
   onHarmonizeFingerprints?: () => void;
   bssidSsidRandomization?: boolean;
   onToggleBssidSsidRandomization?: (enabled: boolean) => void;
+  tlsFingerprintMasking?: boolean;
+  onToggleTlsFingerprintMasking?: (enabled: boolean) => void;
+  activeTlsProfile?: TlsClientHelloProfile;
+  onRotateTlsProfile?: () => void;
   onRefreshSecurity?: () => void;
   isRefreshingSecurity?: boolean;
 }
@@ -501,6 +512,10 @@ export const IdentityMatrix: React.FC<Props> = ({
   onHarmonizeFingerprints,
   bssidSsidRandomization = true,
   onToggleBssidSsidRandomization,
+  tlsFingerprintMasking = true,
+  onToggleTlsFingerprintMasking,
+  activeTlsProfile,
+  onRotateTlsProfile,
   onRefreshSecurity,
   isRefreshingSecurity = false,
 }) => {
@@ -515,6 +530,22 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [showWarpTuning, setShowWarpTuning] = useState(false);
   const [showUAModal, setShowUAModal] = useState(false);
   const [uaSearch, setUaSearch] = useState('');
+
+  const [fallbackTlsProfile, setFallbackTlsProfile] =
+    useState<TlsClientHelloProfile>(() =>
+      generateSpoofedTlsClientHelloProfile(tlsFingerprintMasking, 0)
+    );
+  const resolvedTlsProfile = activeTlsProfile ?? fallbackTlsProfile;
+
+  const handleMutateTlsProfile = useCallback(() => {
+    if (onRotateTlsProfile) {
+      onRotateTlsProfile();
+    } else {
+      setFallbackTlsProfile((prev) =>
+        generateSpoofedTlsClientHelloProfile(true, prev.rotationCount)
+      );
+    }
+  }, [onRotateTlsProfile]);
 
   // Simulated nearby WiFi networks rotated on every renumbering hop
   const [wifiHopCount, setWifiHopCount] = useState(1);
@@ -555,6 +586,7 @@ export const IdentityMatrix: React.FC<Props> = ({
     if (fingerprintProtection?.webglMask) base += 0.03;
     if (fingerprintProtection?.timezoneSync) base += 0.02;
     if (bssidSsidRandomization) base += 0.04;
+    if (tlsFingerprintMasking) base += 0.04;
     return Math.min(9.99, base).toFixed(2);
   }, [
     obfuscationLevel,
@@ -562,6 +594,7 @@ export const IdentityMatrix: React.FC<Props> = ({
     webrtcLeakShield,
     fingerprintProtection,
     bssidSsidRandomization,
+    tlsFingerprintMasking,
   ]);
 
   const currentUAData = useMemo(() => {
@@ -748,6 +781,8 @@ export const IdentityMatrix: React.FC<Props> = ({
       ipv6LeakProtection,
       webrtcLeakShield,
       bssidSsidRandomization,
+      tlsFingerprintMasking,
+      tlsClientHelloProfile: resolvedTlsProfile,
       fingerprintProtection,
       virtualIdentity: identity,
       simulatedNearbyWifi: bssidSsidRandomization ? simulatedWifiAps : [],
@@ -1087,6 +1122,28 @@ export const IdentityMatrix: React.FC<Props> = ({
                       <span>Randomisation BSSID/SSID</span>
                     </span>
                     {bssidSsidRandomization && (
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                  </button>
+                )}
+
+                {onToggleTlsFingerprintMasking && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onToggleTlsFingerprintMasking(!tlsFingerprintMasking)
+                    }
+                    className={`w-full px-3 py-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                      tlsFingerprintMasking
+                        ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>TLS Fingerprint Masking (JA3)</span>
+                    </span>
+                    {tlsFingerprintMasking && (
                       <Check className="w-3.5 h-3.5 shrink-0" />
                     )}
                   </button>
@@ -1445,6 +1502,172 @@ export const IdentityMatrix: React.FC<Props> = ({
               className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold shrink-0 cursor-pointer"
             >
               Activer le leurre WiFi
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* TLS Fingerprint Masking (ClientHello & Cipher Suites Anti-JA3 DPI) */}
+      <section
+        id="tls-fingerprint-masking"
+        className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-start gap-3">
+            <div
+              className={`p-2.5 rounded-xl border shrink-0 ${
+                tlsFingerprintMasking
+                  ? 'bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/25 text-cyan-600 dark:text-cyan-400'
+                  : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25 text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              <Lock className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  TLS Fingerprint Masking (Anti-DPI JA3 / JA4)
+                </h4>
+                <span className="text-slate-400" aria-hidden="true">
+                  ·
+                </span>
+                <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                  {tlsFingerprintMasking
+                    ? `${resolvedTlsProfile.mimicStack} · Muté à ${resolvedTlsProfile.mutatedAt}`
+                    : 'ClientHello natif exposé aux sondes JA3'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Modifie dynamiquement les extensions TLS ClientHello, les jetons GREASE et les suites de chiffrement annoncées lors de l&apos;établissement du tunnel pour tromper les sondes DPI JA3.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleMutateTlsProfile}
+              className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title="Permuter immédiatement les paramètres TLS ClientHello et les suites de chiffrement"
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              <span>TLS Fingerprint Masking</span>
+            </button>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={tlsFingerprintMasking}
+              aria-label="Activer le masquage automatique TLS Fingerprint Masking à l’établissement du tunnel"
+              onClick={() =>
+                onToggleTlsFingerprintMasking?.(!tlsFingerprintMasking)
+              }
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                tlsFingerprintMasking
+                  ? 'bg-emerald-600'
+                  : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                  tlsFingerprintMasking ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {tlsFingerprintMasking ? (
+          <div className="space-y-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1">
+                <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  Empreinte JA3 mutée (#{resolvedTlsProfile.rotationCount})
+                </div>
+                <div className="font-mono font-bold text-cyan-600 dark:text-cyan-400 truncate">
+                  {resolvedTlsProfile.ja3Hash}
+                </div>
+                <div className="text-[11px] font-mono text-slate-500 truncate">
+                  JA4 : {resolvedTlsProfile.ja4Fingerprint}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1">
+                <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  Paramètres ClientHello &amp; GREASE
+                </div>
+                <div className="font-mono font-bold text-slate-900 dark:text-white truncate">
+                  GREASE {resolvedTlsProfile.greaseToken} · ALPN{' '}
+                  {resolvedTlsProfile.alpnList.join(', ')}
+                </div>
+                <div className="text-[11px] font-mono text-slate-500 truncate">
+                  Extensions ({resolvedTlsProfile.extensionsOrder.length}) :{' '}
+                  {resolvedTlsProfile.extensionsOrder.slice(0, 7).join('-')}…
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1">
+                <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  Groupes ECDHE / Post-Quantique
+                </div>
+                <div className="font-mono font-bold text-emerald-600 dark:text-emerald-400 truncate">
+                  {resolvedTlsProfile.supportedGroups[0]}
+                </div>
+                <div className="text-[11px] font-mono text-slate-500 truncate">
+                  {resolvedTlsProfile.supportedGroups.slice(1).join(' · ')}
+                </div>
+              </div>
+            </div>
+
+            {/* Advertised Cipher Suites Table */}
+            <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-950/70 text-[11px] font-mono text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="px-3.5 py-2 font-semibold">Ordre ClientHello</th>
+                    <th className="px-3.5 py-2 font-semibold">Code IANA</th>
+                    <th className="px-3.5 py-2 font-semibold">Suite de chiffrement annoncée</th>
+                    <th className="px-3.5 py-2 font-semibold text-right">Statut Anti-DPI</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
+                  {resolvedTlsProfile.cipherSuites.map((cipher, index) => (
+                    <tr
+                      key={`${cipher.codeHex}-${index}`}
+                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
+                    >
+                      <td className="px-3.5 py-2 tabular-nums text-slate-500">
+                        #{String(index + 1).padStart(2, '0')}
+                      </td>
+                      <td className="px-3.5 py-2 tabular-nums text-cyan-700 dark:text-cyan-400 font-semibold">
+                        {cipher.codeHex} ({cipher.codeDec})
+                      </td>
+                      <td className="px-3.5 py-2 text-slate-900 dark:text-white">
+                        {cipher.ianaName}
+                      </td>
+                      <td className="px-3.5 py-2 text-right text-emerald-600 dark:text-emerald-400 font-semibold">
+                        Permutée uTLS
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5 text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <span>
+                TLS Fingerprint Masking désactivé : l&apos;empreinte JA3 statique du ClientHello et l&apos;ordre fixe des suites de chiffrement peuvent être corrélés par les sondes DPI.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onToggleTlsFingerprintMasking?.(true)}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold shrink-0 cursor-pointer"
+            >
+              Activer le masquage JA3
             </button>
           </div>
         )}

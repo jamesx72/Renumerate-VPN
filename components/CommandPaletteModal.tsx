@@ -509,6 +509,35 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'toggle-tls-fingerprint-masking',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title: settings.tlsFingerprintMasking
+          ? 'Désactiver TLS Fingerprint Masking (Anti-JA3)'
+          : 'Activer TLS Fingerprint Masking (Anti-JA3 ClientHello)',
+        subtitle: settings.tlsFingerprintMasking
+          ? 'Modifie dynamiquement ClientHello et suites de chiffrement à chaque tunnel'
+          : 'Trompe les sondes DPI JA3 en permutant les extensions et suites TLS',
+        keywords:
+          'tls fingerprint masking ja3 ja4 clienthello cipher suites dpi obfuscation',
+        icon: Lock,
+        tone: 'cyan',
+        onExecute: () => {
+          onPatchSettings(
+            { tlsFingerprintMasking: !settings.tlsFingerprintMasking },
+            !settings.tlsFingerprintMasking
+              ? 'TLS Fingerprint Masking activé via palette opérateur'
+              : 'TLS Fingerprint Masking désactivé via palette opérateur'
+          );
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('tls-fingerprint-masking')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
         id: 'emergency-killswitch',
         category: 'tunnel',
         categoryLabel: 'Tunnel & Identité',

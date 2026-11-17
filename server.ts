@@ -2858,6 +2858,158 @@ Fournis une réponse vocale claire en français ("reply", 40 à 85 mots), un sco
     });
   });
 
+  app.post(
+    '/api/security/packet-deep-analysis',
+    async (req: Request, res: Response) => {
+      const body = (req.body || {}) as {
+        rawHex?: string;
+        sampleSha256?: string;
+        sourceIp?: string;
+        sourceCountry?: string;
+        destinationIp?: string;
+        targetPort?: number;
+        protocol?: string;
+        category?: string;
+        severity?: string;
+        signatureRule?: string;
+        mitreId?: string;
+        anomalyScore?: number;
+        shannonEntropy?: number;
+        matchedRules?: string[];
+      };
+
+      const sourceIp = String(body.sourceIp || '0.0.0.0');
+      const sourceCountry = String(body.sourceCountry || 'Origine externe');
+      const destinationIp = String(body.destinationIp || '10.66.0.1');
+      const targetPort = Number(body.targetPort) || 443;
+      const protocol = String(body.protocol || 'TCP').toUpperCase();
+      const category = String(body.category || 'nominal');
+      const severity = String(body.severity || 'medium');
+      const signatureRule = String(body.signatureRule || 'UNCLASSIFIED-FLOW');
+      const mitreId = String(body.mitreId || 'AUCUN');
+      const anomalyScore = Math.max(
+        0,
+        Math.min(100, Number(body.anomalyScore) || 50)
+      );
+      const shannonEntropy = Number(body.shannonEntropy) || 6.4;
+      const rawHexClean = String(body.rawHex || '').replace(/[^0-9a-fA-F]/g, '');
+
+      const verifiedSha256 = rawHexClean
+        ? crypto
+            .createHash('sha256')
+            .update(Buffer.from(rawHexClean, 'hex'))
+            .digest('hex')
+            .toUpperCase()
+        : String(body.sampleSha256 || '').toUpperCase();
+
+      const isQuarantinedOnServer = serverQuarantineList.some(
+        (q) => q.ip === sourceIp
+      );
+      const knownThreat = category !== 'nominal' && anomalyScore >= 40;
+      const riskScore = knownThreat
+        ? Math.min(99, Math.max(anomalyScore, severity === 'critical' ? 92 : 76))
+        : Math.max(8, anomalyScore);
+
+      const threatLevel: 'Critique' | 'Élevé' | 'Moyen' | 'Faible' =
+        riskScore >= 85
+          ? 'Critique'
+          : riskScore >= 65
+            ? 'Élevé'
+            : riskScore >= 40
+              ? 'Moyen'
+              : 'Faible';
+
+      const iocIndicators = [
+        `IPv4 Source : ${sourceIp} (${sourceCountry})`,
+        `Vecteur cible : ${protocol}/${targetPort} → ${destinationIp}`,
+        `Signature DPI : ${signatureRule} (${mitreId})`,
+        `Entropie Shannon : ${shannonEntropy.toFixed(2)} b/o`,
+        ...(verifiedSha256 ? [`SHA-256 trame : ${verifiedSha256.slice(0, 24)}…`] : []),
+        ...(isQuarantinedOnServer
+          ? ['Statut HIDS : IP présente dans la table de quarantaine serveur']
+          : []),
+      ];
+
+      const fallbackVerdictTitle = knownThreat
+        ? `Menace ${threatLevel} confirmée : ${signatureRule}`
+        : 'Flux nominal sans indicateur de compromission';
+
+      const fallbackAnalysis = knownThreat
+        ? `L'inspection forensique de la trame (${Math.floor(rawHexClean.length / 2) || 64} octets, SHA-256 ${verifiedSha256.slice(0, 12) || 'N/A'}…) émise par ${sourceIp} vers ${protocol}/${targetPort} confirme une correspondance forte (${riskScore}/100) avec la règle ${signatureRule} (technique MITRE ${mitreId}). L'entropie mesurée (${shannonEntropy.toFixed(2)} b/o) et les fanions de transport L4 correspondent à une activité hostile nécessitant un blocage périmétrique.`
+        : `La trame capturée depuis ${sourceIp} sur ${protocol}/${targetPort} ne présente pas de séquence d'exploitation ou de dérive statistique anormale.`;
+
+      const fallbackRecommendations = knownThreat
+        ? [
+            `Maintenir l'hôte ${sourceIp} en quarantaine nftables / drop XDP sur l'interface d'entrée.`,
+            `Activer le profil IDS Paranoïaque et forcer une rotation d'identité / rekey WireGuard (${mitreId}).`,
+            `Conserver l'empreinte ${verifiedSha256.slice(0, 16) || 'SHA-256'} dans le journal forensique opérateur.`,
+          ]
+        : [
+            'Conserver la télémétrie passive Sentinel-IA sur le flux chiffré courant.',
+          ];
+
+      const ai = createGenAIClient();
+      if (!ai) {
+        res.json({
+          ok: true,
+          sampleSha256: verifiedSha256,
+          threatLevel,
+          riskScore,
+          isKnownMaliciousSource: knownThreat || isQuarantinedOnServer,
+          verdictTitle: fallbackVerdictTitle,
+          analysis: fallbackAnalysis,
+          recommendations: fallbackRecommendations,
+          iocIndicators,
+          engine: 'forensic-dpi',
+        });
+        return;
+      }
+
+      const prompt = `Tu es un analyste SOC / forensique réseau senior. Analyse en français (3 à 4 phrases concises) cet échantillon de paquet capturé en temps réel :
+- Source : ${sourceIp} (${sourceCountry}) → Destination VPN : ${destinationIp}:${targetPort} (${protocol})
+- Catégorie : ${category} | Sévérité : ${severity} | Score anomalie : ${anomalyScore}%
+- Règle déclenchée : ${signatureRule} | MITRE ATT&CK : ${mitreId}
+- Entropie Shannon : ${shannonEntropy.toFixed(2)} b/o | SHA-256 trame : ${verifiedSha256}
+- En-têtes & charge hex (extrait) : ${rawHexClean.slice(0, 160)}
+Rédige un verdict technique précis et 2 actions de remédiation concrètes.`;
+
+      try {
+        const { response } = await generateWithModelCascade({
+          ai,
+          contents: prompt,
+          allowCircuitProbe: false,
+          models: ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'],
+        });
+        const aiText = (response.text ?? '').trim();
+        res.json({
+          ok: true,
+          sampleSha256: verifiedSha256,
+          threatLevel,
+          riskScore,
+          isKnownMaliciousSource: knownThreat || isQuarantinedOnServer,
+          verdictTitle: fallbackVerdictTitle,
+          analysis: aiText || fallbackAnalysis,
+          recommendations: fallbackRecommendations,
+          iocIndicators,
+          engine: aiText ? 'gemini' : 'forensic-dpi',
+        });
+      } catch {
+        res.json({
+          ok: true,
+          sampleSha256: verifiedSha256,
+          threatLevel,
+          riskScore,
+          isKnownMaliciousSource: knownThreat || isQuarantinedOnServer,
+          verdictTitle: fallbackVerdictTitle,
+          analysis: fallbackAnalysis,
+          recommendations: fallbackRecommendations,
+          iocIndicators,
+          engine: 'forensic-dpi',
+        });
+      }
+    }
+  );
+
   // ============================================================================
   // ENDPOINTS CRYPTOGRAPHIQUES ECC (ELLIPTIC CURVE CRYPTOGRAPHY)
   // ============================================================================

@@ -188,6 +188,7 @@ export interface AppSettings {
   macFormat: 'standard' | 'hyphen' | 'cisco' | 'random';
   uaComplexity: 'standard' | 'diverse' | 'chaotic';
   bssidSsidRandomization: boolean;
+  tlsFingerprintMasking: boolean;
   fingerprintProtection: FingerprintProtectionConfig;
   // Vortex (Tor) Config & Jurisdictions
   vortexBridge: 'none' | 'obfs4' | 'snowflake' | 'meek-azure';
@@ -574,6 +575,23 @@ export interface EccSecurityActivityLog {
   digestOrFingerprint?: string;
   latencyMs?: number;
 }
+
+export interface TlsClientHelloProfile {
+  enabled: boolean;
+  mimicStack: string;
+  tlsVersionHex: string;
+  greaseToken: string;
+  alpnList: string[];
+  supportedGroups: string[];
+  extensionsOrder: number[];
+  cipherSuites: Array<{ codeHex: string; codeDec: number; ianaName: string }>;
+  ja3RawString: string;
+  ja3Hash: string;
+  ja4Fingerprint: string;
+  mutatedAt: string;
+  rotationCount: number;
+}
+
 
 
 

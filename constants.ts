@@ -20,6 +20,7 @@ import {
   IntrusionSeverity,
   IdsFilterRule,
   GeoFenceRegionId,
+  TlsClientHelloProfile,
 } from './types';
 
 export const REALISTIC_USER_AGENTS = [
@@ -417,6 +418,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   macFormat: 'random',
   uaComplexity: 'diverse',
   bssidSsidRandomization: true,
+  tlsFingerprintMasking: true,
   fingerprintProtection: {
     canvasNoise: true,
     webglMask: true,
@@ -700,6 +702,10 @@ export function sanitizeAppSettings(
       typeof src.bssidSsidRandomization === 'boolean'
         ? src.bssidSsidRandomization
         : DEFAULT_APP_SETTINGS.bssidSsidRandomization,
+    tlsFingerprintMasking:
+      typeof src.tlsFingerprintMasking === 'boolean'
+        ? src.tlsFingerprintMasking
+        : DEFAULT_APP_SETTINGS.tlsFingerprintMasking,
     fingerprintProtection: {
       canvasNoise:
         typeof src.fingerprintProtection?.canvasNoise === 'boolean'
@@ -1012,6 +1018,7 @@ export function computeSettingsHardeningScore(settings: AppSettings): number {
   if (settings.ntpDriftProtection) score += 2;
   if (settings.ebpfXdpAcceleration) score += 1;
   if (settings.tlsClientHelloFragmentation) score += 2;
+  if (settings.tlsFingerprintMasking) score += 2;
   if (settings.trafficPaddingJitterMs > 0) score += 2;
   if (settings.ephemeralRekeyMinutes <= 10) score += 2;
   if (settings.adBlocker) {
@@ -3792,5 +3799,190 @@ export function generateNftablesRuleSyntax(rule: IdsFilterRule): {
 
   return { nftables, iptables, ebpfHook };
 }
+
+const TLS_CIPHER_POOL: Array<{
+  codeHex: string;
+  codeDec: number;
+  ianaName: string;
+}> = [
+  { codeHex: '0x1301', codeDec: 4865, ianaName: 'TLS_AES_128_GCM_SHA256' },
+  { codeHex: '0x1302', codeDec: 4866, ianaName: 'TLS_AES_256_GCM_SHA384' },
+  { codeHex: '0x1303', codeDec: 4867, ianaName: 'TLS_CHACHA20_POLY1305_SHA256' },
+  { codeHex: '0xC02B', codeDec: 49195, ianaName: 'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256' },
+  { codeHex: '0xC02F', codeDec: 49199, ianaName: 'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256' },
+  { codeHex: '0xC02C', codeDec: 49196, ianaName: 'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384' },
+  { codeHex: '0xC030', codeDec: 49200, ianaName: 'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384' },
+  { codeHex: '0xCCA9', codeDec: 52393, ianaName: 'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256' },
+  { codeHex: '0xCCA8', codeDec: 52392, ianaName: 'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256' },
+];
+
+const TLS_MIMIC_STACKS = [
+  'Chrome 131 · BoringSSL (uTLS)',
+  'Firefox 133 · NSS 3.105',
+  'Safari 18.1 · SecureTransport',
+  'Edge 131 · Randomized GREASE',
+  'Chromium PQC · X25519MLKEM768',
+] as const;
+
+const TLS_GREASE_TOKENS = [
+  '0x0A0A',
+  '0x1A1A',
+  '0x2A2A',
+  '0x3A3A',
+  '0x4A4A',
+  '0x5A5A',
+  '0x6A6A',
+  '0x7A7A',
+  '0x8A8A',
+  '0x9A9A',
+] as const;
+
+const TLS_EXTENSIONS_POOL = [0, 5, 10, 11, 13, 16, 18, 21, 23, 27, 35, 43, 45, 51, 65281];
+
+function hashString32Hex(input: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 0x01000193);
+    h2 = Math.imul(h2 ^ (ch + i), 0x85ebca6b);
+  }
+  const p1 = (h1 >>> 0).toString(16).padStart(8, '0');
+  const p2 = (h2 >>> 0).toString(16).padStart(8, '0');
+  const p3 = ((h1 ^ h2) >>> 0).toString(16).padStart(8, '0');
+  const p4 = ((Math.imul(h1, 31) ^ (h2 >>> 3)) >>> 0)
+    .toString(16)
+    .padStart(8, '0');
+  return `${p1}${p2}${p3}${p4}`.toLowerCase();
+}
+
+export function generateSpoofedTlsClientHelloProfile(
+  enabled: boolean,
+  prevRotationCount = 0
+): TlsClientHelloProfile {
+  const mutatedAt = new Date().toLocaleTimeString('fr-FR', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  if (!enabled) {
+    const staticCiphers = TLS_CIPHER_POOL.slice(0, 6);
+    const staticExt = [0, 5, 10, 11, 13, 16, 23, 35, 43, 45, 51];
+    const ja3Raw = `771,${staticCiphers.map((c) => c.codeDec).join('-')},${staticExt.join('-')},29-23-24,0`;
+    return {
+      enabled: false,
+      mimicStack: 'Client natif (Empreinte non masquée)',
+      tlsVersionHex: '0x0303 (TLS 1.3 / 1.2)',
+      greaseToken: 'AUCUN',
+      alpnList: ['h2', 'http/1.1'],
+      supportedGroups: ['x25519 (29)', 'secp256r1 (23)', 'secp384r1 (24)'],
+      extensionsOrder: staticExt,
+      cipherSuites: staticCiphers,
+      ja3RawString: ja3Raw,
+      ja3Hash: 'cd08e31494f9531f560d64c695473da9',
+      ja4Fingerprint: 't13d1511h2_8daaf6152771_e5627efa2ab1',
+      mutatedAt,
+      rotationCount: prevRotationCount,
+    };
+  }
+
+  const randBuf = new Uint32Array(24);
+  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(randBuf);
+  } else {
+    for (let i = 0; i < randBuf.length; i++) {
+      randBuf[i] = Math.floor(Math.random() * 0xffffffff);
+    }
+  }
+
+  const mimicStack = TLS_MIMIC_STACKS[randBuf[0] % TLS_MIMIC_STACKS.length];
+  const greaseToken = TLS_GREASE_TOKENS[randBuf[1] % TLS_GREASE_TOKENS.length];
+
+  // Dynamically permute advertised cipher suites (preserve TLS 1.3 AEAD core, rotate order + ECDHE set)
+  const tls13Core = [...TLS_CIPHER_POOL.slice(0, 3)];
+  if (randBuf[2] % 2 === 1) {
+    const tmp = tls13Core[0];
+    tls13Core[0] = tls13Core[2];
+    tls13Core[2] = tmp;
+  }
+  const ecdhePool = [...TLS_CIPHER_POOL.slice(3)];
+  for (let i = ecdhePool.length - 1; i > 0; i--) {
+    const j = randBuf[3 + i] % (i + 1);
+    const t = ecdhePool[i];
+    ecdhePool[i] = ecdhePool[j];
+    ecdhePool[j] = t;
+  }
+  const cipherSuites = [...tls13Core, ...ecdhePool.slice(0, 4 + (randBuf[9] % 3))];
+
+  // Permute TLS ClientHello extensions (anti-JA3 / JA4 extension ordering)
+  const extSubset = [...TLS_EXTENSIONS_POOL];
+  for (let i = extSubset.length - 1; i > 0; i--) {
+    const j = randBuf[10 + (i % 12)] % (i + 1);
+    const t = extSubset[i];
+    extSubset[i] = extSubset[j];
+    extSubset[j] = t;
+  }
+  const extensionsOrder = extSubset.slice(0, 11 + (randBuf[12] % 4));
+
+  const supportedGroupsPool = [
+    'X25519MLKEM768 (4588)',
+    'x25519 (29)',
+    'secp256r1 (23)',
+    'secp384r1 (24)',
+    'ffdhe2048 (256)',
+  ];
+  const supportedGroups =
+    randBuf[13] % 2 === 0
+      ? supportedGroupsPool.slice(0, 4)
+      : [
+          supportedGroupsPool[1],
+          supportedGroupsPool[0],
+          supportedGroupsPool[2],
+          supportedGroupsPool[3],
+        ];
+
+  const alpnList =
+    randBuf[14] % 3 === 0
+      ? ['h3', 'h2', 'http/1.1']
+      : randBuf[14] % 3 === 1
+        ? ['h2', 'http/1.1']
+        : ['h2'];
+
+  const greaseDec = parseInt(greaseToken, 16);
+  const groupNums = supportedGroups.map((g) => {
+    const m = g.match(/\((\d+)\)/);
+    return m ? m[1] : '29';
+  });
+  const ja3RawString = `771,${greaseDec}-${cipherSuites
+    .map((c) => c.codeDec)
+    .join('-')},${extensionsOrder.join('-')},${groupNums.join('-')},0`;
+  const ja3Hash = hashString32Hex(`${ja3RawString}|${randBuf[15]}`);
+  const ja4CipherPart = hashString32Hex(
+    cipherSuites.map((c) => c.codeHex).join(',')
+  ).slice(0, 12);
+  const ja4ExtPart = hashString32Hex(extensionsOrder.join(',')).slice(0, 12);
+  const ja4Fingerprint = `t13d${String(cipherSuites.length).padStart(2, '0')}${String(
+    extensionsOrder.length
+  ).padStart(2, '0')}${alpnList[0]}_${ja4CipherPart}_${ja4ExtPart}`;
+
+  return {
+    enabled: true,
+    mimicStack,
+    tlsVersionHex: '0x0303 (TLS 1.3 GREASE)',
+    greaseToken,
+    alpnList,
+    supportedGroups,
+    extensionsOrder,
+    cipherSuites,
+    ja3RawString,
+    ja3Hash,
+    ja4Fingerprint,
+    mutatedAt,
+    rotationCount: prevRotationCount + 1,
+  };
+}
+
 
 

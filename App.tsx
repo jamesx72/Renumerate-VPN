@@ -83,6 +83,7 @@ import {
   getEffectiveRotationSeconds,
   mutateIdentityIdentifiersForHop,
   computeNextRenumberHop,
+  generateSpoofedTlsClientHelloProfile,
 } from './constants';
 import {
   VirtualIdentity,
@@ -96,6 +97,7 @@ import {
   ConnectionSession,
   Transaction,
   IntrusionAttempt,
+  TlsClientHelloProfile,
 } from './types';
 import { analyzeSecurity } from './services/geminiService';
 import {
@@ -231,6 +233,13 @@ function App() {
   const [appSettings, setAppSettings] = useState<AppSettings>(
     DEFAULT_APP_SETTINGS
   );
+  const [activeTlsProfile, setActiveTlsProfile] = useState<TlsClientHelloProfile>(
+    () =>
+      generateSpoofedTlsClientHelloProfile(
+        DEFAULT_APP_SETTINGS.tlsFingerprintMasking,
+        0
+      )
+  );
   const [settingsLoadedForUser, setSettingsLoadedForUser] = useState<
     string | null
   >(null);
@@ -365,6 +374,23 @@ function App() {
         );
       }
       setIsDisconnecting(false);
+
+      if (appSettings.tlsFingerprintMasking) {
+        const nextTls = generateSpoofedTlsClientHelloProfile(
+          true,
+          activeTlsProfile.rotationCount
+        );
+        setActiveTlsProfile(nextTls);
+        addLog(
+          `[TLS Fingerprint Masking] ClientHello muté (${nextTls.mimicStack}) · JA3 ${nextTls.ja3Hash} · Suites ${nextTls.cipherSuites
+            .slice(0, 3)
+            .map((c) => c.codeHex)
+            .join('/')}`,
+          'info',
+          targetIdentity.ip
+        );
+      }
+
       addLog(
         `Démarrage du tunnel Renumerate (${appSettings.protocol.toUpperCase()}) vers ${targetIdentity.city}, ${targetIdentity.country}...`,
         'info',
@@ -405,6 +431,7 @@ function App() {
     },
     [
       appSettings,
+      activeTlsProfile.rotationCount,
       nodes,
       mode,
       currentIdentity,
@@ -477,7 +504,7 @@ function App() {
             appSettings.bssidSsidRandomization
               ? ' · BSSID/SSID WiFi permutés'
               : ''
-          }`,
+          }${appSettings.tlsFingerprintMasking ? ' · JA3 ClientHello muté' : ''}`,
           'success'
         );
         return {
@@ -486,6 +513,11 @@ function App() {
           userAgentShort: newUA.short,
         };
       });
+      if (appSettings.tlsFingerprintMasking) {
+        setActiveTlsProfile((prevTls) =>
+          generateSpoofedTlsClientHelloProfile(true, prevTls.rotationCount)
+        );
+      }
       setIsMasking(false);
     }, 1500);
   }, [
@@ -493,6 +525,8 @@ function App() {
     appSettings.macFormat,
     appSettings.obfuscationLevel,
     appSettings.uaComplexity,
+    appSettings.bssidSsidRandomization,
+    appSettings.tlsFingerprintMasking,
     addLog,
   ]);
 
@@ -1745,6 +1779,7 @@ function App() {
         obfuscationLevel: 'ultra',
         excludeEyesJurisdictions: '14-eyes',
         bssidSsidRandomization: true,
+        tlsFingerprintMasking: true,
         fingerprintProtection: {
           canvasNoise: true,
           webglMask: true,
@@ -2295,6 +2330,7 @@ function App() {
                       ipv6LeakProtection: true,
                       webrtcLeakShield: true,
                       bssidSsidRandomization: true,
+                      tlsFingerprintMasking: true,
                       fingerprintProtection: {
                         canvasNoise: true,
                         webglMask: true,
@@ -2302,13 +2338,45 @@ function App() {
                         timezoneSync: true,
                       },
                     },
-                    'Harmonisation intégrale des 6 boucliers navigateur, WebRTC & BSSID/SSID'
+                    'Harmonisation intégrale des boucliers navigateur, WebRTC, BSSID/SSID & TLS JA3'
                   )
                 }
                 bssidSsidRandomization={appSettings.bssidSsidRandomization}
                 onToggleBssidSsidRandomization={(enabled) =>
                   updateAppSettings('bssidSsidRandomization', enabled)
                 }
+                tlsFingerprintMasking={appSettings.tlsFingerprintMasking}
+                activeTlsProfile={activeTlsProfile}
+                onToggleTlsFingerprintMasking={(enabled) => {
+                  updateAppSettings('tlsFingerprintMasking', enabled);
+                  const nextTls = generateSpoofedTlsClientHelloProfile(
+                    enabled,
+                    activeTlsProfile.rotationCount
+                  );
+                  setActiveTlsProfile(nextTls);
+                  addLog(
+                    enabled
+                      ? `[TLS Fingerprint Masking] Activé (${nextTls.mimicStack}) · JA3 ${nextTls.ja3Hash}`
+                      : '[TLS Fingerprint Masking] Désactivé — paramètres ClientHello statiques',
+                    enabled ? 'success' : 'warning',
+                    currentIdentity.ip
+                  );
+                }}
+                onRotateTlsProfile={() => {
+                  if (!appSettings.tlsFingerprintMasking) {
+                    updateAppSettings('tlsFingerprintMasking', true);
+                  }
+                  const nextTls = generateSpoofedTlsClientHelloProfile(
+                    true,
+                    activeTlsProfile.rotationCount
+                  );
+                  setActiveTlsProfile(nextTls);
+                  addLog(
+                    `[TLS Fingerprint Masking] ClientHello & suites de chiffrement mutés (${nextTls.mimicStack}) · JA3 ${nextTls.ja3Hash}`,
+                    'success',
+                    currentIdentity.ip
+                  );
+                }}
                 isRefreshingSecurity={isRefreshingSecurity}
                 onRefreshSecurity={() => {
                   runSecurityAnalysis(

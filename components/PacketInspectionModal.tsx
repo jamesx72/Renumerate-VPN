@@ -17,13 +17,8 @@ import {
   ConnectionMode,
   IntrusionDefenseAction,
   IntrusionSeverity,
-  SecurityReport,
 } from '../types';
-import {
-  analyzeSecurity,
-  DeepAuditResult,
-  performDeepAudit,
-} from '../services/geminiService';
+import { DeepAuditResult, performDeepAudit } from '../services/geminiService';
 
 export interface PacketFlowSample {
   id: string;
@@ -323,8 +318,14 @@ export const PacketInspectionModal: React.FC<PacketInspectionModalProps> = ({
   const [isSubmittingDeepAnalysis, setIsSubmittingDeepAnalysis] =
     useState<boolean>(false);
   const [deepAnalysisData, setDeepAnalysisData] = useState<{
+    threatLevel: 'Critique' | 'Élevé' | 'Moyen' | 'Faible';
+    riskScore: number;
+    verdictTitle: string;
+    analysis: string;
+    recommendations: string[];
+    iocIndicators: string[];
+    engine: string;
     deepAudit: DeepAuditResult;
-    securityReport: SecurityReport;
     submittedAt: string;
   } | null>(null);
 
@@ -413,20 +414,55 @@ export const PacketInspectionModal: React.FC<PacketInspectionModalProps> = ({
   const handleSubmitDeepSecurityAnalysis = async () => {
     setIsSubmittingDeepAnalysis(true);
     try {
+      const rawHex = Array.from(packet.bytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
       const locationLabel = `${sample.sourceCountry} · ${sample.protocol}/${sample.targetPort}`;
-      const [deepAudit, securityReport] = await Promise.all([
-        performDeepAudit(sample.sourceIp, locationLabel),
-        analyzeSecurity(mode, locationLabel, sample.sourceIp, {
-          protocol: settings.protocol,
-          killSwitch: settings.killSwitch,
-          ipv6LeakProtection: settings.ipv6LeakProtection,
-          forceRefresh: true,
+
+      const [forensicRes, deepAudit] = await Promise.all([
+        fetch('/api/security/packet-deep-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rawHex,
+            sampleSha256,
+            sourceIp: sample.sourceIp,
+            sourceCountry: sample.sourceCountry,
+            destinationIp,
+            targetPort: sample.targetPort,
+            protocol: sample.protocol,
+            category: sample.category,
+            severity: sample.severity,
+            signatureRule: sample.signatureRule,
+            mitreId: sample.mitreId,
+            anomalyScore: sample.anomalyScore,
+            shannonEntropy: sample.shannonEntropy,
+            matchedRules: matchedSignatures.map((s) => s.ruleCode),
+          }),
+        }).then(async (r) => {
+          if (!r.ok) throw new Error('HTTP error');
+          return (await r.json()) as {
+            threatLevel: 'Critique' | 'Élevé' | 'Moyen' | 'Faible';
+            riskScore: number;
+            verdictTitle: string;
+            analysis: string;
+            recommendations: string[];
+            iocIndicators: string[];
+            engine: string;
+          };
         }),
+        performDeepAudit(sample.sourceIp, locationLabel),
       ]);
 
       setDeepAnalysisData({
+        threatLevel: forensicRes.threatLevel,
+        riskScore: forensicRes.riskScore,
+        verdictTitle: forensicRes.verdictTitle,
+        analysis: forensicRes.analysis,
+        recommendations: forensicRes.recommendations,
+        iocIndicators: forensicRes.iocIndicators,
+        engine: forensicRes.engine,
         deepAudit,
-        securityReport,
         submittedAt: new Date().toLocaleTimeString('fr-FR', {
           hour12: false,
           hour: '2-digit',
@@ -436,10 +472,43 @@ export const PacketInspectionModal: React.FC<PacketInspectionModalProps> = ({
       });
 
       addLog?.(
-        `[Sentinel-IA · DPI] Échantillon ${sample.signatureRule} (${sample.sourceIp}) soumis à l'analyse approfondie — Niveau ${securityReport.threatLevel}`,
-        deepAudit.isBlacklisted || securityReport.score < 70 ? 'error' : 'info',
+        `[Sentinel-IA · DPI] Échantillon ${sample.signatureRule} (${sample.sourceIp}) soumis à l'analyse approfondie — Risque ${forensicRes.riskScore}/100 (${forensicRes.threatLevel})`,
+        forensicRes.riskScore >= 65 ? 'error' : 'info',
         sample.sourceIp
       );
+    } catch {
+      const fallbackLevel: 'Critique' | 'Élevé' | 'Moyen' | 'Faible' =
+        sample.anomalyScore >= 85
+          ? 'Critique'
+          : sample.anomalyScore >= 65
+            ? 'Élevé'
+            : 'Moyen';
+      setDeepAnalysisData({
+        threatLevel: fallbackLevel,
+        riskScore: sample.anomalyScore,
+        verdictTitle: `Analyse locale : ${sample.signatureRule}`,
+        analysis: `Échantillon ${sample.protocol}/${sample.targetPort} depuis ${sample.sourceIp} (${sample.shannonEntropy} b/o) corrélatif à ${sample.mitreId}. Mode hors ligne actif.`,
+        recommendations: [
+          `Isoler l'adresse source ${sample.sourceIp} via nftables.`,
+          'Maintenir le bouclier IDS en sensibilité élevée ou paranoïaque.',
+        ],
+        iocIndicators: [
+          `Source : ${sample.sourceIp}`,
+          `Signature : ${sample.signatureRule}`,
+        ],
+        engine: 'local-heuristic',
+        deepAudit: {
+          analysis: '',
+          sources: [],
+          isBlacklisted: sample.anomalyScore >= 75,
+        },
+        submittedAt: new Date().toLocaleTimeString('fr-FR', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }),
+      });
     } finally {
       setIsSubmittingDeepAnalysis(false);
     }
@@ -703,31 +772,49 @@ export const PacketInspectionModal: React.FC<PacketInspectionModalProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
                   <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                  <span>Rapport d’analyse de sécurité approfondie</span>
+                  <span>{deepAnalysisData.verdictTitle}</span>
                 </div>
                 <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                  {deepAnalysisData.submittedAt} · Niveau menace{' '}
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {deepAnalysisData.securityReport.threatLevel}
+                  {deepAnalysisData.submittedAt} · Niveau{' '}
+                  <span
+                    className={`font-bold ${
+                      deepAnalysisData.riskScore >= 85
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : deepAnalysisData.riskScore >= 65
+                          ? 'text-orange-600 dark:text-orange-400'
+                          : 'text-slate-900 dark:text-white'
+                    }`}
+                  >
+                    {deepAnalysisData.threatLevel}
                   </span>{' '}
-                  · Score {deepAnalysisData.securityReport.score}/100
+                  · Risque {deepAnalysisData.riskScore}/100 ({deepAnalysisData.engine})
                 </div>
               </div>
 
               <div className="text-slate-700 dark:text-slate-200 leading-relaxed space-y-1.5">
-                <p>{deepAnalysisData.deepAudit.analysis}</p>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                  {deepAnalysisData.securityReport.analysis}
-                </p>
+                <p>{deepAnalysisData.analysis}</p>
+                {deepAnalysisData.deepAudit.analysis && (
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                    Contexte ASN / réputation : {deepAnalysisData.deepAudit.analysis}
+                  </p>
+                )}
               </div>
 
-              {deepAnalysisData.securityReport.recommendations.length > 0 && (
+              {deepAnalysisData.iocIndicators.length > 0 && (
+                <div className="border-t border-cyan-500/20 pt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-mono text-slate-600 dark:text-slate-300">
+                  {deepAnalysisData.iocIndicators.map((ioc, idx) => (
+                    <span key={idx}>{ioc}</span>
+                  ))}
+                </div>
+              )}
+
+              {deepAnalysisData.recommendations.length > 0 && (
                 <div className="border-t border-cyan-500/20 pt-2.5 space-y-1">
                   <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
                     Recommandations de remédiation :
                   </div>
                   <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
-                    {deepAnalysisData.securityReport.recommendations
+                    {deepAnalysisData.recommendations
                       .slice(0, 3)
                       .map((rec, i) => (
                         <li key={i}>{rec}</li>
