@@ -30,6 +30,9 @@ import {
   Camera,
   Contrast,
   Waves,
+  Bug,
+  Clock,
+  Wifi,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -282,6 +285,146 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'nav-sentinel-traffic-flow',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir Sentinel-IA Traffic Flow (Anomalies D3.js)',
+        subtitle:
+          'Détection en temps réel des anomalies de trafic, entropie Shannon et classification par signatures connues',
+        keywords:
+          'sentinel ia traffic flow anomalie d3 signatures menace c2 scan entropie shannon flux',
+        icon: Radar,
+        tone: 'danger',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('sentinel-ia-traffic-flow')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-test-faille-dns',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir le Test de Faille DNS (Sentinel-IA)',
+        subtitle:
+          'Résolution DNS forcée via résolveur public DoH pour détecter les fuites hors du tunnel VPN',
+        keywords:
+          'dns faille breach fuite doh resolution forcee 1.1.1.1 8.8.8.8 9.9.9.9 sentinel ia tableau',
+        icon: Globe,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('test-faille-dns')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-data-exfiltration-radar',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir Data Exfiltration Radar (Sentinel-IA D3.js)',
+        subtitle:
+          'Diagrammes en aires D3.js des pics sortants anormaux et alertes Data Exfiltration en temps réel',
+        keywords:
+          'data exfiltration radar d3 aires sortant upload pic alerte sentinel ia zscore',
+        icon: Radar,
+        tone: 'danger',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('data-exfiltration-radar')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-webrtc-leak-tester',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir le Testeur de Fuite WebRTC / STUN',
+        subtitle:
+          'Vérification périodique des candidats ICE locaux et remédiation instantanée des requêtes STUN',
+        keywords:
+          'webrtc stun ice mdns fuite ip locale leak tester remediation instantanee',
+        icon: Radio,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('webrtc-leak-tester')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-intrusion-deception-grid',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir Intrusion Deception Grid (Honeypots D3.js)',
+        subtitle:
+          'Ports appâts simulés, matrice forensique D3.js et inspection des payloads capturés',
+        keywords:
+          'honeypot deception grid piege ports tarpit d3 forensique ssh smb rdp payload hex',
+        icon: Bug,
+        tone: 'amber',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('intrusion-deception-grid')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-temporality-chronograph',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir le Chronographe de Temporalité (Dérive NTP D3.js)',
+        subtitle:
+          'Surveillance de la dérive horloge système vs nœud de sortie, seuils TAI64N et resynchronisation NTS',
+        keywords:
+          'chronographe temporalite ntp horloge derive clock skew tai64n nts synchronisation fuseau d3',
+        icon: Clock,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('chronographe-temporalite')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'nav-zero-trust-validator',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir Zero-Trust Node Validator (HMAC & Check-Mark)',
+        subtitle:
+          'Vérification de signature cryptographique HMAC-SHA256 des nœuds de sortie avant connexion',
+        keywords:
+          'zero trust node validator hmac sha256 signature confiance noeud sortie check mark verification',
+        icon: ShieldCheck,
+        tone: 'emerald',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('zero-trust-node-validator')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
         id: 'toggle-digital-darkness',
         category: 'presets',
         categoryLabel: 'Profils & Durcissement',
@@ -300,6 +443,69 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           } else {
             onNavigateSection('cockpit');
           }
+        },
+      },
+      {
+        id: 'toggle-ghost-protocol',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title:
+          settings.trafficPaddingJitterMs > 0
+            ? 'Désactiver Ghost Protocol (Injection Chaff)'
+            : 'Activer Ghost Protocol (Injection Chaff & SNR D3)',
+        subtitle:
+          settings.trafficPaddingJitterMs > 0
+            ? `Chaff actif (+${settings.trafficPaddingJitterMs} ms) · Cliquer pour interrompre le bruit sortant`
+            : 'Injecte des paquets aléatoires Chaff pour masquer les modèles de trafic ISP/DPI',
+        keywords:
+          'ghost protocol chaff bruit noise snr ratio signal dpi isp masquage padding jitter',
+        icon: Ghost,
+        tone: 'purple',
+        onExecute: () => {
+          onPatchSettings(
+            {
+              trafficPaddingJitterMs:
+                settings.trafficPaddingJitterMs > 0 ? 0 : 40,
+            },
+            settings.trafficPaddingJitterMs > 0
+              ? 'Ghost Protocol désactivé via palette opérateur'
+              : 'Ghost Protocol activé (+40 ms Chaff) via palette opérateur'
+          );
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('ghost-protocol-toggle')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
+        id: 'toggle-bssid-ssid-randomization',
+        category: 'presets',
+        categoryLabel: 'Profils & Durcissement',
+        title: settings.bssidSsidRandomization
+          ? 'Désactiver la Randomisation BSSID/SSID (Leurre WiFi)'
+          : 'Activer la Randomisation BSSID/SSID (Leurre WiFi)',
+        subtitle: settings.bssidSsidRandomization
+          ? 'Simule des points d’accès WiFi proches aléatoires à chaque saut de re-numérotation'
+          : 'Protège contre la géolocalisation sans GPS par trilatération BSSID',
+        keywords:
+          'bssid ssid wifi randomisation leurre localisation gps trilateration wps',
+        icon: Wifi,
+        tone: 'cyan',
+        onExecute: () => {
+          onPatchSettings(
+            { bssidSsidRandomization: !settings.bssidSsidRandomization },
+            !settings.bssidSsidRandomization
+              ? 'Randomisation BSSID/SSID activée via palette opérateur'
+              : 'Randomisation BSSID/SSID désactivée via palette opérateur'
+          );
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('bssid-ssid-randomization')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
         },
       },
       {

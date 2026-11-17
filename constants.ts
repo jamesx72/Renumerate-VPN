@@ -416,6 +416,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   macScramblingMode: 'random',
   macFormat: 'random',
   uaComplexity: 'diverse',
+  bssidSsidRandomization: true,
   fingerprintProtection: {
     canvasNoise: true,
     webglMask: true,
@@ -695,6 +696,10 @@ export function sanitizeAppSettings(
     )
       ? (src.uaComplexity as AppSettings['uaComplexity'])
       : DEFAULT_APP_SETTINGS.uaComplexity,
+    bssidSsidRandomization:
+      typeof src.bssidSsidRandomization === 'boolean'
+        ? src.bssidSsidRandomization
+        : DEFAULT_APP_SETTINGS.bssidSsidRandomization,
     fingerprintProtection: {
       canvasNoise:
         typeof src.fingerprintProtection?.canvasNoise === 'boolean'

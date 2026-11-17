@@ -32,6 +32,8 @@ import {
   AlertTriangle,
   Eye,
   Radio,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 
 interface Props {
@@ -59,8 +61,21 @@ interface Props {
   fingerprintProtection?: FingerprintProtectionConfig;
   onToggleFingerprint?: (key: keyof FingerprintProtectionConfig) => void;
   onHarmonizeFingerprints?: () => void;
+  bssidSsidRandomization?: boolean;
+  onToggleBssidSsidRandomization?: (enabled: boolean) => void;
   onRefreshSecurity?: () => void;
   isRefreshingSecurity?: boolean;
+}
+
+interface SimulatedWifiAp {
+  id: string;
+  ssid: string;
+  bssid: string;
+  band: '2.4 GHz' | '5 GHz' | '6 GHz';
+  channel: number;
+  rssiDbm: number;
+  security: 'WPA3-SAE' | 'WPA2-PSK' | 'WPA2/WPA3' | 'OWE';
+  vendorTag: string;
 }
 
 interface BrowserSurfaceTelemetry {
@@ -89,6 +104,104 @@ const COUNTRIES_WITH_FLAGS: Record<string, string> = {
   USA: '🇺🇸',
   Allemagne: '🇩🇪',
 };
+
+const WIFI_REGIONAL_PREFIXES: Record<string, string[]> = {
+  France: ['Livebox', 'Freebox', 'SFR_WiFi', 'Bbox', 'Orange-5G'],
+  Suisse: ['Swisscom', 'Sunrise_5G', 'Salt-Fiber', 'Init7-Mesh', 'VTX_Pro'],
+  Singapour: ['Singtel_Fiber', 'StarHub-6E', 'M1_Mesh', 'WirelessSGx', 'MyRepublic'],
+  Islande: ['Siminn-5G', 'Nova_Fiber', 'Vodafone_IS', 'Hringdu_Net', 'ReykjavikGuest'],
+  Estonie: ['Telia-EE', 'Elisa_5G', 'Tele2_Fiber', 'Eduroam-EE', 'TallinnMesh'],
+  Panama: ['Tigo_Fiber', 'CableOnda', 'Claro_5G', 'CW_Panama', 'MetroGuest'],
+  USA: ['Xfinity-5G', 'AT&T-Fiber', 'Verizon_6E', 'SpectrumSetup', 'SonicFiber'],
+  Allemagne: ['Telekom-WLAN', 'FRITZ!Box', 'Vodafone_5G', 'O2-HomeBox', 'Freifunk'],
+};
+
+const WIFI_GENERIC_PREFIXES = [
+  'ASUS_ROG',
+  'Ubiquiti_U6',
+  'Netgear_AX',
+  'TP-Link_Mesh',
+  'Cafe_Guest',
+  'Corporate_Corp',
+  'Aruba_Instant',
+];
+
+function generateRandomBssid(): string {
+  const bytes = new Uint8Array(6);
+  window.crypto.getRandomValues(bytes);
+  // Set locally administered bit (bit 1) & clear multicast bit (bit 0)
+  bytes[0] = (bytes[0] | 0x02) & 0xfe;
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0').toUpperCase())
+    .join(':');
+}
+
+function generateSimulatedNearbyWifiNetworks(
+  city: string,
+  country: string,
+  count = 5
+): SimulatedWifiAp[] {
+  const prefixes = [
+    ...(WIFI_REGIONAL_PREFIXES[country] || []),
+    ...WIFI_GENERIC_PREFIXES,
+  ];
+  const bands: Array<{ band: '2.4 GHz' | '5 GHz' | '6 GHz'; channels: number[] }> = [
+    { band: '5 GHz', channels: [36, 44, 52, 100, 149, 157] },
+    { band: '6 GHz', channels: [5, 21, 37, 53, 85] },
+    { band: '2.4 GHz', channels: [1, 6, 11] },
+  ];
+  const securities: SimulatedWifiAp['security'][] = [
+    'WPA3-SAE',
+    'WPA2/WPA3',
+    'WPA2-PSK',
+    'OWE',
+  ];
+  const vendors = [
+    'Espressif/Mesh',
+    'Ubiquiti-LAA',
+    'Qualcomm-Atheros',
+    'Broadcom-WiFi6E',
+    'Intel-AX211',
+  ];
+
+  const rand = new Uint32Array(count * 5);
+  window.crypto.getRandomValues(rand);
+
+  const list: SimulatedWifiAp[] = [];
+  for (let i = 0; i < count; i++) {
+    const r0 = rand[i * 5];
+    const r1 = rand[i * 5 + 1];
+    const r2 = rand[i * 5 + 2];
+    const r3 = rand[i * 5 + 3];
+    const r4 = rand[i * 5 + 4];
+
+    const prefix = prefixes[r0 % prefixes.length];
+    const suffixHex = (r1 & 0xffff).toString(16).toUpperCase().padStart(4, '0');
+    const ssid =
+      i === 0 && city
+        ? `${prefix}-${city.slice(0, 3).toUpperCase()}_${suffixHex.slice(0, 2)}`
+        : `${prefix}-${suffixHex}`;
+
+    const bandSpec = bands[r2 % bands.length];
+    const channel = bandSpec.channels[r3 % bandSpec.channels.length];
+    const rssiDbm = -42 - (r4 % 41); // -42 dBm to -82 dBm
+    const security = securities[r1 % securities.length];
+    const vendorTag = vendors[r2 % vendors.length];
+
+    list.push({
+      id: `ap-${Date.now()}-${i}-${suffixHex}`,
+      ssid,
+      bssid: generateRandomBssid(),
+      band: bandSpec.band,
+      channel,
+      rssiDbm,
+      security,
+      vendorTag,
+    });
+  }
+
+  return list.sort((a, b) => b.rssiDbm - a.rssiDbm);
+}
 
 function bytesToHexShort(buffer: ArrayBuffer, byteCount = 8): string {
   return Array.from(new Uint8Array(buffer))
@@ -386,6 +499,8 @@ export const IdentityMatrix: React.FC<Props> = ({
   fingerprintProtection,
   onToggleFingerprint,
   onHarmonizeFingerprints,
+  bssidSsidRandomization = true,
+  onToggleBssidSsidRandomization,
   onRefreshSecurity,
   isRefreshingSecurity = false,
 }) => {
@@ -400,6 +515,12 @@ export const IdentityMatrix: React.FC<Props> = ({
   const [showWarpTuning, setShowWarpTuning] = useState(false);
   const [showUAModal, setShowUAModal] = useState(false);
   const [uaSearch, setUaSearch] = useState('');
+
+  // Simulated nearby WiFi networks rotated on every renumbering hop
+  const [wifiHopCount, setWifiHopCount] = useState(1);
+  const [simulatedWifiAps, setSimulatedWifiAps] = useState<SimulatedWifiAp[]>(
+    () => generateSimulatedNearbyWifiNetworks(identity.city, identity.country, 5)
+  );
 
   // Client-side browser surface forensic audit states
   const [canvasSaltNonce, setCanvasSaltNonce] = useState<string>('A1F0');
@@ -433,12 +554,14 @@ export const IdentityMatrix: React.FC<Props> = ({
     if (fingerprintProtection?.canvasNoise) base += 0.04;
     if (fingerprintProtection?.webglMask) base += 0.03;
     if (fingerprintProtection?.timezoneSync) base += 0.02;
+    if (bssidSsidRandomization) base += 0.04;
     return Math.min(9.99, base).toFixed(2);
   }, [
     obfuscationLevel,
     ipv6LeakProtection,
     webrtcLeakShield,
     fingerprintProtection,
+    bssidSsidRandomization,
   ]);
 
   const currentUAData = useMemo(() => {
@@ -560,6 +683,36 @@ export const IdentityMatrix: React.FC<Props> = ({
     }
   }, [isMasking, isRotating]);
 
+  // Rotate simulated nearby WiFi BSSID/SSIDs automatically on every renumbering hop
+  const prevHopSignatureRef = React.useRef(
+    `${identity.ip}|${identity.mac}|${identity.city}`
+  );
+  useEffect(() => {
+    const sig = `${identity.ip}|${identity.mac}|${identity.city}`;
+    if (sig !== prevHopSignatureRef.current) {
+      prevHopSignatureRef.current = sig;
+      if (bssidSsidRandomization) {
+        setSimulatedWifiAps(
+          generateSimulatedNearbyWifiNetworks(identity.city, identity.country, 5)
+        );
+        setWifiHopCount((c) => c + 1);
+      }
+    }
+  }, [
+    identity.ip,
+    identity.mac,
+    identity.city,
+    identity.country,
+    bssidSsidRandomization,
+  ]);
+
+  const handleManualRotateWifiScan = useCallback(() => {
+    setSimulatedWifiAps(
+      generateSimulatedNearbyWifiNetworks(identity.city, identity.country, 5)
+    );
+    setWifiHopCount((c) => c + 1);
+  }, [identity.city, identity.country]);
+
   useEffect(() => {
     const updateTime = () => {
       const tz = identity.timezone || 'UTC+0';
@@ -594,8 +747,10 @@ export const IdentityMatrix: React.FC<Props> = ({
       obfuscationLevel,
       ipv6LeakProtection,
       webrtcLeakShield,
+      bssidSsidRandomization,
       fingerprintProtection,
       virtualIdentity: identity,
+      simulatedNearbyWifi: bssidSsidRandomization ? simulatedWifiAps : [],
       browserSurfaceForensics: surfaceTelemetry,
       securityReport,
     };
@@ -914,6 +1069,28 @@ export const IdentityMatrix: React.FC<Props> = ({
                     </div>
                   </div>
                 )}
+
+                {onToggleBssidSsidRandomization && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onToggleBssidSsidRandomization(!bssidSsidRandomization)
+                    }
+                    className={`w-full px-3 py-2 rounded-xl border text-left text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                      bssidSsidRandomization
+                        ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Wifi className="w-3.5 h-3.5" />
+                      <span>Randomisation BSSID/SSID</span>
+                    </span>
+                    {bssidSsidRandomization && (
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1128,6 +1305,150 @@ export const IdentityMatrix: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
+      {/* BSSID / SSID Randomization & Anti-WPS Triangulation Matrix */}
+      <section
+        id="bssid-ssid-randomization"
+        className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-start gap-3">
+            <div
+              className={`p-2.5 rounded-xl border shrink-0 ${
+                bssidSsidRandomization
+                  ? 'bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/25 text-cyan-600 dark:text-cyan-400'
+                  : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25 text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              {bssidSsidRandomization ? (
+                <Wifi className="w-4 h-4" />
+              ) : (
+                <WifiOff className="w-4 h-4" />
+              )}
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Randomisation BSSID/SSID (Leurre WiFi anti-localisation)
+                </h4>
+                <span className="text-slate-400" aria-hidden="true">
+                  ·
+                </span>
+                <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                  {bssidSsidRandomization
+                    ? `Saut #${wifiHopCount} · ${simulatedWifiAps.length} PA proches simulés (${identity.city})`
+                    : 'Environnement WiFi réel exposé'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Simule de nouveaux points d’accès WiFi BSSID/SSID à chaque saut de re-numérotation pour empêcher la trilatération géométrique sans GPS.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleManualRotateWifiScan}
+              disabled={!bssidSsidRandomization || isMasking || isRotating}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Permuter manuellement la liste des réseaux WiFi simulés"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isMasking || isRotating ? 'animate-spin text-cyan-500' : ''}`}
+              />
+              <span>Permuter BSSID/SSID</span>
+            </button>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={bssidSsidRandomization}
+              aria-label="Activer la randomisation BSSID/SSID"
+              onClick={() =>
+                onToggleBssidSsidRandomization?.(!bssidSsidRandomization)
+              }
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                bssidSsidRandomization
+                  ? 'bg-emerald-600'
+                  : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                  bssidSsidRandomization ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {bssidSsidRandomization ? (
+          <div className="space-y-3">
+            <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-950/70 text-[11px] font-mono text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="px-3.5 py-2 font-semibold">SSID simulé</th>
+                    <th className="px-3.5 py-2 font-semibold">BSSID (MAC LAA)</th>
+                    <th className="px-3.5 py-2 font-semibold">Bande &amp; Canal</th>
+                    <th className="px-3.5 py-2 font-semibold">Sécurité</th>
+                    <th className="px-3.5 py-2 font-semibold text-right">Signal RSSI</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
+                  {simulatedWifiAps.map((ap) => (
+                    <tr
+                      key={ap.id}
+                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
+                    >
+                      <td className="px-3.5 py-2 font-sans font-semibold text-slate-900 dark:text-white">
+                        {isMasking || isRotating ? scrambleText.slice(0, 12) : ap.ssid}
+                      </td>
+                      <td className="px-3.5 py-2 tabular-nums text-cyan-700 dark:text-cyan-400">
+                        {isMasking || isRotating ? scrambleText.slice(0, 17) : ap.bssid}
+                      </td>
+                      <td className="px-3.5 py-2 tabular-nums text-slate-600 dark:text-slate-300">
+                        {ap.band} · Ch {ap.channel}
+                      </td>
+                      <td className="px-3.5 py-2 text-slate-500 dark:text-slate-400">
+                        {ap.security}
+                      </td>
+                      <td className="px-3.5 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-semibold">
+                        {ap.rssiDbm} dBm
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              <span>
+                Brouillage trilatération WiFi (Google MLS / Wigle / Skyhook) : Dispersion synthétique ±2,4 km autour de {identity.city}
+              </span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                Rotation couplée aux sauts de re-numérotation
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5 text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <span>
+                Randomisation BSSID/SSID désactivée : les balises WiFi environnantes réelles peuvent permettre une géolocalisation sans GPS par corrélation BSSID.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onToggleBssidSsidRandomization?.(true)}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold shrink-0 cursor-pointer"
+            >
+              Activer le leurre WiFi
+            </button>
+          </div>
+        )}
+      </section>
 
       {/* Live Browser Surface & WebRTC Forensics Lab */}
       <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">

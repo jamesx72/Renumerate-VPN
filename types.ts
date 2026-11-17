@@ -187,6 +187,7 @@ export interface AppSettings {
   macScramblingMode: 'vendor' | 'laa' | 'random';
   macFormat: 'standard' | 'hyphen' | 'cisco' | 'random';
   uaComplexity: 'standard' | 'diverse' | 'chaotic';
+  bssidSsidRandomization: boolean;
   fingerprintProtection: FingerprintProtectionConfig;
   // Vortex (Tor) Config & Jurisdictions
   vortexBridge: 'none' | 'obfs4' | 'snowflake' | 'meek-azure';

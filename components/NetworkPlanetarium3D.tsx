@@ -15,12 +15,21 @@ import {
   Radio,
   Server,
   Eye,
+  Crosshair,
+  Zap,
 } from 'lucide-react';
-import { AppSettings, ConnectionMode, DeviceNode } from '../types';
 import {
+  AppSettings,
+  ConnectionMode,
+  DeviceNode,
+  IntrusionAttempt,
+} from '../types';
+import {
+  INITIAL_INTRUSION_ATTEMPTS,
   getJurisdictionTier,
   isCountryExcludedByJurisdiction,
   isNodeBlockedByGeoFence,
+  resolveThreatGeoposition,
 } from '../constants';
 import {
   LOCAL_ORIGIN,
@@ -57,12 +66,27 @@ interface PacketPulseRecord {
   offset: number;
 }
 
+interface IdsLaserPulseRecord {
+  curve: THREE.QuadraticBezierCurve3;
+  boltMesh: THREE.Mesh;
+  speed: number;
+  offset: number;
+}
+
+interface IdsEmitterRecord {
+  attempt: IntrusionAttempt;
+  group: THREE.Group;
+  coreMesh: THREE.Mesh;
+  reticleMesh: THREE.Mesh;
+}
+
 const GLOBE_RADIUS = 2.15;
 const ORBIT_ALTITUDE = 0.24;
 
 // Pre-allocated scratch helpers (zero GC inside render loop)
 const _scratchVecA = new THREE.Vector3();
 const _scratchVecB = new THREE.Vector3();
+const _scratchTangent = new THREE.Vector3();
 const _scratchUp = new THREE.Vector3(0, 1, 0);
 const _pointerNdc = new THREE.Vector2();
 
@@ -145,8 +169,61 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [showMeshLinks, setShowMeshLinks] = useState(true);
+  const [showIdsLasers, setShowIdsLasers] = useState(true);
+  const [idsAttempts, setIdsAttempts] = useState<IntrusionAttempt[]>(() => {
+    try {
+      const saved = localStorage.getItem('renumerate_ids_attempts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed as IntrusionAttempt[];
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return INITIAL_INTRUSION_ATTEMPTS;
+  });
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
+    null
+  );
+  const [hoveredAttemptId, setHoveredAttemptId] = useState<string | null>(null);
   const [webglError, setWebglError] = useState<string | null>(null);
   const [liveRttSamples, setLiveRttSamples] = useState<number[]>([]);
+
+  // Subscribe to live IDS events & cross-component localStorage updates
+  useEffect(() => {
+    const handleLiveIntrusion = (e: Event) => {
+      const custom = e as CustomEvent<IntrusionAttempt>;
+      if (custom.detail && custom.detail.id) {
+        setIdsAttempts((prev) => {
+          if (prev.some((a) => a.id === custom.detail.id)) return prev;
+          return [custom.detail, ...prev].slice(0, 30);
+        });
+      }
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'renumerate_ids_attempts' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setIdsAttempts(parsed as IntrusionAttempt[]);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('renumerate_intrusion_blocked', handleLiveIntrusion);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(
+        'renumerate_intrusion_blocked',
+        handleLiveIntrusion
+      );
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   // Latest props & state refs for stable WebGL animation & raycast handlers
   const autoRotateRef = useRef(autoRotate);
@@ -155,6 +232,10 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
   selectedNodeIdRef.current = selectedNodeId;
   const hoveredNodeIdRef = useRef(hoveredNodeId);
   hoveredNodeIdRef.current = hoveredNodeId;
+  const selectedAttemptIdRef = useRef(selectedAttemptId);
+  selectedAttemptIdRef.current = selectedAttemptId;
+  const hoveredAttemptIdRef = useRef(hoveredAttemptId);
+  hoveredAttemptIdRef.current = hoveredAttemptId;
   const cameraTargetFocusRef = useRef<THREE.Vector3 | null>(null);
   const focusNodeByIdRef = useRef<((nodeId: string) => void) | null>(null);
 
@@ -165,6 +246,27 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
       nodes[0] ||
       null,
     [nodes, selectedNodeId, currentIp]
+  );
+
+  const visibleIdsLasers = useMemo(
+    () => (showIdsLasers ? idsAttempts.slice(0, 12) : []),
+    [showIdsLasers, idsAttempts]
+  );
+
+  const selectedAttempt = useMemo(
+    () =>
+      selectedAttemptId
+        ? idsAttempts.find((a) => a.id === selectedAttemptId) || null
+        : null,
+    [selectedAttemptId, idsAttempts]
+  );
+
+  const hoveredAttempt = useMemo(
+    () =>
+      hoveredAttemptId
+        ? idsAttempts.find((a) => a.id === hoveredAttemptId) || null
+        : null,
+    [hoveredAttemptId, idsAttempts]
   );
 
   // Real-time RTT telemetry sparkline sampling for the selected node
@@ -624,6 +726,195 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
       });
     }
 
+    // 7. 3D IDS Attack Vector Lasers Incoming to User's Active Node
+    const idsLaserPulses: IdsLaserPulseRecord[] = [];
+    const idsEmitterRecords: IdsEmitterRecord[] = [];
+    let activeDefenseShieldMesh: THREE.Mesh | null = null;
+
+    const targetNodeRec =
+      nodeRecords.find((r) => r.node.ip === currentIp) || nodeRecords[0] || null;
+    const targetLaserPoint = targetNodeRec
+      ? targetNodeRec.orbitPos
+      : originOrbitalPos;
+
+    if (showIdsLasers && visibleIdsLasers.length > 0) {
+      // Protective interception shield dome/ring on the user's active node
+      const shieldGeo = new THREE.TorusGeometry(0.19, 0.008, 8, 36);
+      const shieldMat = new THREE.MeshBasicMaterial({
+        color: 0xf43f5e,
+        transparent: true,
+        opacity: 0.65,
+      });
+      activeDefenseShieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+      activeDefenseShieldMesh.position.copy(targetLaserPoint);
+      activeDefenseShieldMesh.quaternion.setFromUnitVectors(
+        _scratchUp,
+        targetLaserPoint.clone().normalize()
+      );
+      planetariumGroup.add(activeDefenseShieldMesh);
+      disposables.push(shieldGeo, shieldMat);
+
+      const emitterCoreGeo = new THREE.TetrahedronGeometry(0.068, 0);
+      const emitterReticleGeo = new THREE.RingGeometry(0.075, 0.115, 24);
+      const laserBoltGeo = new THREE.CylinderGeometry(0.014, 0.006, 0.22, 8);
+      disposables.push(emitterCoreGeo, emitterReticleGeo, laserBoltGeo);
+
+      visibleIdsLasers.forEach((attempt, idx) => {
+        const resolvedGeo = resolveThreatGeoposition(
+          attempt.sourceCountry,
+          attempt.sourceIp
+        );
+        const [attLon, attLat] = attempt.sourceCoords || resolvedGeo.coords;
+        const jitterOffsetLon = ((idx % 3) - 1) * 1.4;
+        const jitterOffsetLat = (Math.floor(idx / 3) - 1) * 1.1;
+
+        const attSurfacePos = latLonToVector3(
+          attLat + jitterOffsetLat,
+          attLon + jitterOffsetLon,
+          GLOBE_RADIUS + 0.02
+        );
+        const attOriginPos = latLonToVector3(
+          attLat + jitterOffsetLat,
+          attLon + jitterOffsetLon,
+          GLOBE_RADIUS + ORBIT_ALTITUDE + 0.56
+        );
+
+        const sevColor =
+          attempt.severity === 'critical'
+            ? 0xf43f5e
+            : attempt.severity === 'high'
+              ? 0xf97316
+              : attempt.severity === 'medium'
+                ? 0xf59e0b
+                : 0xeab308;
+
+        // Vertical hostile beacon tether to globe surface
+        const attStemGeo = new THREE.BufferGeometry().setFromPoints([
+          attSurfacePos,
+          attOriginPos,
+        ]);
+        const attStemMat = new THREE.LineBasicMaterial({
+          color: sevColor,
+          transparent: true,
+          opacity: 0.45,
+        });
+        planetariumGroup.add(new THREE.Line(attStemGeo, attStemMat));
+        disposables.push(attStemGeo, attStemMat);
+
+        // Hostile Emitter Group
+        const emitterGroup = new THREE.Group();
+        emitterGroup.position.copy(attOriginPos);
+        emitterGroup.quaternion.setFromUnitVectors(
+          _scratchUp,
+          attOriginPos.clone().normalize()
+        );
+
+        const emitterMat = new THREE.MeshStandardMaterial({
+          color: sevColor,
+          emissive: sevColor,
+          emissiveIntensity: attempt.severity === 'critical' ? 1.1 : 0.75,
+          metalness: 0.75,
+          roughness: 0.2,
+        });
+        const coreMesh = new THREE.Mesh(emitterCoreGeo, emitterMat);
+        emitterGroup.add(coreMesh);
+        disposables.push(emitterMat);
+
+        const reticleMat = new THREE.MeshBasicMaterial({
+          color: sevColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.72,
+        });
+        const reticleMesh = new THREE.Mesh(emitterReticleGeo, reticleMat);
+        reticleMesh.rotation.x = -Math.PI / 2;
+        emitterGroup.add(reticleMesh);
+        disposables.push(reticleMat);
+
+        // Layer 1 Hit Sphere so clicking/hovering any laser source reveals IDS vector details
+        const emitterHitMesh = new THREE.Mesh(hitGeo, hitMat);
+        emitterHitMesh.layers.set(1);
+        emitterHitMesh.userData.attemptId = attempt.id;
+        emitterGroup.add(emitterHitMesh);
+        hitTargets.push(emitterHitMesh);
+
+        planetariumGroup.add(emitterGroup);
+        idsEmitterRecords.push({
+          attempt,
+          group: emitterGroup,
+          coreMesh,
+          reticleMesh,
+        });
+
+        // High-Altitude Inbound Laser Curve -> Targets User's Active Node
+        const midVec = new THREE.Vector3()
+          .addVectors(attOriginPos, targetLaserPoint)
+          .multiplyScalar(0.5);
+        const chordDist = attOriginPos.distanceTo(targetLaserPoint);
+        midVec
+          .normalize()
+          .multiplyScalar(
+            GLOBE_RADIUS + ORBIT_ALTITUDE + 0.58 + chordDist * 0.26
+          );
+        const laserCurve = new THREE.QuadraticBezierCurve3(
+          attOriginPos.clone(),
+          midVec,
+          targetLaserPoint.clone()
+        );
+
+        // Outer translucent laser sheath
+        const outerLaserGeo = new THREE.TubeGeometry(
+          laserCurve,
+          38,
+          attempt.severity === 'critical' ? 0.017 : 0.011,
+          8,
+          false
+        );
+        const outerLaserMat = new THREE.MeshBasicMaterial({
+          color: sevColor,
+          transparent: true,
+          opacity: attempt.severity === 'critical' ? 0.62 : 0.42,
+        });
+        planetariumGroup.add(new THREE.Mesh(outerLaserGeo, outerLaserMat));
+        disposables.push(outerLaserGeo, outerLaserMat);
+
+        // Inner high-energy laser filament
+        const coreLaserGeo = new THREE.TubeGeometry(
+          laserCurve,
+          32,
+          0.0045,
+          6,
+          false
+        );
+        const coreLaserMat = new THREE.MeshBasicMaterial({
+          color: 0xffe4e6,
+          transparent: true,
+          opacity: 0.75,
+        });
+        planetariumGroup.add(new THREE.Mesh(coreLaserGeo, coreLaserMat));
+        disposables.push(coreLaserGeo, coreLaserMat);
+
+        // Animated inbound photon bolts firing along the laser beam toward user's active node
+        const boltCount = attempt.severity === 'critical' ? 3 : 2;
+        for (let b = 0; b < boltCount; b++) {
+          const boltMat = new THREE.MeshBasicMaterial({
+            color: attempt.severity === 'critical' ? 0xffffff : sevColor,
+          });
+          const boltMesh = new THREE.Mesh(laserBoltGeo, boltMat);
+          planetariumGroup.add(boltMesh);
+          disposables.push(boltMat);
+          idsLaserPulses.push({
+            curve: laserCurve,
+            boltMesh,
+            speed:
+              (attempt.severity === 'critical' ? 0.78 : 0.56) +
+              (idx % 3) * 0.08,
+            offset: b / boltCount + idx * 0.11,
+          });
+        }
+      });
+    }
+
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
     }
@@ -654,15 +945,29 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
       raycaster.setFromCamera(_pointerNdc, camera);
       const hits = raycaster.intersectObjects(hitTargets, false);
       if (hits.length > 0) {
-        const hitId = hits[0].object.userData.nodeId as string;
+        const hitData = hits[0].object.userData as {
+          nodeId?: string;
+          attemptId?: string;
+        };
         renderer.domElement.style.cursor = 'pointer';
-        if (hoveredNodeIdRef.current !== hitId) {
-          setHoveredNodeId(hitId);
+        if (hitData.attemptId) {
+          if (hoveredAttemptIdRef.current !== hitData.attemptId) {
+            setHoveredAttemptId(hitData.attemptId);
+          }
+          if (hoveredNodeIdRef.current !== null) setHoveredNodeId(null);
+        } else if (hitData.nodeId) {
+          if (hoveredNodeIdRef.current !== hitData.nodeId) {
+            setHoveredNodeId(hitData.nodeId);
+          }
+          if (hoveredAttemptIdRef.current !== null) setHoveredAttemptId(null);
         }
       } else {
         renderer.domElement.style.cursor = 'grab';
         if (hoveredNodeIdRef.current !== null) {
           setHoveredNodeId(null);
+        }
+        if (hoveredAttemptIdRef.current !== null) {
+          setHoveredAttemptId(null);
         }
       }
     };
@@ -688,9 +993,28 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
       raycaster.setFromCamera(_pointerNdc, camera);
       const hits = raycaster.intersectObjects(hitTargets, false);
       if (hits.length > 0) {
-        const hitId = hits[0].object.userData.nodeId as string;
-        setSelectedNodeId(hitId);
-        focusCameraOnNode(hitId);
+        const hitData = hits[0].object.userData as {
+          nodeId?: string;
+          attemptId?: string;
+        };
+        if (hitData.attemptId) {
+          setSelectedAttemptId(hitData.attemptId);
+          const emitter = idsEmitterRecords.find(
+            (e) => e.attempt.id === hitData.attemptId
+          );
+          if (emitter) {
+            emitter.group.getWorldPosition(_scratchVecA);
+            const dist = camera.position.length();
+            cameraTargetFocusRef.current = _scratchVecA
+              .clone()
+              .normalize()
+              .multiplyScalar(Math.max(4.6, Math.min(6.6, dist)));
+          }
+        } else if (hitData.nodeId) {
+          setSelectedAttemptId(null);
+          setSelectedNodeId(hitData.nodeId);
+          focusCameraOnNode(hitData.nodeId);
+        }
       }
     };
 
@@ -807,6 +1131,35 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
         p.mesh.position.copy(_scratchVecB);
       }
 
+      // Animate IDS Hostile Emitters, Laser Photon Bolts & Defense Shield Impact
+      const selAttId = selectedAttemptIdRef.current;
+      const hovAttId = hoveredAttemptIdRef.current;
+      for (let i = 0; i < idsEmitterRecords.length; i++) {
+        const em = idsEmitterRecords[i];
+        const isHighlighted =
+          em.attempt.id === selAttId || em.attempt.id === hovAttId;
+        const targetS = isHighlighted ? 1.55 : 1.0;
+        const s = THREE.MathUtils.damp(em.group.scale.x, targetS, 9, delta);
+        em.group.scale.setScalar(s);
+        em.coreMesh.rotation.y += delta * 2.2;
+        em.reticleMesh.rotation.z -= delta * 1.4;
+      }
+
+      for (let i = 0; i < idsLaserPulses.length; i++) {
+        const lp = idsLaserPulses[i];
+        const t = (elapsed * lp.speed + lp.offset) % 1;
+        lp.curve.getPoint(t, _scratchVecB);
+        lp.curve.getTangent(t, _scratchTangent);
+        lp.boltMesh.position.copy(_scratchVecB);
+        lp.boltMesh.quaternion.setFromUnitVectors(_scratchUp, _scratchTangent);
+      }
+
+      if (activeDefenseShieldMesh) {
+        const shieldPulse = 1 + Math.sin(elapsed * 5.2) * 0.16;
+        activeDefenseShieldMesh.scale.setScalar(shieldPulse);
+        activeDefenseShieldMesh.rotation.z += delta * 1.8;
+      }
+
       controls.update();
       renderer.render(scene, camera);
 
@@ -841,7 +1194,16 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
       disposables.forEach((d) => d.dispose());
       renderer.dispose();
     };
-  }, [nodes, currentIp, isConnected, settings, circuitHopIds, showMeshLinks]);
+  }, [
+    nodes,
+    currentIp,
+    isConnected,
+    settings,
+    circuitHopIds,
+    showMeshLinks,
+    showIdsLasers,
+    visibleIdsLasers,
+  ]);
 
   const hoveredNode = useMemo(
     () => (hoveredNodeId ? nodes.find((n) => n.id === hoveredNodeId) || null : null),
@@ -901,6 +1263,7 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
   }, [liveRttSamples]);
 
   const handleSelectFromList = (nodeId: string) => {
+    setSelectedAttemptId(null);
     setSelectedNodeId(nodeId);
     focusNodeByIdRef.current?.(nodeId);
   };
@@ -961,6 +1324,21 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
 
           <button
             type="button"
+            onClick={() => setShowIdsLasers((v) => !v)}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+              showIdsLasers
+                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Crosshair className="w-3.5 h-3.5" />
+            <span className="font-mono tabular-nums">
+              Lasers IDS ({idsAttempts.slice(0, 12).length})
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => {
               cameraTargetFocusRef.current = new THREE.Vector3(0.4, 2.1, 6.2);
             }}
@@ -993,22 +1371,48 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
             </div>
           )}
 
-          {/* Top-Left Discrete Hover Readout (no backdrop-filter over WebGL) */}
-          {hoveredNode && (
-            <div className="pointer-events-none absolute top-3 left-3 z-10 bg-slate-900/90 border border-cyan-500/40 rounded-xl px-3 py-2 text-xs text-white">
-              <div className="font-mono font-semibold flex items-center gap-2">
-                <span>{hoveredNode.name}</span>
-                <span className="text-slate-400" aria-hidden="true">
-                  ·
-                </span>
-                <span className="text-cyan-400 tabular-nums">
-                  {hoveredNode.latency} ms
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-300 mt-0.5">
-                {hoveredNode.city || hoveredNode.country}, {hoveredNode.country} ·{' '}
-                Cliquer pour inspecter
-              </div>
+          {/* Top-Left Discrete Hover Readout (Node or Hostile IDS Laser) */}
+          {(hoveredAttempt || hoveredNode) && (
+            <div
+              className={`pointer-events-none absolute top-3 left-3 z-10 bg-slate-900/90 border rounded-xl px-3 py-2 text-xs text-white ${
+                hoveredAttempt ? 'border-rose-500/60' : 'border-cyan-500/40'
+              }`}
+            >
+              {hoveredAttempt ? (
+                <>
+                  <div className="font-mono font-semibold flex items-center gap-2 text-rose-400">
+                    <Crosshair className="w-3.5 h-3.5" />
+                    <span>{hoveredAttempt.sourceIp}</span>
+                    <span className="text-slate-500">·</span>
+                    <span className="uppercase">{hoveredAttempt.severity}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-200 mt-0.5 max-w-xs truncate">
+                    {hoveredAttempt.title}
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                    {hoveredAttempt.sourceCountry || 'Origine inconnue'} → Port{' '}
+                    {hoveredAttempt.targetPort} ({hoveredAttempt.actionTaken})
+                  </div>
+                </>
+              ) : (
+                hoveredNode && (
+                  <>
+                    <div className="font-mono font-semibold flex items-center gap-2">
+                      <span>{hoveredNode.name}</span>
+                      <span className="text-slate-400" aria-hidden="true">
+                        ·
+                      </span>
+                      <span className="text-cyan-400 tabular-nums">
+                        {hoveredNode.latency} ms
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 mt-0.5">
+                      {hoveredNode.city || hoveredNode.country},{' '}
+                      {hoveredNode.country} · Cliquer pour inspecter
+                    </div>
+                  </>
+                )
+              )}
             </div>
           )}
 
@@ -1042,9 +1446,85 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
           </div>
         </div>
 
-        {/* Right Side Inspector: Selected Node Real-Time Latency & Routing Telemetry */}
+        {/* Right Side Inspector: Selected IDS Attack Vector OR Node Telemetry */}
         <div className="lg:col-span-4 xl:col-span-3 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 p-5 flex flex-col justify-between bg-white dark:bg-slate-900">
-          {selectedNode && selectedMetrics ? (
+          {selectedAttempt ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Laser IDS · {selectedAttempt.severity}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAttemptId(null)}
+                  className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                >
+                  Inspecter nœud
+                </button>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
+                  {selectedAttempt.title}
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
+                  {selectedAttempt.description}
+                </p>
+              </div>
+
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-3 space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    IP Source hostile
+                  </span>
+                  <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                    {selectedAttempt.sourceIp}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Origine géo
+                  </span>
+                  <span className="font-medium text-slate-900 dark:text-white text-right">
+                    {selectedAttempt.sourceCity
+                      ? `${selectedAttempt.sourceCity}, `
+                      : ''}
+                    {selectedAttempt.sourceCountry || 'Inconnue'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Cible &amp; Protocole
+                  </span>
+                  <span className="font-mono text-slate-900 dark:text-white">
+                    {selectedAttempt.protocol}:{selectedAttempt.targetPort} (
+                    {selectedAttempt.targetInterface})
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Signature
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate max-w-[160px]">
+                    {selectedAttempt.signatureRule}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Action défense
+                  </span>
+                  <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                    {selectedAttempt.actionTaken}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed">
+                {selectedAttempt.remediationAdvice}
+              </div>
+            </div>
+          ) : selectedNode && selectedMetrics ? (
             <div className="space-y-4">
               {/* Identity Header */}
               <div>
@@ -1209,7 +1689,7 @@ export const NetworkPlanetarium3D: React.FC<NetworkPlanetarium3DProps> = ({
             </div>
           )}
 
-          {selectedNode && (
+          {!selectedAttempt && selectedNode && (
             <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"

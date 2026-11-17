@@ -34,6 +34,12 @@ import {
   DarknessFilterVariant,
 } from './components/DigitalDarknessMode';
 import { LatencySpectrumAnalyzer } from './components/LatencySpectrumAnalyzer';
+import { SentinelTrafficFlow } from './components/SentinelTrafficFlow';
+import { WebRtcLeakTester } from './components/WebRtcLeakTester';
+import { IntrusionDeceptionGrid } from './components/IntrusionDeceptionGrid';
+import { GhostProtocolToggle } from './components/GhostProtocolToggle';
+import { TemporalityChronograph } from './components/TemporalityChronograph';
+import { ZeroTrustNodeValidator } from './components/ZeroTrustNodeValidator';
 import {
   PricingModal,
   PaymentSettlementMethod,
@@ -466,7 +472,14 @@ function App() {
           appSettings.macScramblingMode,
           appSettings.macFormat
         );
-        addLog(`Identité matérielle re-numérotée : ${newMac}`, 'success');
+        addLog(
+          `Identité matérielle re-numérotée : ${newMac}${
+            appSettings.bssidSsidRandomization
+              ? ' · BSSID/SSID WiFi permutés'
+              : ''
+          }`,
+          'success'
+        );
         return {
           ...prev,
           mac: newMac,
@@ -582,7 +595,11 @@ function App() {
         nodes,
       });
       addLog(
-        `Saut de re-numérotation [${spec.codeLabel.toUpperCase()}] : ${rotated.city}, ${rotated.country} (${rotated.ip}) · MAC ${rotated.mac}`,
+        `Saut de re-numérotation [${spec.codeLabel.toUpperCase()}] : ${rotated.city}, ${rotated.country} (${rotated.ip}) · MAC ${rotated.mac}${
+          appSettings.bssidSsidRandomization
+            ? ' · Leurre BSSID/SSID renouvelé'
+            : ''
+        }`,
         'success',
         rotated.ip
       );
@@ -872,6 +889,19 @@ function App() {
     const timer = setTimeout(() => {
       const probe = generateSimulatedIntrusion('port_scan');
       setActiveIntrusionToast(probe);
+      try {
+        const raw = localStorage.getItem('renumerate_ids_attempts');
+        const list = raw ? (JSON.parse(raw) as IntrusionAttempt[]) : [];
+        localStorage.setItem(
+          'renumerate_ids_attempts',
+          JSON.stringify([probe, ...(Array.isArray(list) ? list : [])].slice(0, 100))
+        );
+      } catch {
+        // ignore
+      }
+      window.dispatchEvent(
+        new CustomEvent('renumerate_intrusion_blocked', { detail: probe })
+      );
       addLog(
         `[IDS Netfilter] Sonde furtive ${probe.sourceIp} neutralisée sur ${probe.targetInterface} (eBPF/XDP drop)`,
         'warning',
@@ -1714,6 +1744,7 @@ function App() {
         anonymityLevel: 'extreme',
         obfuscationLevel: 'ultra',
         excludeEyesJurisdictions: '14-eyes',
+        bssidSsidRandomization: true,
         fingerprintProtection: {
           canvasNoise: true,
           webglMask: true,
@@ -2184,6 +2215,45 @@ function App() {
                 onConnectNode={handleConnectNode}
                 addLog={addLog}
               />
+              <SentinelTrafficFlow
+                isConnected={isConnected}
+                mode={mode}
+                currentIdentity={currentIdentity}
+                throughput={throughput}
+                settings={appSettings}
+                onApplyPatch={patchAppSettings}
+                addLog={addLog}
+              />
+              <WebRtcLeakTester
+                isConnected={isConnected}
+                mode={mode}
+                currentIdentity={currentIdentity}
+                settings={appSettings}
+                onApplyPatch={patchAppSettings}
+                addLog={addLog}
+              />
+              <IntrusionDeceptionGrid
+                isConnected={isConnected}
+                currentIdentity={currentIdentity}
+                settings={appSettings}
+                addLog={addLog}
+              />
+              <TemporalityChronograph
+                isConnected={isConnected}
+                mode={mode}
+                currentIdentity={currentIdentity}
+                settings={appSettings}
+                onApplyPatch={patchAppSettings}
+                addLog={addLog}
+              />
+              <ZeroTrustNodeValidator
+                nodes={nodes}
+                currentIdentity={currentIdentity}
+                isConnected={isConnected}
+                settings={appSettings}
+                onConnectNode={handleConnectNode}
+                addLog={addLog}
+              />
               <IdentityMatrix
                 identity={currentIdentity}
                 availableIdentities={MOCK_IDENTITIES}
@@ -2224,6 +2294,7 @@ function App() {
                     {
                       ipv6LeakProtection: true,
                       webrtcLeakShield: true,
+                      bssidSsidRandomization: true,
                       fingerprintProtection: {
                         canvasNoise: true,
                         webglMask: true,
@@ -2231,8 +2302,12 @@ function App() {
                         timezoneSync: true,
                       },
                     },
-                    'Harmonisation intégrale des 6 boucliers navigateur & WebRTC'
+                    'Harmonisation intégrale des 6 boucliers navigateur, WebRTC & BSSID/SSID'
                   )
+                }
+                bssidSsidRandomization={appSettings.bssidSsidRandomization}
+                onToggleBssidSsidRandomization={(enabled) =>
+                  updateAppSettings('bssidSsidRandomization', enabled)
                 }
                 isRefreshingSecurity={isRefreshingSecurity}
                 onRefreshSecurity={() => {
@@ -2281,6 +2356,14 @@ function App() {
                     addLog(`Profil Obscurité Numérique basculé : ${v}`, 'info');
                   }
                 }}
+              />
+              <GhostProtocolToggle
+                isConnected={isConnected}
+                currentIdentity={currentIdentity}
+                throughput={throughput}
+                settings={appSettings}
+                onApplyPatch={patchAppSettings}
+                addLog={addLog}
               />
               <SecureFileTransfer
                 userId={vaultOwnerKey}
