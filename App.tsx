@@ -43,6 +43,7 @@ import { ZeroTrustNodeValidator } from './components/ZeroTrustNodeValidator';
 import { JitterBufferStatus } from './components/JitterBufferStatus';
 import { WifiDirectConnector } from './components/WifiDirectConnector';
 import { SentinelNoiseGenerator } from './components/SentinelNoiseGenerator';
+import { WifiSignalSpectrum } from './components/WifiSignalSpectrum';
 import {
   PricingModal,
   PaymentSettlementMethod,
@@ -103,6 +104,7 @@ import {
   TlsClientHelloProfile,
   WifiCardAdapter,
   WifiDirectBindingState,
+  SentinelRfSpectrumFrame,
 } from './types';
 import { analyzeSecurity } from './services/geminiService';
 import {
@@ -247,6 +249,8 @@ function App() {
   );
   const [activeWifiBinding, setActiveWifiBinding] =
     useState<WifiDirectBindingState | null>(null);
+  const [liveRfSpectrumFrame, setLiveRfSpectrumFrame] =
+    useState<SentinelRfSpectrumFrame | null>(null);
   const [settingsLoadedForUser, setSettingsLoadedForUser] = useState<
     string | null
   >(null);
@@ -2288,7 +2292,20 @@ function App() {
                 settings={appSettings}
                 activeWifiBinding={activeWifiBinding}
                 onApplyPatch={patchAppSettings}
+                onSpectrumFrame={setLiveRfSpectrumFrame}
                 addLog={addLog}
+              />
+              <WifiSignalSpectrum
+                frame={liveRfSpectrumFrame}
+                settings={appSettings}
+                isConnected={isConnected}
+                activeWifiBinding={activeWifiBinding}
+                onApplyPatch={patchAppSettings}
+                onJumpToGenerator={() => {
+                  document
+                    .getElementById('sentinel-noise-generator')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
               />
               <WebRtcLeakTester
                 isConnected={isConnected}

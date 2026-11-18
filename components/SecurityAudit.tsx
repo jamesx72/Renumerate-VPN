@@ -152,6 +152,23 @@ export const SecurityAudit: React.FC<Props> = ({
           settings.tlsClientHelloFragmentation,
       },
       {
+        id: 'tls_ja3_mask',
+        label: 'Masquage TLS ClientHello (JA3)',
+        detail: settings.tlsFingerprintMasking
+          ? 'Suites & extensions permutées'
+          : 'ClientHello statique',
+        passed: settings.tlsFingerprintMasking,
+      },
+      {
+        id: 'wifi_rf_geo',
+        label: 'Bouclier RF & Wi-Fi Geo-Spoofing',
+        detail:
+          settings.wifiGeoSpoofing && settings.sentinelRfNoiseEnabled
+            ? `Geo-Spoof + ${settings.sentinelRfNoiseProfile.toUpperCase()}`
+            : 'Partiel',
+        passed: settings.wifiGeoSpoofing && settings.sentinelRfNoiseEnabled,
+      },
+      {
         id: 'jurisdiction_defense',
         label: 'Sanctuaire Hors 14-Eyes',
         detail:

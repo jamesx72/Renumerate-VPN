@@ -1249,6 +1249,47 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
               )
           : undefined,
       },
+      {
+        id: 'tls_ja3_mask',
+        title: 'Masquage Empreinte TLS ClientHello (JA3/JA4)',
+        subsystem: 'uTLS / Cipher Shuffle',
+        status: settings.tlsFingerprintMasking ? 'pass' : 'warn',
+        detail: settings.tlsFingerprintMasking
+          ? 'Permutation dynamique des suites IANA, GREASE et extensions TLS active'
+          : 'Empreinte ClientHello statique exposée au profilage passif JA3',
+        metric: settings.tlsFingerprintMasking ? 'MUTÉ' : 'STATIQUE',
+        fixLabel: !settings.tlsFingerprintMasking ? 'Activer JA3' : undefined,
+        onFix: !settings.tlsFingerprintMasking
+          ? () => updateSettings('tlsFingerprintMasking', true)
+          : undefined,
+      },
+      {
+        id: 'wifi_rf_shield',
+        title: 'Bouclier Radio Wi-Fi (Geo-Spoofing & Bruit RF)',
+        subsystem: 'WLAN Anti-Triangulation',
+        status:
+          settings.wifiGeoSpoofing && settings.sentinelRfNoiseEnabled
+            ? 'pass'
+            : 'warn',
+        detail:
+          settings.wifiGeoSpoofing && settings.sentinelRfNoiseEnabled
+            ? `Geo-Spoofing actif + bruit ${settings.sentinelRfNoiseProfile.toUpperCase()} sur carte Wi-Fi`
+            : 'Protection radio Wi-Fi partielle contre les sondes de géolocalisation',
+        metric:
+          settings.wifiGeoSpoofing && settings.sentinelRfNoiseEnabled
+            ? 'SCELLÉ'
+            : 'PARTIEL',
+        fixLabel: !(settings.wifiGeoSpoofing && settings.sentinelRfNoiseEnabled)
+          ? 'Activer Bouclier RF'
+          : undefined,
+        onFix: !(settings.wifiGeoSpoofing && settings.sentinelRfNoiseEnabled)
+          ? () =>
+              patchSettings(
+                { wifiGeoSpoofing: true, sentinelRfNoiseEnabled: true },
+                'Diagnostic Système : Wi-Fi Geo-Spoofing & Bruit RF activés'
+              )
+          : undefined,
+      },
     ];
   }, [settings, patchSettings, updateSettings]);
 
@@ -1910,6 +1951,72 @@ export const SystemCenter: React.FC<SystemCenterProps> = ({
             }`}
           >
             {settings.tlsClientHelloFragmentation ? 'ACTIF' : 'INACTIF'}
+          </button>
+        ),
+      },
+      {
+        id: 'tls_ja3_masking',
+        category: 'egress',
+        name: 'TLS Fingerprint Masking (Anti-JA3)',
+        technicalParam: 'dpi.utls_clienthello_shuffle',
+        description:
+          'Permute dynamiquement l’ordre des extensions et les suites de chiffrement annoncées au démarrage du tunnel.',
+        isHealthy: settings.tlsFingerprintMasking,
+        statusLabel: settings.tlsFingerprintMasking ? 'JA3 Muté' : 'Statique',
+        control: (
+          <button
+            type="button"
+            onClick={() =>
+              updateSettings(
+                'tlsFingerprintMasking',
+                !settings.tlsFingerprintMasking
+              )
+            }
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.tlsFingerprintMasking
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+            }`}
+          >
+            {settings.tlsFingerprintMasking ? 'ACTIF' : 'INACTIF'}
+          </button>
+        ),
+      },
+      {
+        id: 'sentinel_rf_noise',
+        category: 'egress',
+        name: 'Bruit RF Sentinel-IA & Wi-Fi Geo-Spoofing',
+        technicalParam: 'wlan.rf_noise_geo_spoof',
+        description:
+          'Masque les signatures TX radio et ancre les balayages Wi-Fi fictifs sur la passerelle active.',
+        isHealthy: settings.sentinelRfNoiseEnabled && settings.wifiGeoSpoofing,
+        statusLabel:
+          settings.sentinelRfNoiseEnabled && settings.wifiGeoSpoofing
+            ? settings.sentinelRfNoiseProfile.toUpperCase()
+            : 'Partiel',
+        control: (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !(
+                settings.sentinelRfNoiseEnabled && settings.wifiGeoSpoofing
+              );
+              patchSettings(
+                { sentinelRfNoiseEnabled: next, wifiGeoSpoofing: next },
+                next
+                  ? 'Noyau WLAN : Bruit RF Sentinel-IA & Wi-Fi Geo-Spoofing activés'
+                  : 'Noyau WLAN : Bruit RF & Wi-Fi Geo-Spoofing désactivés'
+              );
+            }}
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border transition-colors cursor-pointer ${
+              settings.sentinelRfNoiseEnabled && settings.wifiGeoSpoofing
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40'
+            }`}
+          >
+            {settings.sentinelRfNoiseEnabled && settings.wifiGeoSpoofing
+              ? 'ACTIF'
+              : 'PARTIEL'}
           </button>
         ),
       },

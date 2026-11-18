@@ -80,6 +80,9 @@ export const NetworkRiskBulletin: React.FC<NetworkRiskBulletinProps> = ({
     }
     if (!settings.blockQuicUdp443) missing.push('Filtrage QUIC UDP/443');
     if (settings.trafficPaddingJitterMs === 0) missing.push('Brouillage Chaff');
+    if (!settings.tlsFingerprintMasking) missing.push('Masquage TLS JA3');
+    if (!settings.wifiGeoSpoofing) missing.push('Wi-Fi Geo-Spoofing');
+    if (!settings.sentinelRfNoiseEnabled) missing.push('Bruit RF Sentinel-IA');
     if (settings.excludeEyesJurisdictions !== '14-eyes') {
       missing.push('Exclusion 14-Eyes');
     }

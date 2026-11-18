@@ -479,22 +479,52 @@ export function computeAdaptiveSecurityRecommendations(
     });
   }
 
-  if (settings.trafficPaddingJitterMs === 0 || !settings.tlsClientHelloFragmentation || settings.obfuscationLevel !== 'ultra') {
+  if (
+    settings.trafficPaddingJitterMs === 0 ||
+    !settings.tlsClientHelloFragmentation ||
+    !settings.tlsFingerprintMasking ||
+    settings.obfuscationLevel !== 'ultra'
+  ) {
     const gain =
       (settings.trafficPaddingJitterMs === 0 ? 2 : 0) +
       (!settings.tlsClientHelloFragmentation ? 2 : 0) +
+      (!settings.tlsFingerprintMasking ? 2 : 0) +
       (settings.obfuscationLevel === 'ultra' ? 0 : settings.obfuscationLevel === 'high' ? 2 : 5);
     recs.push({
       id: 'rec-anti-dpi',
       priority: hardeningScore >= 75 ? 'haute' : 'maintenance',
-      title: 'Déployer le brouillage Chaff 40 ms & fragmentation TLS Ultra',
+      title: 'Déployer Chaff 40 ms, Fragmentation & Masquage TLS JA3',
       rationale:
-        'Neutralise l’inspection profonde de paquets (DPI) et la corrélation temporelle des flux chiffrés.',
+        'Neutralise l’inspection profonde de paquets (DPI), le profilage JA3 ClientHello et la corrélation temporelle des flux chiffrés.',
       scoreGain: gain,
       settingsPatch: {
         trafficPaddingJitterMs: 40,
         tlsClientHelloFragmentation: true,
+        tlsFingerprintMasking: true,
         obfuscationLevel: 'ultra',
+      },
+    });
+  }
+
+  if (
+    !settings.bssidSsidRandomization ||
+    !settings.wifiGeoSpoofing ||
+    !settings.sentinelRfNoiseEnabled
+  ) {
+    const gain =
+      (!settings.wifiGeoSpoofing ? 1 : 0) +
+      (!settings.sentinelRfNoiseEnabled ? 2 : 0);
+    recs.push({
+      id: 'rec-wifi-rf-spoof',
+      priority: 'haute',
+      title: 'Activer Wi-Fi Geo-Spoofing & Bruit RF Sentinel-IA',
+      rationale:
+        'Trompe la trilatération sans GPS par balayages Wi-Fi géolocalisés sur la passerelle et masque les signatures TX aux sondes passives.',
+      scoreGain: gain,
+      settingsPatch: {
+        bssidSsidRandomization: true,
+        wifiGeoSpoofing: true,
+        sentinelRfNoiseEnabled: true,
       },
     });
   }

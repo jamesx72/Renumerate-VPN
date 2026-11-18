@@ -633,6 +633,34 @@ export interface WifiDirectBindingState {
   connectedAt: string;
 }
 
+export interface SentinelRfSubcarrierBin {
+  idx: number;
+  freqOffsetMhz: number;
+  txSignalDbm: number;
+  injectedNoiseDbm: number;
+  effectiveFloorDbm: number;
+  residualSnrDb: number;
+}
+
+export interface SentinelRfSpectrumFrame {
+  seq: number;
+  timestampMs: number;
+  iface: string;
+  band: string;
+  channel: number;
+  centerFreqMhz: number;
+  noiseEnabled: boolean;
+  profile: AppSettings['sentinelRfNoiseProfile'];
+  targetFloorDbm: number;
+  effectiveFloorDbm: number;
+  unmaskedSnrDb: number;
+  maskedSnrDb: number;
+  maskingGainPct: number;
+  isBurstActive: boolean;
+  bins: SentinelRfSubcarrierBin[];
+}
+
+
 
 
 

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import {
   AppSettings,
+  SentinelRfSpectrumFrame,
   VirtualIdentity,
   WifiDirectBindingState,
 } from '../types';
@@ -30,6 +31,7 @@ export interface SentinelNoiseGeneratorProps {
   settings: AppSettings;
   activeWifiBinding: WifiDirectBindingState | null;
   onApplyPatch: (patch: Partial<AppSettings>, reason?: string) => void;
+  onSpectrumFrame?: (frame: SentinelRfSpectrumFrame) => void;
   addLog?: (
     event: string,
     type?: 'info' | 'warning' | 'success' | 'error',
@@ -70,12 +72,25 @@ function cryptoUnit(): number {
 function resolveAdapterLabel(
   binding: WifiDirectBindingState | null,
   preferredId: string
-): { iface: string; band: string; channel: number; driverHint: string } {
+): {
+  iface: string;
+  band: string;
+  channel: number;
+  centerFreqMhz: number;
+  driverHint: string;
+} {
   if (binding?.bound) {
+    const centerFreqMhz =
+      binding.band === '6 GHz'
+        ? 5950 + binding.channel * 5
+        : binding.channel <= 14
+          ? 2407 + binding.channel * 5
+          : 5000 + binding.channel * 5;
     return {
       iface: binding.ifaceName,
       band: binding.band,
       channel: binding.channel,
+      centerFreqMhz,
       driverHint: binding.chipset,
     };
   }
@@ -84,6 +99,7 @@ function resolveAdapterLabel(
       iface: 'wlp3s0',
       band: '5 GHz',
       channel: 149,
+      centerFreqMhz: 5745,
       driverHint: 'MediaTek MT7922',
     };
   }
@@ -92,6 +108,7 @@ function resolveAdapterLabel(
       iface: 'wlan1',
       band: '2.4/5 GHz',
       channel: 6,
+      centerFreqMhz: 2437,
       driverHint: 'Alfa AWUS036AXM',
     };
   }
@@ -99,6 +116,7 @@ function resolveAdapterLabel(
     iface: 'wlan0',
     band: '6 GHz',
     channel: 37,
+    centerFreqMhz: 6135,
     driverHint: 'Intel Wi-Fi 6E AX210',
   };
 }
@@ -137,6 +155,7 @@ export const SentinelNoiseGenerator: React.FC<SentinelNoiseGeneratorProps> = ({
   settings,
   activeWifiBinding,
   onApplyPatch,
+  onSpectrumFrame,
   addLog,
 }) => {
   const noiseEnabled = settings.sentinelRfNoiseEnabled;
@@ -297,6 +316,41 @@ export const SentinelNoiseGenerator: React.FC<SentinelNoiseGeneratorProps> = ({
     return arr;
   });
 
+  // Emit current spectrum frame whenever bins or noise parameters update
+  useEffect(() => {
+    if (!onSpectrumFrame || bins.length === 0 || snrHistory.length === 0) return;
+    const latest = snrHistory[snrHistory.length - 1];
+    onSpectrumFrame({
+      seq: latest.seq,
+      timestampMs: Date.now(),
+      iface: adapterMeta.iface,
+      band: adapterMeta.band,
+      channel: adapterMeta.channel,
+      centerFreqMhz: adapterMeta.centerFreqMhz,
+      noiseEnabled,
+      profile: noiseProfile,
+      targetFloorDbm: targetNoiseFloorDbm,
+      effectiveFloorDbm: latest.noiseFloorDbm,
+      unmaskedSnrDb: latest.unmaskedSnrDb,
+      maskedSnrDb: latest.maskedSnrDb,
+      maskingGainPct: latest.maskingGainPct,
+      isBurstActive: burstTicks > 0,
+      bins,
+    });
+  }, [
+    onSpectrumFrame,
+    bins,
+    snrHistory,
+    adapterMeta.iface,
+    adapterMeta.band,
+    adapterMeta.channel,
+    adapterMeta.centerFreqMhz,
+    noiseEnabled,
+    noiseProfile,
+    targetNoiseFloorDbm,
+    burstTicks,
+  ]);
+
   // Periodic RF noise injection loop
   useEffect(() => {
     if (isPaused) return;
@@ -318,6 +372,17 @@ export const SentinelNoiseGenerator: React.FC<SentinelNoiseGeneratorProps> = ({
 
     return () => window.clearInterval(timer);
   }, [isPaused, generateSpectrumSnapshot]);
+
+  // Immediate refresh when user toggles noise, changes profile, or drags noise floor slider
+  useEffect(() => {
+    seqRef.current += 1;
+    const snap = generateSpectrumSnapshot(seqRef.current, false);
+    setBins(snap.bins);
+    setSnrHistory((prev) => [
+      ...prev.slice(-(MAX_TIMELINE_POINTS - 1)),
+      snap.summary,
+    ]);
+  }, [noiseEnabled, noiseProfile, targetNoiseFloorDbm, generateSpectrumSnapshot]);
 
   // Responsive container observer
   useEffect(() => {

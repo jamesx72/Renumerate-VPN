@@ -446,6 +446,26 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'nav-wifi-signal-spectrum',
+        category: 'navigation',
+        categoryLabel: 'Navigation',
+        title: 'Ouvrir WiFi Signal Spectrum (Validation RF D3.js)',
+        subtitle:
+          'Spectre FFT & Waterfall en direct du bruit généré par Sentinel-IA Noise Generator',
+        keywords:
+          'wifi signal spectrum fft waterfall obfuscation rf sentinel ia noise peak hold',
+        icon: Waves,
+        tone: 'cyan',
+        onExecute: () => {
+          onNavigateSection('cockpit');
+          window.setTimeout(() => {
+            document
+              .getElementById('wifi-signal-spectrum')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 80);
+        },
+      },
+      {
         id: 'nav-zero-trust-validator',
         category: 'navigation',
         categoryLabel: 'Navigation',
