@@ -180,6 +180,12 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
         avgTxDbm: -80,
         peakTxDbm: -68,
         marginDb: 0,
+        avgSnrDb: 0,
+        peakSnrDb: 0,
+        snrReductionDb: 0,
+        snrGaugePct: 0,
+        snrQualityTier: 'idle' as 'optimal' | 'moderate' | 'exposed' | 'idle',
+        snrQualityLabel: 'En attente',
         verdict: 'idle' as 'validated' | 'partial' | 'exposed' | 'idle',
       };
     }
@@ -201,6 +207,35 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
       (activeFrame.effectiveFloorDbm - avgTxDbm).toFixed(1)
     );
 
+    const avgSnrDb = Number(
+      (
+        activeFrame.bins.reduce((sum, b) => sum + b.residualSnrDb, 0) / totalBins
+      ).toFixed(1)
+    );
+    const peakSnrDb = Number(
+      Math.max(...activeFrame.bins.map((b) => b.residualSnrDb)).toFixed(1)
+    );
+    const snrReductionDb = Number(
+      Math.max(0, activeFrame.unmaskedSnrDb - avgSnrDb).toFixed(1)
+    );
+    const snrGaugePct = Math.round(
+      Math.max(0, Math.min(100, (avgSnrDb / 24) * 100))
+    );
+
+    const snrQualityTier: 'optimal' | 'moderate' | 'exposed' =
+      !activeFrame.noiseEnabled || avgSnrDb > 10.0
+        ? 'exposed'
+        : avgSnrDb <= PASSIVE_PROBE_SNR_LIMIT_DB
+          ? 'optimal'
+          : 'moderate';
+
+    const snrQualityLabel =
+      snrQualityTier === 'optimal'
+        ? 'Optimal'
+        : snrQualityTier === 'moderate'
+          ? 'Modéré'
+          : 'Exposé';
+
     const verdict: 'validated' | 'partial' | 'exposed' =
       !activeFrame.noiseEnabled
         ? 'exposed'
@@ -217,6 +252,12 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
       avgTxDbm,
       peakTxDbm,
       marginDb,
+      avgSnrDb,
+      peakSnrDb,
+      snrReductionDb,
+      snrGaugePct,
+      snrQualityTier,
+      snrQualityLabel,
       verdict,
     };
   }, [activeFrame]);
@@ -651,7 +692,16 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
         d3
           .axisLeft(y)
           .ticks(4)
-          .tickFormat((d) => (Number(d) === 0 ? 'Direct' : `-${Number(d)}s`))
+          .tickFormat((d) => {
+            const rowIdx = Math.round(Number(d));
+            const targetRow = orderedRows[rowIdx];
+            if (!targetRow) return '';
+            const ageSec = Math.max(
+              0,
+              Math.round((latestTimestampMs - targetRow.timestampMs) / 1000)
+            );
+            return ageSec === 0 ? 'Direct' : `-${ageSec}s`;
+          })
       )
       .call((ax) => ax.select('.domain').remove())
       .call((ax) => ax.selectAll('line').remove())
@@ -695,6 +745,7 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
     selectedSeq,
     historyBuffer,
     isFrozen,
+    latestTimestampMs,
   ]);
 
   return (
@@ -737,6 +788,26 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
                     ? `Couverture Partielle (${validationStats.maskedBinsPct}%)`
                     : 'Signature TX Exposée'}
               </span>
+            </span>
+            <span
+              className="text-slate-300 dark:text-slate-700"
+              aria-hidden="true"
+            >
+              ·
+            </span>
+            <span
+              className={`text-xs font-mono tabular-nums font-semibold ${
+                validationStats.snrQualityTier === 'optimal'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : validationStats.snrQualityTier === 'moderate'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : validationStats.snrQualityTier === 'exposed'
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-slate-500 dark:text-slate-400'
+              }`}
+              title="Ratio Signal/Bruit moyen calculé sur la trame RF active (seuil furtif ≤ 6 dB)"
+            >
+              SNR {validationStats.avgSnrDb} dB ({validationStats.snrQualityLabel})
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -849,8 +920,55 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
       </div>
 
       {/* Live Validation Metrics Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 border-b border-slate-200 dark:border-slate-800">
-        <div className="px-5 py-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 border-b border-slate-200 dark:border-slate-800">
+        <div className="px-4 py-3">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+            Ratio Signal/Bruit (SNR)
+          </div>
+          <div className="mt-0.5 flex items-baseline gap-2">
+            <span
+              className={`text-lg font-bold font-mono tabular-nums ${
+                validationStats.snrQualityTier === 'optimal'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : validationStats.snrQualityTier === 'moderate'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : validationStats.snrQualityTier === 'exposed'
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              {validationStats.avgSnrDb} dB
+            </span>
+            <span className="text-[11px] font-mono font-semibold text-slate-600 dark:text-slate-300">
+              {validationStats.snrQualityLabel}
+            </span>
+          </div>
+          <div
+            className="mt-1.5 relative h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden"
+            title={`Seuil détection sonde passive : ${PASSIVE_PROBE_SNR_LIMIT_DB} dB (ligne verticale à 25%)`}
+          >
+            <div
+              className={`h-full transition-all duration-200 ${
+                validationStats.snrQualityTier === 'optimal'
+                  ? 'bg-emerald-500'
+                  : validationStats.snrQualityTier === 'moderate'
+                    ? 'bg-amber-500'
+                    : 'bg-rose-500'
+              }`}
+              style={{ width: `${validationStats.snrGaugePct}%` }}
+            />
+            <div
+              className="absolute top-0 bottom-0 w-[1.5px] bg-slate-900 dark:bg-white/80"
+              style={{ left: `${(PASSIVE_PROBE_SNR_LIMIT_DB / 24) * 100}%` }}
+              aria-hidden="true"
+            />
+          </div>
+          <div className="mt-1 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+            Pic {validationStats.peakSnrDb} dB · −{validationStats.snrReductionDb} dB
+          </div>
+        </div>
+
+        <div className="px-4 py-3">
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
             Sous-Porteuses Masquées
           </div>
@@ -868,7 +986,7 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
           </div>
         </div>
 
-        <div className="px-5 py-3">
+        <div className="px-4 py-3">
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
             Marge Obfuscation Moy.
           </div>
@@ -882,7 +1000,7 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
           </div>
         </div>
 
-        <div className="px-5 py-3">
+        <div className="px-4 py-3">
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
             Modulation Noise Generator
           </div>
@@ -896,7 +1014,7 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
           </div>
         </div>
 
-        <div className="px-5 py-3">
+        <div className="px-4 py-3 col-span-2 sm:col-span-1">
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
             Verdict Sonde Passive
           </div>
@@ -939,100 +1057,139 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
           )}
 
           {/* Rolling History Buffer Scrubber */}
-          <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex flex-col lg:flex-row lg:items-center gap-2.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums text-slate-300 shrink-0">
-              <History className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span className="text-slate-400">Tampon RF</span>
-              <span className="font-semibold text-white">
-                {historyBuffer.length > 0
-                  ? `${selectedIndex + 1}/${historyBuffer.length}`
-                  : '0/0'}
-              </span>
-              <span className="text-slate-600" aria-hidden="true">
-                ·
-              </span>
-              <span>
-                {activeFrame ? formatSampleClock(activeFrame.timestampMs) : '--:--:--'}
-              </span>
-              <span className="text-slate-600" aria-hidden="true">
-                ·
-              </span>
-              <span
-                className={
-                  isScrubbingHistorical
-                    ? 'text-amber-400 font-semibold'
+          <div className="mt-3 pt-2.5 border-t border-slate-800/80 space-y-2">
+            {/* Clickable pattern overview ticks across the rolling buffer */}
+            {historyBuffer.length > 0 && (
+              <div
+                className="flex items-end gap-[2px] h-3.5 w-full"
+                role="group"
+                aria-label="Aperçu visuel des motifs passés dans le tampon spectre RF"
+              >
+                {historyBuffer.map((sample, idx) => {
+                  const isActiveSample = idx === selectedIndex;
+                  const toneClass = !sample.noiseEnabled
+                    ? 'bg-rose-500/75 hover:bg-rose-400'
+                    : sample.isBurstActive
+                      ? 'bg-amber-400/90 hover:bg-amber-300'
+                      : sample.maskingGainPct >= 75
+                        ? 'bg-emerald-500/70 hover:bg-emerald-400'
+                        : 'bg-cyan-500/70 hover:bg-cyan-400';
+
+                  return (
+                    <button
+                      key={sample.seq}
+                      type="button"
+                      onClick={() => handleScrubToIndex(idx)}
+                      className={`flex-1 rounded-[1px] transition-all cursor-pointer ${
+                        isActiveSample
+                          ? 'h-3.5 bg-cyan-300 ring-1 ring-white/90'
+                          : `h-2 ${toneClass}`
+                      }`}
+                      title={`Éch. ${idx + 1}/${historyBuffer.length} · ${formatSampleClock(sample.timestampMs)} · ${
+                        sample.noiseEnabled ? sample.profile.toUpperCase() : 'TX Exposé'
+                      }${sample.isBurstActive ? ' (Rafale)' : ''}`}
+                      aria-label={`Aller à l'échantillon ${idx + 1} (${formatSampleClock(sample.timestampMs)})`}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex flex-col lg:flex-row lg:items-center gap-2.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums text-slate-300 shrink-0">
+                <History className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span className="text-slate-400">Tampon RF</span>
+                <span className="font-semibold text-white">
+                  {historyBuffer.length > 0
+                    ? `${selectedIndex + 1}/${historyBuffer.length}`
+                    : '0/0'}
+                </span>
+                <span className="text-slate-600" aria-hidden="true">
+                  ·
+                </span>
+                <span>
+                  {activeFrame ? formatSampleClock(activeFrame.timestampMs) : '--:--:--'}
+                </span>
+                <span className="text-slate-600" aria-hidden="true">
+                  ·
+                </span>
+                <span
+                  className={
+                    isScrubbingHistorical
+                      ? 'text-amber-400 font-semibold'
+                      : isFrozen
+                        ? 'text-cyan-400 font-semibold'
+                        : 'text-emerald-400 font-semibold'
+                  }
+                >
+                  {isScrubbingHistorical
+                    ? `-${sampleAgeSec}s`
                     : isFrozen
-                      ? 'text-cyan-400 font-semibold'
-                      : 'text-emerald-400 font-semibold'
-                }
-              >
-                {isScrubbingHistorical
-                  ? `-${sampleAgeSec}s`
-                  : isFrozen
-                    ? 'Gelé'
-                    : 'Direct'}
-              </span>
-              {activeFrame?.isBurstActive && (
-                <>
-                  <span className="text-slate-600" aria-hidden="true">
-                    ·
-                  </span>
-                  <span className="text-amber-400">Rafale</span>
-                </>
-              )}
-            </div>
+                      ? 'Gelé'
+                      : 'Direct'}
+                </span>
+                {activeFrame?.isBurstActive && (
+                  <>
+                    <span className="text-slate-600" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="text-amber-400">Rafale</span>
+                  </>
+                )}
+              </div>
 
-            <div className="flex-1 flex items-center gap-2 min-w-0">
-              <button
-                type="button"
-                onClick={handleStepBack}
-                disabled={historyBuffer.length <= 1 || selectedIndex <= 0}
-                className="p-1 rounded bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
-                title="Échantillon précédent"
-                aria-label="Échantillon précédent"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex-1 flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={handleStepBack}
+                  disabled={historyBuffer.length <= 1 || selectedIndex <= 0}
+                  className="p-1 rounded bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                  title="Échantillon précédent"
+                  aria-label="Échantillon précédent"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
 
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0, historyBuffer.length - 1)}
-                value={selectedIndex}
-                disabled={historyBuffer.length <= 1}
-                onChange={(e) => handleScrubToIndex(Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400 disabled:opacity-40"
-                aria-label="Parcourir l'historique du spectre de bruit Wi-Fi"
-              />
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, historyBuffer.length - 1)}
+                  value={selectedIndex}
+                  disabled={historyBuffer.length <= 1}
+                  onChange={(e) => handleScrubToIndex(Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400 disabled:opacity-40"
+                  aria-label="Parcourir l'historique du spectre de bruit Wi-Fi"
+                />
 
-              <button
-                type="button"
-                onClick={handleStepForward}
-                disabled={
-                  historyBuffer.length <= 1 ||
-                  selectedIndex >= historyBuffer.length - 1
-                }
-                className="p-1 rounded bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
-                title="Échantillon suivant"
-                aria-label="Échantillon suivant"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+                <button
+                  type="button"
+                  onClick={handleStepForward}
+                  disabled={
+                    historyBuffer.length <= 1 ||
+                    selectedIndex >= historyBuffer.length - 1
+                  }
+                  className="p-1 rounded bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                  title="Échantillon suivant"
+                  aria-label="Échantillon suivant"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
 
-              <button
-                type="button"
-                onClick={handleReturnLive}
-                disabled={!isScrubbingHistorical && !isFrozen}
-                className={`px-2 py-1 rounded text-[11px] font-mono font-semibold flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
-                  isScrubbingHistorical || isFrozen
-                    ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30'
-                    : 'bg-slate-900 border border-slate-800 text-slate-500 cursor-default'
-                }`}
-                title="Revenir au dernier échantillon en direct"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Direct</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={handleReturnLive}
+                  disabled={!isScrubbingHistorical && !isFrozen}
+                  className={`px-2 py-1 rounded text-[11px] font-mono font-semibold flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                    isScrubbingHistorical || isFrozen
+                      ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30'
+                      : 'bg-slate-900 border border-slate-800 text-slate-500 cursor-default'
+                  }`}
+                  title="Revenir au dernier échantillon en direct"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Direct</span>
+                </button>
+              </div>
             </div>
           </div>
 
