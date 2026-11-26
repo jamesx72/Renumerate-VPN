@@ -8,8 +8,10 @@ import * as d3 from 'd3';
 import {
   Activity,
   BarChart3,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Download,
   History,
   Pause,
   Play,
@@ -33,6 +35,11 @@ export interface WifiSignalSpectrumProps {
   activeWifiBinding: WifiDirectBindingState | null;
   onApplyPatch: (patch: Partial<AppSettings>, reason?: string) => void;
   onJumpToGenerator?: () => void;
+  addLog?: (
+    event: string,
+    type?: 'info' | 'warning' | 'success' | 'error',
+    ip?: string
+  ) => void;
 }
 
 const MAX_WATERFALL_ROWS = 22;
@@ -58,11 +65,13 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
   activeWifiBinding,
   onApplyPatch,
   onJumpToGenerator,
+  addLog,
 }) => {
   const [viewMode, setViewMode] = useState<'fft' | 'waterfall'>('fft');
   const [showPeakHold, setShowPeakHold] = useState(true);
   const [isFrozen, setIsFrozen] = useState(false);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
+  const [exportedTrace, setExportedTrace] = useState(false);
   const [hoveredBin, setHoveredBin] =
     useState<SentinelRfSubcarrierBin | null>(null);
   const [historyBuffer, setHistoryBuffer] = useState<SentinelRfSpectrumFrame[]>(
@@ -303,6 +312,99 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
   const handleReturnLive = () => {
     setIsFrozen(false);
     setSelectedSeq(null);
+  };
+
+  const worstBufferSample = useMemo(() => {
+    if (historyBuffer.length === 0) return null;
+    let worstIdx = 0;
+    let worstSnr = -Infinity;
+    historyBuffer.forEach((sample, idx) => {
+      const sampleAvgSnr =
+        sample.bins.length > 0
+          ? sample.bins.reduce((s, b) => s + b.residualSnrDb, 0) /
+            sample.bins.length
+          : sample.maskedSnrDb;
+      if (sampleAvgSnr >= worstSnr) {
+        worstSnr = sampleAvgSnr;
+        worstIdx = idx;
+      }
+    });
+    return {
+      index: worstIdx,
+      seq: historyBuffer[worstIdx].seq,
+      avgSnrDb: Number(worstSnr.toFixed(1)),
+    };
+  }, [historyBuffer]);
+
+  const handleJumpToWorstSnr = () => {
+    if (!worstBufferSample) return;
+    handleScrubToIndex(worstBufferSample.index);
+  };
+
+  const handleExportTrace = () => {
+    if (!activeFrame) return;
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      adapter: activeWifiBinding?.bound
+        ? `${activeWifiBinding.ifaceName} (${activeWifiBinding.ssid})`
+        : activeFrame.iface,
+      channel: activeFrame.channel,
+      centerFreqMhz: activeFrame.centerFreqMhz,
+      activeSample: {
+        seq: activeFrame.seq,
+        timestampIso: new Date(activeFrame.timestampMs).toISOString(),
+        noiseEnabled: activeFrame.noiseEnabled,
+        profile: activeFrame.profile,
+        effectiveFloorDbm: activeFrame.effectiveFloorDbm,
+        isBurstActive: activeFrame.isBurstActive,
+        snrSummary: {
+          avgSnrDb: validationStats.avgSnrDb,
+          peakSnrDb: validationStats.peakSnrDb,
+          snrReductionDb: validationStats.snrReductionDb,
+          qualityTier: validationStats.snrQualityTier,
+          maskedBinsPct: validationStats.maskedBinsPct,
+          verdict: validationStats.verdict,
+        },
+        subcarriers: activeFrame.bins.map((b) => ({
+          idx: b.idx,
+          freqMhz: Number(
+            (activeFrame.centerFreqMhz + b.freqOffsetMhz).toFixed(2)
+          ),
+          txSignalDbm: b.txSignalDbm,
+          effectiveFloorDbm: b.effectiveFloorDbm,
+          residualSnrDb: b.residualSnrDb,
+        })),
+      },
+      rollingBufferSummary: historyBuffer.map((sample) => ({
+        seq: sample.seq,
+        timestampIso: new Date(sample.timestampMs).toISOString(),
+        noiseEnabled: sample.noiseEnabled,
+        profile: sample.profile,
+        maskedSnrDb: sample.maskedSnrDb,
+        effectiveFloorDbm: sample.effectiveFloorDbm,
+        isBurstActive: sample.isBurstActive,
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `wifi-rf-spectrum-${activeFrame.iface}-seq${activeFrame.seq}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setExportedTrace(true);
+    window.setTimeout(() => setExportedTrace(false), 1800);
+
+    addLog?.(
+      `[WiFi Signal Spectrum] Export trace RF JSON (seq #${activeFrame.seq} · SNR ${validationStats.avgSnrDb} dB · ${activeFrame.bins.length} sous-porteuses)`,
+      'info'
+    );
   };
 
   const latestTimestampMs =
@@ -903,6 +1005,21 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
 
           <button
             type="button"
+            onClick={handleExportTrace}
+            disabled={!activeFrame}
+            className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-45 text-slate-700 dark:text-slate-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+            title="Exporter la capture spectrale et le tampon RF au format JSON"
+          >
+            {exportedTrace ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Download className="w-3.5 h-3.5 text-cyan-500" />
+            )}
+            <span>{exportedTrace ? 'Exporté' : 'Exporter JSON'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleToggleFreeze}
             className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
             title={isFrozen ? 'Reprendre le spectre en direct' : 'Geler la capture'}
@@ -1174,6 +1291,21 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
+
+                {worstBufferSample && historyBuffer.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleJumpToWorstSnr}
+                    className={`px-2 py-1 rounded text-[11px] font-mono tabular-nums font-semibold flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                      selectedIndex === worstBufferSample.index
+                        ? 'bg-amber-500/25 border border-amber-500/50 text-amber-300'
+                        : 'bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-amber-400'
+                    }`}
+                    title={`Aller directement à l'échantillon ayant le SNR résiduel le plus élevé du tampon (${worstBufferSample.avgSnrDb} dB)`}
+                  >
+                    <span>Pic {worstBufferSample.avgSnrDb} dB</span>
+                  </button>
+                )}
 
                 <button
                   type="button"

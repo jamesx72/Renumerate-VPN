@@ -2301,6 +2301,7 @@ function App() {
                 isConnected={isConnected}
                 activeWifiBinding={activeWifiBinding}
                 onApplyPatch={patchAppSettings}
+                addLog={addLog}
                 onJumpToGenerator={() => {
                   document
                     .getElementById('sentinel-noise-generator')
