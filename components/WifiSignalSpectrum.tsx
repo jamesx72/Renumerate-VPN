@@ -67,13 +67,14 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
   onJumpToGenerator,
   addLog,
 }) => {
-  const [viewMode, setViewMode] = useState<'fft' | 'waterfall'>('fft');
+  const [viewMode, setViewMode] = useState<'fft' | 'waterfall' | 'snr'>('fft');
   const [showPeakHold, setShowPeakHold] = useState(true);
   const [isFrozen, setIsFrozen] = useState(false);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [exportedTrace, setExportedTrace] = useState(false);
   const [hoveredBin, setHoveredBin] =
     useState<SentinelRfSubcarrierBin | null>(null);
+  const [hoveredSnrIndex, setHoveredSnrIndex] = useState<number | null>(null);
   const [historyBuffer, setHistoryBuffer] = useState<SentinelRfSpectrumFrame[]>(
     []
   );
@@ -82,6 +83,7 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const fftSvgRef = useRef<SVGSVGElement | null>(null);
   const waterfallSvgRef = useRef<SVGSVGElement | null>(null);
+  const snrSvgRef = useRef<SVGSVGElement | null>(null);
   const [svgWidth, setSvgWidth] = useState(720);
 
   // Record bounded rolling history buffer & Peak-Hold envelope while live
@@ -850,6 +852,269 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
     latestTimestampMs,
   ]);
 
+  const snrSeries = useMemo(() => {
+    return historyBuffer.map((sample, idx) => {
+      const avgSnrDb =
+        sample.bins.length > 0
+          ? Number(
+              (
+                sample.bins.reduce((sum, b) => sum + b.residualSnrDb, 0) /
+                sample.bins.length
+              ).toFixed(1)
+            )
+          : sample.maskedSnrDb;
+      return {
+        idx,
+        seq: sample.seq,
+        timestampMs: sample.timestampMs,
+        timeLabel: formatSampleClock(sample.timestampMs),
+        avgSnrDb,
+        unmaskedSnrDb: sample.unmaskedSnrDb,
+        noiseEnabled: sample.noiseEnabled,
+        isBurstActive: sample.isBurstActive,
+      };
+    });
+  }, [historyBuffer]);
+
+  // =========================================================================
+  // D3 CHART 3: Rolling Buffer SNR Trajectory (Synced with Scrubber)
+  // =========================================================================
+  useEffect(() => {
+    if (
+      viewMode !== 'snr' ||
+      !snrSvgRef.current ||
+      snrSeries.length === 0
+    ) {
+      return;
+    }
+
+    const svg = d3.select(snrSvgRef.current);
+    svg.selectAll('*').remove();
+
+    const width = svgWidth;
+    const height = 248;
+    const margin = { top: 24, right: 20, bottom: 30, left: 52 };
+    const innerW = Math.max(120, width - margin.left - margin.right);
+    const innerH = Math.max(90, height - margin.top - margin.bottom);
+
+    svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+    const g = svg
+      .append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const maxSnr = Math.max(
+      26,
+      d3.max(snrSeries, (d) => Math.max(d.avgSnrDb, d.unmaskedSnrDb)) ?? 26
+    );
+    const x = d3
+      .scaleLinear()
+      .domain([0, Math.max(1, snrSeries.length - 1)])
+      .range([0, innerW]);
+    const y = d3.scaleLinear().domain([0, maxSnr]).range([innerH, 0]);
+
+    // Horizontal grid
+    g.append('g')
+      .call(
+        d3
+          .axisLeft(y)
+          .ticks(5)
+          .tickSize(-innerW)
+          .tickFormat(() => '')
+      )
+      .call((ax) => ax.select('.domain').remove())
+      .call((ax) =>
+        ax
+          .selectAll('line')
+          .attr('stroke', '#334155')
+          .attr('stroke-opacity', 0.34)
+          .attr('stroke-dasharray', '2,3')
+      );
+
+    // Passive probe stealth zone (<= 6 dB SNR)
+    g.append('rect')
+      .attr('x', 0)
+      .attr('y', y(PASSIVE_PROBE_SNR_LIMIT_DB))
+      .attr('width', innerW)
+      .attr('height', Math.max(0, y(0) - y(PASSIVE_PROBE_SNR_LIMIT_DB)))
+      .attr('fill', '#10b981')
+      .attr('opacity', 0.1);
+
+    g.append('line')
+      .attr('x1', 0)
+      .attr('x2', innerW)
+      .attr('y1', y(PASSIVE_PROBE_SNR_LIMIT_DB))
+      .attr('y2', y(PASSIVE_PROBE_SNR_LIMIT_DB))
+      .attr('stroke', '#10b981')
+      .attr('stroke-width', 1.2)
+      .attr('stroke-dasharray', '4,3');
+
+    g.append('text')
+      .attr('x', innerW - 4)
+      .attr('y', y(PASSIVE_PROBE_SNR_LIMIT_DB) - 5)
+      .attr('text-anchor', 'end')
+      .attr('fill', '#34d399')
+      .attr('font-size', '9px')
+      .attr('font-family', 'monospace')
+      .text(`Seuil sonde passive (${PASSIVE_PROBE_SNR_LIMIT_DB} dB)`);
+
+    // Unmasked baseline SNR
+    const baselineLine = d3
+      .line<(typeof snrSeries)[number]>()
+      .x((d) => x(d.idx))
+      .y((d) => y(d.unmaskedSnrDb))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(snrSeries)
+      .attr('fill', 'none')
+      .attr('stroke', '#f59e0b')
+      .attr('stroke-width', 1.4)
+      .attr('stroke-dasharray', '4,3')
+      .attr('opacity', 0.85)
+      .attr('d', baselineLine);
+
+    // Live masked SNR area & line
+    const snrArea = d3
+      .area<(typeof snrSeries)[number]>()
+      .x((d) => x(d.idx))
+      .y0(y(0))
+      .y1((d) => y(d.avgSnrDb))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(snrSeries)
+      .attr('fill', '#22d3ee')
+      .attr('fill-opacity', 0.2)
+      .attr('d', snrArea);
+
+    const snrLine = d3
+      .line<(typeof snrSeries)[number]>()
+      .x((d) => x(d.idx))
+      .y((d) => y(d.avgSnrDb))
+      .curve(d3.curveMonotoneX);
+
+    g.append('path')
+      .datum(snrSeries)
+      .attr('fill', 'none')
+      .attr('stroke', '#22d3ee')
+      .attr('stroke-width', 2.1)
+      .attr('d', snrLine);
+
+    // Selected scrubbed index marker
+    const activePoint = snrSeries[selectedIndex] ?? snrSeries[snrSeries.length - 1];
+    if (activePoint) {
+      g.append('line')
+        .attr('x1', x(activePoint.idx))
+        .attr('x2', x(activePoint.idx))
+        .attr('y1', 0)
+        .attr('y2', innerH)
+        .attr('stroke', '#22d3ee')
+        .attr('stroke-width', 1.2)
+        .attr('stroke-dasharray', '2,2');
+
+      g.append('circle')
+        .attr('cx', x(activePoint.idx))
+        .attr('cy', y(activePoint.avgSnrDb))
+        .attr('r', 4.5)
+        .attr('fill', activePoint.avgSnrDb <= PASSIVE_PROBE_SNR_LIMIT_DB ? '#10b981' : '#f43f5e')
+        .attr('stroke', '#ffffff')
+        .attr('stroke-width', 1.5);
+    }
+
+    const tickIdx = Array.from(
+      new Set([
+        0,
+        Math.floor((snrSeries.length - 1) * 0.33),
+        Math.floor((snrSeries.length - 1) * 0.66),
+        snrSeries.length - 1,
+      ])
+    );
+
+    g.append('g')
+      .attr('transform', `translate(0,${innerH})`)
+      .call(
+        d3
+          .axisBottom(x)
+          .tickValues(tickIdx)
+          .tickFormat((val) => snrSeries[Number(val)]?.timeLabel ?? '')
+      )
+      .call((ax) => ax.select('.domain').attr('stroke', '#334155'))
+      .call((ax) =>
+        ax
+          .selectAll('text')
+          .attr('fill', '#94a3b8')
+          .attr('font-size', '9px')
+          .attr('font-family', 'monospace')
+      );
+
+    g.append('g')
+      .call(
+        d3
+          .axisLeft(y)
+          .ticks(5)
+          .tickFormat((d) => `${d} dB`)
+      )
+      .call((ax) => ax.select('.domain').remove())
+      .call((ax) => ax.selectAll('line').remove())
+      .call((ax) =>
+        ax
+          .selectAll('text')
+          .attr('fill', '#94a3b8')
+          .attr('font-size', '9px')
+          .attr('font-family', 'monospace')
+      );
+
+    // Legend
+    const legend = g.append('g').attr('transform', 'translate(6, -13)');
+    [
+      { label: 'SNR Résiduel', color: '#22d3ee', x: 0 },
+      { label: 'SNR Sans Bruit', color: '#f59e0b', x: 112 },
+      { label: 'Zone Furtive <=6 dB', color: '#10b981', x: 230 },
+    ].forEach((item) => {
+      legend
+        .append('rect')
+        .attr('x', item.x)
+        .attr('y', 0)
+        .attr('width', 8)
+        .attr('height', 8)
+        .attr('rx', 2)
+        .attr('fill', item.color);
+      legend
+        .append('text')
+        .attr('x', item.x + 12)
+        .attr('y', 7.5)
+        .attr('fill', '#cbd5e1')
+        .attr('font-size', '9.5px')
+        .attr('font-family', 'monospace')
+        .text(item.label);
+    });
+
+    // Click & hover scrubbing directly on SNR timeline
+    g.append('rect')
+      .attr('width', innerW)
+      .attr('height', innerH)
+      .attr('fill', 'transparent')
+      .style('cursor', 'pointer')
+      .on('mousemove', (event: MouseEvent) => {
+        const [mx] = d3.pointer(event);
+        const idx = Math.max(
+          0,
+          Math.min(snrSeries.length - 1, Math.round(x.invert(mx)))
+        );
+        setHoveredSnrIndex(idx);
+      })
+      .on('click', (event: MouseEvent) => {
+        const [mx] = d3.pointer(event);
+        const idx = Math.max(
+          0,
+          Math.min(snrSeries.length - 1, Math.round(x.invert(mx)))
+        );
+        handleScrubToIndex(idx);
+      })
+      .on('mouseleave', () => setHoveredSnrIndex(null));
+  }, [viewMode, snrSeries, svgWidth, selectedIndex]);
+
   return (
     <section
       id="wifi-signal-spectrum"
@@ -949,6 +1214,17 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
               }`}
             >
               Waterfall Temps×Fréq
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('snr')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                viewMode === 'snr'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Historique SNR
             </button>
           </div>
 
@@ -1164,12 +1440,19 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
               role="img"
               aria-label="Spectre FFT Wi-Fi D3.js validant l'obfuscation RF du Sentinel-IA Noise Generator"
             />
-          ) : (
+          ) : viewMode === 'waterfall' ? (
             <svg
               ref={waterfallSvgRef}
               className="w-full h-[248px] block select-none"
               role="img"
               aria-label="Spectrogramme Waterfall D3.js du signal Wi-Fi et du bruit RF Sentinel-IA"
+            />
+          ) : (
+            <svg
+              ref={snrSvgRef}
+              className="w-full h-[248px] block select-none"
+              role="img"
+              aria-label="Chronologie D3.js du Signal-to-Noise Ratio (SNR) sur les 48 derniers échantillons"
             />
           )}
 
@@ -1363,6 +1646,38 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
                   )
                 </span>
               </div>
+            ) : viewMode === 'snr' &&
+              hoveredSnrIndex !== null &&
+              snrSeries[hoveredSnrIndex] ? (
+              <div className="flex flex-wrap items-center gap-2 text-slate-200">
+                <span>
+                  Éch. {hoveredSnrIndex + 1}/{snrSeries.length} (
+                  {snrSeries[hoveredSnrIndex].timeLabel})
+                </span>
+                <span className="text-slate-600" aria-hidden="true">
+                  ·
+                </span>
+                <span
+                  className={
+                    snrSeries[hoveredSnrIndex].avgSnrDb <=
+                    PASSIVE_PROBE_SNR_LIMIT_DB
+                      ? 'text-emerald-400'
+                      : 'text-rose-400'
+                  }
+                >
+                  SNR {snrSeries[hoveredSnrIndex].avgSnrDb} dB
+                </span>
+                <span className="text-slate-600" aria-hidden="true">
+                  ·
+                </span>
+                <span className="text-amber-400">
+                  Brut {snrSeries[hoveredSnrIndex].unmaskedSnrDb} dB
+                </span>
+                <span className="text-slate-600" aria-hidden="true">
+                  ·
+                </span>
+                <span>Cliquez pour inspecter</span>
+              </div>
             ) : (
               <span className="flex items-center gap-1.5">
                 <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -1373,7 +1688,9 @@ export const WifiSignalSpectrum: React.FC<WifiSignalSpectrumProps> = ({
                       ? 'Capture spectrale gelée — cliquez sur Reprendre ou Direct pour suivre les rafales en direct.'
                       : viewMode === 'fft'
                         ? 'Points rouges = sous-porteuses exposées (> 6 dB SNR). Utilisez le curseur ci-dessus pour inspecter les motifs passés.'
-                        : 'Waterfall temps réel : cliquez sur une ligne ou utilisez le curseur ci-dessus pour inspecter un motif passé.'}
+                        : viewMode === 'waterfall'
+                          ? 'Waterfall temps réel : cliquez sur une ligne ou utilisez le curseur ci-dessus pour inspecter un motif passé.'
+                          : 'Historique SNR sur 48 échantillons : cliquez sur la courbe pour examiner la trame correspondante.'}
                 </span>
               </span>
             )}
